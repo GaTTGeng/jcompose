@@ -846,8 +846,19 @@ public final class ComposeService implements IComposeService {
         policy = policy.toLowerCase(java.util.Locale.ROOT);
         return switch (policy) {
             case "always", "missing", "never", "build" -> policy;
+            case "if_not_present" -> "missing";
             default -> throw new IllegalArgumentException("Unsupported pull policy for service '" + service.name() + "': " + policy);
         };
+    }
+
+    private static boolean shouldPullImage(DockerClient client, String image, String policy) {
+        if ("always".equals(policy)) return true;
+        if (!"missing".equals(policy)) return false;
+        if (!imageExists(client, image)) return true;
+        if (image.contains("@")) return false;
+        int lastSlash = image.lastIndexOf('/');
+        int lastColon = image.lastIndexOf(':');
+        return lastColon <= lastSlash || "latest".equalsIgnoreCase(image.substring(lastColon + 1));
     }
 
     private static boolean imageExists(DockerClient client, String image) {
@@ -2481,7 +2492,7 @@ public final class ComposeService implements IComposeService {
                     String pullPolicy = effectivePullPolicy(service, effective.pull());
                     if ("build".equals(pullPolicy) && effective.noBuild() && !imageExists(client, image))
                         throw new IllegalStateException("Service '" + service.name() + "' requires a build, but noBuild is enabled and its image is missing.");
-                    if ("always".equals(pullPolicy) || "missing".equals(pullPolicy) && !imageExists(client, image)) {
+                    if (shouldPullImage(client, image, pullPolicy)) {
                         pullImage(client, context.registryAuth(), image, stringValue(service.configuration().get("platform"), null));
                     }
                     int replicas = effective.scale() != null && effective.scale().containsKey(service.name())
@@ -2521,7 +2532,7 @@ public final class ComposeService implements IComposeService {
                     String image = service.image() == null || service.image().isBlank()
                             ? context.projectName() + "-" + service.name() : service.image();
                     String pullPolicy = effectivePullPolicy(service, effective.pull());
-                    if ("always".equals(pullPolicy) || "missing".equals(pullPolicy) && !imageExists(client, image))
+                    if (shouldPullImage(client, image, pullPolicy))
                         pullImage(client, context.registryAuth(), image, stringValue(service.configuration().get("platform"), null));
                     int replicas = effective.scale() != null && effective.scale().containsKey(service.name())
                             ? effective.scale().get(service.name()) : 1;
@@ -2551,7 +2562,7 @@ public final class ComposeService implements IComposeService {
                         String image = dependency.image() == null || dependency.image().isBlank()
                                 ? context.projectName() + "-" + dependency.name() : dependency.image();
                         String pullPolicy = effectivePullPolicy(dependency, null);
-                        if (("always".equals(pullPolicy) || "missing".equals(pullPolicy) && !imageExists(client, image)))
+                        if (shouldPullImage(client, image, pullPolicy))
                             pullImage(client, context.registryAuth(), image, stringValue(dependency.configuration().get("platform"), null));
                         ensureServiceContainers(client, context, project, dependency, replicaCount(dependency), false, false,
                                 true, DEFAULT_STOP_TIMEOUT_SECONDS, null);
@@ -2562,7 +2573,7 @@ public final class ComposeService implements IComposeService {
                 String image = service.image() == null || service.image().isBlank()
                         ? context.projectName() + "-" + service.name() : service.image();
                 String pullPolicy = effectivePullPolicy(service, null);
-                if (("always".equals(pullPolicy) || "missing".equals(pullPolicy) && !imageExists(client, image)))
+                if (shouldPullImage(client, image, pullPolicy))
                     pullImage(client, context.registryAuth(), image, stringValue(service.configuration().get("platform"), null));
 
                 int index = effective.index() == null ? 0 : effective.index();
