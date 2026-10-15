@@ -51,7 +51,7 @@ public final class ComposeFileLoader {
                                Map<String, String> environmentOverrides) {
         Path file = resolve(workingDirectory, composeFileName);
         Map<String, Object> root = read(file, environmentOverrides);
-        return toProject(file, root);
+        return toProject(file, root, environmentOverrides);
     }
 
     /**
@@ -73,7 +73,7 @@ public final class ComposeFileLoader {
                 return loadMerged(workingDirectory, List.of(file.toString(), override.toString()), environmentOverrides);
             }
         }
-        return toProject(file, read(file, environmentOverrides));
+        return toProject(file, read(file, environmentOverrides), environmentOverrides);
     }
 
     /** Returns whether the requested/default Compose file can be discovered from the working directory. */
@@ -102,7 +102,7 @@ public final class ComposeFileLoader {
             if (merged == null) { merged = unwrapMergeTags(next); base = file; }
             else merged = merge(merged, next, "");
         }
-        return toProject(base, merged);
+        return toProject(base, merged, environmentOverrides);
     }
 
     private static Path resolve(Path directory, String requested) {
@@ -159,7 +159,8 @@ public final class ComposeFileLoader {
         }
     }
 
-    private static ComposeProject toProject(Path file, Map<String, Object> root) {
+    private static ComposeProject toProject(Path file, Map<String, Object> root,
+                                            Map<String, String> environmentOverrides) {
         root = unwrapMergeTags(root);
         Object rawServices = root.get("services");
         if (!(rawServices instanceof Map<?, ?> serviceMap) || serviceMap.isEmpty())
@@ -172,7 +173,7 @@ public final class ComposeFileLoader {
             Map<String, Object> service = stringKeyMap(config, file, "services." + name);
             if (!service.containsKey("image") && !service.containsKey("build"))
                 throw new ComposeValidationException(file, "services." + name, name, "service must define either image or build.", null, null, null);
-            resolveEnvFiles(file.getParent(), service, file, name);
+            resolveEnvFiles(file.getParent(), service, file, name, environmentOverrides);
             services.put(name, new ServiceDefinition(name, service));
         }
         return new ComposeProject(file, services, names(root.get("volumes")), names(root.get("networks")),
@@ -188,12 +189,15 @@ public final class ComposeFileLoader {
         return result;
     }
 
-    private static void resolveEnvFiles(Path base, Map<String, Object> service, Path source, String name) {
+    private static void resolveEnvFiles(Path base, Map<String, Object> service, Path source, String name,
+                                        Map<String, String> environmentOverrides) {
         Object envFile = service.get("env_file");
         if (envFile == null) return;
         List<?> files = envFile instanceof List<?> list ? list : List.of(envFile);
         Map<String, String> resolved = new LinkedHashMap<>();
         try {
+            Map<String, String> dotenv = parseEnvFile(base.resolve(".env"));
+            Map<String, String> process = environmentWithOverrides(environmentOverrides);
             for (Object item : files) {
                 String path;
                 boolean required = true;
@@ -218,9 +222,10 @@ public final class ComposeFileLoader {
                     if (!required) continue;
                     throw new IOException("env_file not found: " + envPath);
                 }
-                resolved.putAll(parseEnvFile(envPath, rawFormat));
+                resolved.putAll(rawFormat ? parseEnvFile(envPath, true)
+                        : parseServiceEnvFile(envPath, dotenv, process));
             }
-        } catch (IOException exception) {
+        } catch (IOException | RuntimeException exception) {
             throw new ComposeValidationException(source, "services." + name + ".env_file", name, exception.getMessage(), null, null, exception);
         }
         Object existing = service.get("environment");
@@ -271,6 +276,87 @@ public final class ComposeFileLoader {
             result.put(key, value);
         }
         return result;
+    }
+
+    private static Map<String, String> parseServiceEnvFile(Path path, Map<String, String> dotenv,
+                                                            Map<String, String> process) throws IOException {
+        Map<String, String> result = new LinkedHashMap<>();
+        for (String originalLine : Files.readAllLines(path)) {
+            String line = originalLine.trim();
+            if (line.isEmpty() || line.startsWith("#")) continue;
+            if (line.startsWith("export ")) line = line.substring(7).trim();
+
+            int equals = line.indexOf('=');
+            int colon = line.indexOf(':');
+            int separator = equals < 0 ? colon : colon < 0 ? equals : Math.min(equals, colon);
+            if (separator < 0) {
+                if (!line.isEmpty()) result.put(line, "");
+                continue;
+            }
+            String key = line.substring(0, separator).trim();
+            if (key.isEmpty()) continue;
+            String value = line.substring(separator + 1).trim();
+            if (value.isEmpty()) {
+                result.put(key, "");
+                continue;
+            }
+
+            char quote = value.charAt(0);
+            if (quote == '\'' || quote == '"') {
+                int closing = findClosingQuote(value, quote);
+                if (closing < 0) throw new IOException("Unterminated quoted value for " + key + " in " + path);
+                String parsed = unescapeEnvValue(value.substring(1, closing), quote);
+                String trailing = value.substring(closing + 1).trim();
+                if (!trailing.isEmpty() && !trailing.startsWith("#"))
+                    throw new IOException("Unexpected characters after quoted value for " + key + " in " + path);
+                result.put(key, quote == '\'' ? parsed : interpolate(parsed, dotenv, process));
+                continue;
+            }
+
+            int comment = value.indexOf(" #");
+            if (comment >= 0) value = value.substring(0, comment).trim();
+            result.put(key, interpolate(value, dotenv, process));
+        }
+        return result;
+    }
+
+    private static int findClosingQuote(String value, char quote) {
+        boolean escaped = false;
+        for (int index = 1; index < value.length(); index++) {
+            char current = value.charAt(index);
+            if (escaped) escaped = false;
+            else if (current == '\\') escaped = true;
+            else if (current == quote) return index;
+        }
+        return -1;
+    }
+
+    private static String unescapeEnvValue(String value, char quote) {
+        StringBuilder result = new StringBuilder(value.length());
+        for (int index = 0; index < value.length(); index++) {
+            char current = value.charAt(index);
+            if (current != '\\' || index + 1 >= value.length()) {
+                result.append(current);
+                continue;
+            }
+            char next = value.charAt(index + 1);
+            if (quote == '\'' && next != '\'') {
+                result.append(current);
+                continue;
+            }
+            index++;
+            if (quote == '"') {
+                switch (next) {
+                    case 'n' -> result.append('\n');
+                    case 'r' -> result.append('\r');
+                    case 't' -> result.append('\t');
+                    case '\\', '"' -> result.append(next);
+                    case '$' -> result.append("$$");
+                    default -> result.append('\\').append(next);
+                }
+            } else result.append(next);
+        }
+        return result.toString();
     }
 
     private static Map<String, String> environmentWithOverrides(Map<String, String> overrides) {
