@@ -27,7 +27,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Implemented `down.removeOrphans` for project containers whose services are absent from the Compose file.
 - Applied `ps.quiet` by returning container IDs without summary fields.
 - Applied `up.alwaysRecreateDeps` to dependency services and rejected incompatible recreate options.
-- Reused explicitly configured anonymous volumes by replica during `up` recreation; `renewAnonVolumes` now creates new volumes.
+- Reused explicitly configured and image-declared anonymous volumes by replica during `up` recreation; `renewAnonVolumes` now creates new volumes.
 - Honored `up.detach=false` by following selected service logs through `ILogConsumer` until their streams end.
 - Applied `images` quiet mode by returning image IDs without summary fields.
 - Filtered listed project volumes by the mounts used by explicitly selected running services.

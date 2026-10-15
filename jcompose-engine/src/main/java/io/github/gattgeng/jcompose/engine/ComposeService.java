@@ -1047,6 +1047,8 @@ public final class ComposeService implements IComposeService {
         List<Container> existing = projectContainers(client, context.projectName(), List.of(service.name()), true).stream()
                 .filter(container -> !"true".equalsIgnoreCase(label(container, ComposeConstants.ONE_OFF_LABEL)))
                 .sorted(containerOrder()).toList();
+        String image = service.image() == null || service.image().isBlank()
+                ? context.projectName() + "-" + service.name() : service.image();
         String hash = configHash(service);
         boolean configurationChanged = existing.stream()
                 .anyMatch(container -> !hash.equals(label(container, ComposeConstants.CONFIG_HASH_LABEL)));
@@ -1054,10 +1056,18 @@ public final class ComposeService implements IComposeService {
         Map<Integer, Map<String, String>> anonymousVolumes = new LinkedHashMap<>();
         if (recreate) {
             if (!renewAnonVolumes) {
-                java.util.Set<String> anonymousTargets = serviceBinds(project, context.projectName(), service).stream()
+                List<com.github.dockerjava.api.model.Bind> configuredBinds = serviceBinds(project, context.projectName(), service);
+                java.util.Set<String> configuredTargets = configuredBinds.stream()
+                        .map(bind -> bind.getVolume().getPath())
+                        .collect(java.util.stream.Collectors.toSet());
+                java.util.Set<String> anonymousTargets = configuredBinds.stream()
                         .filter(bind -> bind.getPath() == null || bind.getPath().isBlank())
                         .map(bind -> bind.getVolume().getPath())
                         .collect(java.util.stream.Collectors.toSet());
+                var imageConfig = client.inspectImageCmd(image).exec().getConfig();
+                if (imageConfig != null && imageConfig.getVolumes() != null)
+                    imageConfig.getVolumes().keySet().stream().filter(target -> !configuredTargets.contains(target))
+                            .forEach(anonymousTargets::add);
                 for (Container container : existing) {
                     if (container.getMounts() == null) continue;
                     Map<String, String> volumes = new LinkedHashMap<>();
@@ -1088,8 +1098,6 @@ public final class ComposeService implements IComposeService {
         }
         if (existing.size() == replicas) return;
 
-        String image = service.image() == null || service.image().isBlank()
-                ? context.projectName() + "-" + service.name() : service.image();
         for (int index = existing.size() + 1; index <= replicas; index++) {
             Map<String, String> labels = new LinkedHashMap<>();
             labels.put(ComposeConstants.PROJECT_LABEL, context.projectName());
