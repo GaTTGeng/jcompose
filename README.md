@@ -86,7 +86,7 @@ class InventoryCompose {
 }
 ```
 
-Configure optional defaults with `jcompose.default-project-name` and `jcompose.default-socket-path`. The socket path accepts the Docker endpoint syntax supported by docker-java; leave it unset to use docker-java discovery. The project factory uses `docker-compose.yml` by default and lets each caller provide profiles or a different Compose file.
+Configure optional defaults with `jcompose.default-project-name` and `jcompose.default-socket-path`. The socket path accepts the Docker endpoint syntax supported by docker-java; leave it unset to use docker-java discovery. The project factory prefers Docker Compose's canonical `compose.yaml` filename and falls back to other conventional Compose filenames when it is absent. Each caller can provide profiles or a different Compose file.
 
 ## What the loader understands
 

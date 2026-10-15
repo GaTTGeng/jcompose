@@ -16,12 +16,12 @@ public record ComposeProjectContext(
     public ComposeProjectContext {
         if (projectName == null || projectName.isBlank()) throw new IllegalArgumentException("projectName is required");
         if (workingDirectory == null) throw new IllegalArgumentException("workingDirectory is required");
-        composeFileName = composeFileName == null || composeFileName.isBlank() ? "docker-compose.yml" : composeFileName;
+        composeFileName = composeFileName == null || composeFileName.isBlank() ? "compose.yaml" : composeFileName;
         profiles = profiles == null ? null : List.copyOf(profiles);
         workingDirectory = workingDirectory.toAbsolutePath().normalize();
     }
 
     public ComposeProjectContext(String projectName, Path workingDirectory) {
-        this(projectName, workingDirectory, "docker-compose.yml", null, null, null, false, false);
+        this(projectName, workingDirectory, "compose.yaml", null, null, null, false, false);
     }
 }

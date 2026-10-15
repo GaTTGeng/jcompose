@@ -15,12 +15,12 @@ public final class JComposeContextFactory {
 
     /** Creates a context using the configured default project name and Docker endpoint. */
     public ComposeProjectContext create(Path workingDirectory) {
-        return create(properties.getDefaultProjectName(), workingDirectory, "docker-compose.yml", null);
+        return create(properties.getDefaultProjectName(), workingDirectory, "compose.yaml", null);
     }
 
     /** Creates a context with an explicit project name and the configured Docker endpoint. */
     public ComposeProjectContext create(String projectName, Path workingDirectory) {
-        return create(projectName, workingDirectory, "docker-compose.yml", null);
+        return create(projectName, workingDirectory, "compose.yaml", null);
     }
 
     /** Creates a context with per-project settings while retaining the configured Docker endpoint. */

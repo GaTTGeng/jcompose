@@ -86,7 +86,7 @@ class InventoryCompose {
 }
 ```
 
-可通过 `jcompose.default-project-name` 和 `jcompose.default-socket-path` 配置默认值。Socket 路径使用 docker-java 支持的 Docker endpoint 格式；未设置时使用 docker-java 的自动发现。工厂默认读取 `docker-compose.yml`，调用方也可指定 Compose 文件和 profiles。
+可通过 `jcompose.default-project-name` 和 `jcompose.default-socket-path` 配置默认值。Socket 路径使用 docker-java 支持的 Docker endpoint 格式；未设置时使用 docker-java 的自动发现。工厂优先读取 Docker Compose 的标准文件名 `compose.yaml`；该文件不存在时会回退到其他惯用 Compose 文件名。调用方也可指定 Compose 文件和 profiles。
 
 ## Loader 支持范围
 
