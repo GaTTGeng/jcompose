@@ -1047,6 +1047,7 @@ public final class ComposeService implements IComposeService {
                                                 ServiceDefinition service, int replicas, boolean forceRecreate,
                                                 boolean noRecreate, boolean renewAnonVolumes, boolean start,
                                                 int stopTimeoutSeconds, ILogConsumer logConsumer) {
+        validateComposeLabels(stringMap(service.configuration().get("labels")));
         if (replicas < 0) throw new IllegalArgumentException("Replica count must not be negative for service '" + service.name() + "'.");
         int effectiveStopTimeout = service.configuration().get("stop_grace_period") == null ? stopTimeoutSeconds
                 : parseDurationSeconds(String.valueOf(service.configuration().get("stop_grace_period")));
@@ -1202,8 +1203,30 @@ public final class ComposeService implements IComposeService {
 
     private static Map<String, String> resourceLabels(Map<String, Object> definition, String projectName) {
         Map<String, String> labels = new LinkedHashMap<>(stringMap(definition.get("labels")));
+        validateComposeLabels(labels);
         labels.put(ComposeConstants.PROJECT_LABEL, projectName);
         return labels;
+    }
+
+    static void validateComposeLabels(Map<String, String> labels) {
+        for (String name : labels.keySet()) {
+            if (name.equals("com.docker.compose") || name.startsWith("com.docker.compose."))
+                throw new IllegalArgumentException("Label prefix 'com.docker.compose' is reserved by Docker Compose: " + name + ".");
+        }
+    }
+
+    private static void validateServiceLabelConfiguration(ServiceDefinition service) {
+        validateServiceLabels(service);
+        validateBuildLabels(service);
+    }
+
+    private static void validateServiceLabels(ServiceDefinition service) {
+        validateComposeLabels(stringMap(service.configuration().get("labels")));
+    }
+
+    private static void validateBuildLabels(ServiceDefinition service) {
+        if (service.build() instanceof Map<?, ?> build)
+            validateComposeLabels(stringMap(build.get("labels")));
     }
 
     private static com.github.dockerjava.api.model.Network.Ipam networkIpam(Map<String, Object> options) {
@@ -2676,6 +2699,7 @@ public final class ComposeService implements IComposeService {
             ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
             List<ServiceDefinition> selected = selectConfigurationServices(project, context.profiles(),
                     options == null ? null : options.services());
+            selected.forEach(ComposeService::validateBuildLabels);
             try (DockerClient client = createDockerClient(context)) {
                 for (ServiceDefinition service : selected) {
                     Object buildValue = service.build();
@@ -2711,6 +2735,7 @@ public final class ComposeService implements IComposeService {
                         buildArgs.forEach(command::withBuildArg);
                         Map<String, String> labels = new LinkedHashMap<>(stringMap(build.get("labels")));
                         if (options != null && options.labels() != null) labels.putAll(options.labels());
+                        validateComposeLabels(labels);
                         if (!labels.isEmpty()) command.withLabels(labels);
                         if (build.get("network") != null) command.withNetworkMode(String.valueOf(build.get("network")));
                         String memory = options != null && options.memory() != null ? options.memory() : stringValue(build.get("memory"), null);
@@ -2772,6 +2797,7 @@ public final class ComposeService implements IComposeService {
             ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
             List<ServiceDefinition> requested = selectConfigurationServices(project, context.profiles(), effective.services());
             List<ServiceDefinition> selected = dependencyOrderedServices(project, requested);
+            selected.forEach(ComposeService::validateServiceLabelConfiguration);
             java.util.Set<String> dependencies = selected.stream()
                     .flatMap(service -> serviceDependencyNames(service).stream())
                     .collect(java.util.stream.Collectors.toSet());
@@ -2834,6 +2860,7 @@ public final class ComposeService implements IComposeService {
             ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
             List<ServiceDefinition> selected = dependencyOrderedServices(project,
                     selectConfigurationServices(project, context.profiles(), effective.services()));
+            selected.forEach(ComposeService::validateServiceLabelConfiguration);
             List<ServiceDefinition> buildServices = selected.stream()
                     .filter(service -> effective.build() || "build".equals(effectivePullPolicy(service, effective.pull())))
                     .toList();
@@ -2868,6 +2895,7 @@ public final class ComposeService implements IComposeService {
             ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
             ServiceDefinition service = selectConfigurationServices(project, context.profiles(), List.of(serviceName))
                     .stream().findFirst().orElseThrow(() -> new IllegalArgumentException("Service '" + serviceName + "' not found."));
+            validateServiceLabels(service);
             try (DockerClient client = createDockerClient(context)) {
                 ensureProjectResources(client, context.projectName(), project);
                 if (!effective.noDeps()) {
@@ -2904,7 +2932,9 @@ public final class ComposeService implements IComposeService {
                 labels.put(ComposeConstants.WORKING_DIR_LABEL, project.sourceFile().getParent().toString());
                 labels.put(ComposeConstants.CONFIG_FILES_LABEL, project.sourceFile().toString());
                 labels.putAll(stringMap(service.configuration().get("labels")));
-                labels.putAll(parseKeyValueOptions(effective.labels(), "label"));
+                Map<String, String> runLabels = parseKeyValueOptions(effective.labels(), "label");
+                validateComposeLabels(runLabels);
+                labels.putAll(runLabels);
 
                 var host = com.github.dockerjava.api.model.HostConfig.newHostConfig();
                 host.withNetworkMode(stringValue(service.configuration().get("network_mode"),

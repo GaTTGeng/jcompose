@@ -15,6 +15,42 @@ class ComposeFileLoaderTest {
     Path directory;
 
     @Test
+    void retainsReservedDockerComposeLabelsForRuntimeValidation() throws Exception {
+        Path composeFile = directory.resolve("compose.yaml");
+        ComposeFileLoader loader = new ComposeFileLoader();
+
+        Files.writeString(composeFile, """
+                services:
+                  app:
+                    image: example/app
+                    labels:
+                      com.docker.compose.project: forged
+                """);
+        assertEquals(Map.of("com.docker.compose.project", "forged"),
+                loader.load(directory, null).services().get("app").configuration().get("labels"));
+
+        Files.writeString(composeFile, """
+                services:
+                  app:
+                    image: example/app
+                    labels:
+                      - com.docker.compose.service=forged
+                """);
+        assertEquals(List.of("com.docker.compose.service=forged"),
+                loader.load(directory, null).services().get("app").configuration().get("labels"));
+
+        Files.writeString(composeFile, """
+                services:
+                  app:
+                    image: example/app
+                    labels:
+                      com.example.component: api
+                """);
+        assertEquals(Map.of("com.example.component", "api"),
+                loader.load(directory, null).services().get("app").configuration().get("labels"));
+    }
+
+    @Test
     void inlineEnvironmentOverridesEnvFiles() throws Exception {
         Files.writeString(directory.resolve("app.env"), String.join("\n",
                 "MODE=from-file",
