@@ -125,7 +125,8 @@ public final class ComposeService implements IComposeService {
     public CompletableFuture<Void> stopAsync(ComposeProjectContext context, ComposeStopOptions options) {
         int timeout = positiveTimeout(options == null ? null : options.timeoutSeconds());
         return execute(context, client -> {
-            for (Container container : projectContainers(client, context.projectName(), services(options == null ? null : options.services()))) {
+            List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
+            for (Container container : projectContainers(client, context.projectName(), selectedServices)) {
                 if (isRunning(container)) client.stopContainerCmd(container.getId()).withTimeout(timeout).exec();
             }
         });
@@ -135,7 +136,8 @@ public final class ComposeService implements IComposeService {
     public CompletableFuture<Void> restartAsync(ComposeProjectContext context, ComposeRestartOptions options) {
         int timeout = positiveTimeout(options == null ? null : options.timeoutSeconds());
         return execute(context, client -> {
-            for (Container container : projectContainers(client, context.projectName(), services(options == null ? null : options.services()))) {
+            List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
+            for (Container container : projectContainers(client, context.projectName(), selectedServices)) {
                 client.restartContainerCmd(container.getId()).withTimeout(timeout).exec();
             }
         });
@@ -144,7 +146,8 @@ public final class ComposeService implements IComposeService {
     @Override
     public CompletableFuture<Void> removeAsync(ComposeProjectContext context, ComposeRemoveOptions options) {
         return execute(context, client -> {
-            for (Container container : projectContainers(client, context.projectName(), services(options == null ? null : options.services()))) {
+            List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
+            for (Container container : projectContainers(client, context.projectName(), selectedServices)) {
                 if (options != null && options.stop() && isRunning(container)) {
                     client.stopContainerCmd(container.getId()).withTimeout(DEFAULT_STOP_TIMEOUT_SECONDS).exec();
                 }
@@ -159,13 +162,13 @@ public final class ComposeService implements IComposeService {
     @Override
     public CompletableFuture<Void> downAsync(ComposeProjectContext context, ComposeDownOptions options) {
         int timeout = positiveTimeout(options == null ? null : options.timeoutSeconds());
-        List<String> selectedServices = services(options == null ? null : options.services());
         return execute(context, client -> {
-            for (Container container : projectContainers(client, context.projectName(), selectedServices)) {
+            ExistingServiceSelection selection = selectExistingServices(context, options == null ? null : options.services());
+            for (Container container : projectContainers(client, context.projectName(), selection.serviceNames())) {
                 if (isRunning(container)) client.stopContainerCmd(container.getId()).withTimeout(timeout).exec();
                 client.removeContainerCmd(container.getId()).withForce(true).withRemoveVolumes(false).exec();
             }
-            if (selectedServices == null) {
+            if (selection.includesAllDefinedServices()) {
                 removeProjectNetworks(client, context.projectName());
                 if (options != null && options.removeVolumes()) removeProjectVolumes(client, context.projectName());
             }
@@ -179,8 +182,9 @@ public final class ComposeService implements IComposeService {
             java.util.Objects.requireNonNull(consumer, "consumer");
             ComposeLogsOptions effective = options == null ? ComposeLogsOptions.builder().build() : options;
             Integer tail = parseTail(effective.tail());
+            List<String> selectedServices = selectExistingServices(context, effective.services()).serviceNames();
             try (DockerClient client = createDockerClient(context)) {
-                List<Container> containers = projectContainers(client, context.projectName(), services(effective.services()), true)
+                List<Container> containers = projectContainers(client, context.projectName(), selectedServices, true)
                         .stream().sorted(containerOrder()).toList();
                 List<LogCallback> callbacks = new ArrayList<>();
                 for (Container container : containers) {
@@ -207,7 +211,8 @@ public final class ComposeService implements IComposeService {
     @Override
     public CompletableFuture<Void> pauseAsync(ComposeProjectContext context, ComposePauseOptions options) {
         return execute(context, client -> {
-            for (Container container : projectContainers(client, context.projectName(), services(options == null ? null : options.services()))) {
+            List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
+            for (Container container : projectContainers(client, context.projectName(), selectedServices)) {
                 if (isRunning(container)) client.pauseContainerCmd(container.getId()).exec();
             }
         });
@@ -216,7 +221,8 @@ public final class ComposeService implements IComposeService {
     @Override
     public CompletableFuture<Void> unpauseAsync(ComposeProjectContext context, ComposePauseOptions options) {
         return execute(context, client -> {
-            for (Container container : projectContainers(client, context.projectName(), services(options == null ? null : options.services()))) {
+            List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
+            for (Container container : projectContainers(client, context.projectName(), selectedServices)) {
                 if ("paused".equalsIgnoreCase(container.getState())) client.unpauseContainerCmd(container.getId()).exec();
             }
         });
@@ -226,7 +232,8 @@ public final class ComposeService implements IComposeService {
     public CompletableFuture<Void> killAsync(ComposeProjectContext context, ComposeKillOptions options) {
         String signal = options == null || options.signal() == null || options.signal().isBlank() ? "SIGKILL" : options.signal();
         return execute(context, client -> {
-            for (Container container : projectContainers(client, context.projectName(), services(options == null ? null : options.services()))) {
+            List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
+            for (Container container : projectContainers(client, context.projectName(), selectedServices)) {
                 if (isRunning(container)) client.killContainerCmd(container.getId()).withSignal(signal).exec();
             }
         });
@@ -234,9 +241,9 @@ public final class ComposeService implements IComposeService {
 
     @Override
     public CompletableFuture<List<ContainerSummary>> psAsync(ComposeProjectContext context, ComposePsOptions options) {
-        List<String> selectedServices = services(options == null ? null : options.services());
         boolean showAll = options == null || options.all();
         return supply(() -> {
+            List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
             try (DockerClient client = createDockerClient(context)) {
                 List<Container> containers = projectContainers(client, context.projectName(), selectedServices, showAll);
                 return containers.stream().map(container -> containerResult(container, context.projectName())).toList();
@@ -278,8 +285,10 @@ public final class ComposeService implements IComposeService {
 
     @Override
     public CompletableFuture<List<ContainerProcSummary>> topAsync(ComposeProjectContext context, ComposeTopOptions options) {
-        List<String> selectedServices = services(options == null ? null : options.services());
+        if (options != null && options.services() != null && options.services().isEmpty())
+            return CompletableFuture.completedFuture(List.of());
         return supply(() -> {
+            List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
             try (DockerClient client = createDockerClient(context)) {
                 return projectContainers(client, context.projectName(), selectedServices, true).stream()
                         .filter(ComposeService::isRunning)
@@ -306,8 +315,8 @@ public final class ComposeService implements IComposeService {
 
     @Override
     public CompletableFuture<List<ImageSummary>> imagesAsync(ComposeProjectContext context, ComposeImagesOptions options) {
-        List<String> selectedServices = services(options == null ? null : options.services());
         return supply(() -> {
+            List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
             try (DockerClient client = createDockerClient(context)) {
                 java.util.Set<String> usedImageIds = projectContainers(client, context.projectName(), selectedServices, true)
                         .stream().map(Container::getImageId).filter(java.util.Objects::nonNull)
@@ -749,6 +758,21 @@ public final class ComposeService implements IComposeService {
     }
 
     private static List<String> services(List<String> names) { return names; }
+
+    private ExistingServiceSelection selectExistingServices(ComposeProjectContext context, List<String> explicitServices) {
+        List<String> requestedServices = explicitServices == null || explicitServices.isEmpty() ? null : explicitServices;
+        if (loader.hasComposeFile(context.workingDirectory(), context.composeFileName())) {
+            ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
+            List<ServiceDefinition> selected = selectConfigurationServices(project, context.profiles(), requestedServices);
+            boolean includesAllDefinedServices = requestedServices == null && selected.size() == project.services().size();
+            return new ExistingServiceSelection(selected.stream().map(ServiceDefinition::name).toList(), includesAllDefinedServices);
+        }
+        if (context.profiles() != null && !context.profiles().isEmpty())
+            throw new IllegalArgumentException("Cannot select profiles because no Compose file exists under " + context.workingDirectory());
+        return new ExistingServiceSelection(requestedServices, requestedServices == null);
+    }
+
+    private record ExistingServiceSelection(List<String> serviceNames, boolean includesAllDefinedServices) { }
 
     private static List<ServiceDefinition> dependencyOrderedServices(ComposeProject project, List<ServiceDefinition> selected) {
         Map<String, ServiceDefinition> byName = project.services();
@@ -2853,19 +2877,7 @@ public final class ComposeService implements IComposeService {
     @Override public CompletableFuture<WaitResult> waitAsync(ComposeProjectContext context, ComposeWaitOptions options) {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
-            List<String> requestedServices = options == null ? null : services(options.services());
-            if (requestedServices != null && requestedServices.isEmpty()) requestedServices = null;
-            List<String> selectedServices;
-            if (loader.hasComposeFile(context.workingDirectory(), context.composeFileName())) {
-                ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
-                selectedServices = selectConfigurationServices(project, context.profiles(), requestedServices).stream()
-                        .map(ServiceDefinition::name).toList();
-            } else if (context.profiles() != null && !context.profiles().isEmpty()) {
-                throw new IllegalArgumentException("Cannot select profiles because no Compose file exists under "
-                        + context.workingDirectory());
-            } else {
-                selectedServices = requestedServices;
-            }
+            List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
             try (DockerClient client = createDockerClient(context)) {
                 List<Container> containers = projectContainers(client, context.projectName(),
                                 selectedServices, false)

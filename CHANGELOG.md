@@ -16,6 +16,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Deduplicated successful pulls when multiple selected services share the same image reference.
 - Honored offline project contexts by disabling automatic image pulls and rejecting explicit pull, push, and publish operations.
 - Aligned `wait` service selection with project profiles and included selected running one-off containers; Docker API wait errors yield `-1` for that container.
+- Applied shared profile-aware existing-service selection to lifecycle operations, `down`, `ps`, `top`, `images`, and `logs`, with label-only fallback when the Compose file is absent and no profiles are active.
 - Established the Maven multi-module repository for the API, loader, Docker Engine integration, and Spring Boot starter.
 - Added Compose loading, interpolation, environment-file handling, and an incremental multi-file merge implementation.
 - Added the initial Docker Engine project-label-scoped container lifecycle implementation.
