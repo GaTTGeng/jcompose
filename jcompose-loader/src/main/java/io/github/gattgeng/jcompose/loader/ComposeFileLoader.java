@@ -21,8 +21,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 /** Loads Compose YAML, expands variables, resolves service env files, and merges overlays. */
 public final class ComposeFileLoader {
@@ -33,8 +35,17 @@ public final class ComposeFileLoader {
 
     /** Loads one Compose file. Conventional default names are discovered from the working directory upward. */
     public ComposeProject load(Path workingDirectory, String composeFileName) {
+        return load(workingDirectory, composeFileName, null);
+    }
+
+    /**
+     * Loads one Compose file with per-call interpolation values that take precedence over the
+     * process environment and the file's adjacent {@code .env} values.
+     */
+    public ComposeProject load(Path workingDirectory, String composeFileName,
+                               Map<String, String> environmentOverrides) {
         Path file = resolve(workingDirectory, composeFileName);
-        Map<String, Object> root = read(file);
+        Map<String, Object> root = read(file, environmentOverrides);
         return toProject(file, root);
     }
 
@@ -45,12 +56,22 @@ public final class ComposeFileLoader {
 
     /** Applies a documented incremental merge: mappings merge recursively and later scalars replace. */
     public ComposeProject loadMerged(Path workingDirectory, List<String> composeFiles) {
+        return loadMerged(workingDirectory, composeFiles, null);
+    }
+
+    /**
+     * Applies a documented incremental merge with per-call interpolation values that take
+     * precedence over the process environment and each file's adjacent {@code .env} values.
+     * The supplied values are never written to the process environment.
+     */
+    public ComposeProject loadMerged(Path workingDirectory, List<String> composeFiles,
+                                     Map<String, String> environmentOverrides) {
         if (composeFiles == null || composeFiles.isEmpty()) throw new IllegalArgumentException("At least one Compose file is required.");
         Map<String, Object> merged = null;
         Path base = null;
         for (String name : composeFiles) {
             Path file = resolve(workingDirectory, name);
-            Map<String, Object> next = read(file);
+            Map<String, Object> next = read(file, environmentOverrides);
             if (merged == null) { merged = unwrapMergeTags(next); base = file; }
             else merged = merge(merged, next, "");
         }
@@ -85,11 +106,11 @@ public final class ComposeFileLoader {
     }
 
     @SuppressWarnings("unchecked")
-    private static Map<String, Object> read(Path file) {
+    private static Map<String, Object> read(Path file, Map<String, String> environmentOverrides) {
         try {
             String text = Files.readString(file);
             Map<String, String> envFile = parseEnvFile(file.getParent().resolve(".env"));
-            String expanded = interpolate(text, envFile, System.getenv());
+            String expanded = interpolate(text, envFile, environmentWithOverrides(environmentOverrides));
             LoaderOptions options = new LoaderOptions();
             options.setAllowDuplicateKeys(false);
             Object parsed = new Yaml(new ComposeSafeConstructor(options)).load(expanded);
@@ -205,6 +226,22 @@ public final class ComposeFileLoader {
             result.put(key, value);
         }
         return result;
+    }
+
+    private static Map<String, String> environmentWithOverrides(Map<String, String> overrides) {
+        boolean windows = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows");
+        Map<String, String> environment = windows
+                ? new TreeMap<>(String.CASE_INSENSITIVE_ORDER)
+                : new LinkedHashMap<>();
+        environment.putAll(System.getenv());
+        if (overrides != null) {
+            overrides.forEach((key, value) -> {
+                if (key == null || key.isBlank()) throw new IllegalArgumentException("Environment override keys must not be blank.");
+                if (value == null) throw new IllegalArgumentException("Environment override values must not be null: " + key);
+                environment.put(key, value);
+            });
+        }
+        return environment;
     }
 
     private static String interpolate(String text, Map<String, String> dotenv, Map<String, String> process) {

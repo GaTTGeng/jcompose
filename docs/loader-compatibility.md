@@ -27,6 +27,8 @@ Interpolation runs against raw YAML text before YAML parsing. The loader current
 
 Process environment values take precedence over values in the project `.env` file. Defaults and replacement expressions are recursively interpolated, with a guard against excessive nesting. This is the current implementation contract; verify edge cases against Docker Compose before expanding compatibility claims.
 
+`ComposeFileLoader.load` and `loadMerged` accept per-call environment overrides. For that call, the precedence is explicit overrides, then the process environment, then the `.env` beside each Compose file. Overrides are never written to the process environment, so separate or concurrent loads remain isolated. On Windows, override names are matched without regard to case; on other platforms they are case-sensitive.
+
 The parser is intentionally smaller than the full Compose interpolation and dotenv grammars. In particular, it interpolates the document text before YAML parsing, rather than only Compose-defined value nodes, and the `.env` reader does not implement all quoting, escape, multiline, nested-expression, or format variants. Unsupported shell expressions are not evaluated. An unset variable without an operator becomes empty text.
 
 ## `.env` and service `env_file`
