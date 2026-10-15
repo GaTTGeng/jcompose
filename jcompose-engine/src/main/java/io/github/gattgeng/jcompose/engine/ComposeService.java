@@ -46,6 +46,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.math.BigDecimal;
 import java.util.regex.Pattern;
 
 /**
@@ -1497,19 +1498,35 @@ public final class ComposeService implements IComposeService {
     }
 
     private static long parseDurationNanos(String value) {
-        java.util.regex.Matcher matcher = Pattern.compile("(?i)^\\s*(\\d+)\\s*(ns|us|µs|ms|s|m|h)?\\s*$").matcher(value);
-        if (!matcher.matches()) throw new IllegalArgumentException("Invalid duration: " + value);
-        long amount = Long.parseLong(matcher.group(1));
-        long multiplier = switch (matcher.group(2) == null ? "s" : matcher.group(2).toLowerCase(java.util.Locale.ROOT)) {
-            case "ns" -> 1L;
-            case "us", "µs" -> 1_000L;
-            case "ms" -> 1_000_000L;
-            case "s" -> 1_000_000_000L;
-            case "m" -> 60_000_000_000L;
-            case "h" -> 3_600_000_000_000L;
-            default -> throw new IllegalArgumentException("Invalid duration: " + value);
-        };
-        return Math.multiplyExact(amount, multiplier);
+        String input = value.trim();
+        if (input.isEmpty()) throw new IllegalArgumentException("Invalid duration: " + value);
+        java.util.regex.Matcher matcher = Pattern.compile("(?i)(\\d+(?:\\.\\d+)?)(ns|us|µs|ms|s|m|h)").matcher(input);
+        BigDecimal nanos = BigDecimal.ZERO;
+        int cursor = 0;
+        while (matcher.find()) {
+            if (matcher.start() != cursor) throw new IllegalArgumentException("Invalid duration: " + value);
+            long multiplier = switch (matcher.group(2).toLowerCase(java.util.Locale.ROOT)) {
+                case "ns" -> 1L;
+                case "us", "µs" -> 1_000L;
+                case "ms" -> 1_000_000L;
+                case "s" -> 1_000_000_000L;
+                case "m" -> 60_000_000_000L;
+                case "h" -> 3_600_000_000_000L;
+                default -> throw new IllegalArgumentException("Invalid duration: " + value);
+            };
+            nanos = nanos.add(new BigDecimal(matcher.group(1)).multiply(BigDecimal.valueOf(multiplier)));
+            cursor = matcher.end();
+        }
+        if (cursor == 0 && input.matches("\\d+(?:\\.\\d+)?")) {
+            nanos = new BigDecimal(input).multiply(BigDecimal.valueOf(1_000_000_000L));
+            cursor = input.length();
+        }
+        if (cursor != input.length()) throw new IllegalArgumentException("Invalid duration: " + value);
+        try {
+            return nanos.toBigInteger().longValueExact();
+        } catch (ArithmeticException exception) {
+            throw new IllegalArgumentException("Duration is outside the supported range: " + value, exception);
+        }
     }
 
     private static int parseDurationSeconds(String value) {
