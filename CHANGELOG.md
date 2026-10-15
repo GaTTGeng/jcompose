@@ -28,6 +28,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Applied `ps.quiet` by returning container IDs without summary fields.
 - Applied `up.alwaysRecreateDeps` to dependency services and rejected incompatible recreate options.
 - Reused explicitly configured and image-declared anonymous volumes by replica during `up` recreation; `renewAnonVolumes` now creates new volumes.
+- Matched volume merge targets with Windows drive-letter colons in short syntax, including target replacement across overlay files.
 - Honored `up.detach=false` by following selected service logs through `ILogConsumer` until their streams end.
 - Applied `images` quiet mode by returning image IDs without summary fields.
 - Filtered listed project volumes by the mounts used by explicitly selected running services.

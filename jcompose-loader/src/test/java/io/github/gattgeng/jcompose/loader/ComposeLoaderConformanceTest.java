@@ -125,6 +125,34 @@ class ComposeLoaderConformanceTest {
         assertEquals(List.of("app-secret", "app-secret-override"), project.secrets());
     }
 
+    @Test
+    void replacesWindowsBindMountByContainerTarget() throws IOException {
+        ComposeProject project = loadMerged("C:\\base:/data:ro", "D:\\override:/data:rw");
+
+        assertEquals(List.of("D:\\override:/data:rw"), project.services().get("app").configuration().get("volumes"));
+    }
+
+    @Test
+    void keepsDistinctWindowsContainerTargets() throws IOException {
+        ComposeProject project = loadMerged("data:C:\\app", "logs:C:\\logs");
+
+        assertEquals(List.of("data:C:\\app", "logs:C:\\logs"), project.services().get("app").configuration().get("volumes"));
+    }
+
+    @Test
+    void keepsDistinctTargetOnlyWindowsVolumes() throws IOException {
+        ComposeProject project = loadMerged("C:\\data", "D:\\data");
+
+        assertEquals(List.of("C:\\data", "D:\\data"), project.services().get("app").configuration().get("volumes"));
+    }
+
+    @Test
+    void replacesSingleLetterNamedVolumeByContainerTarget() throws IOException {
+        ComposeProject project = loadMerged("a:/data", "b:/data");
+
+        assertEquals(List.of("b:/data"), project.services().get("app").configuration().get("volumes"));
+    }
+
     private ComposeProject loadFixture(String scenario) throws IOException {
         Path directory = copyFixture(scenario);
         if (Files.isRegularFile(directory.resolve(".env.example")))
@@ -141,5 +169,24 @@ class ComposeLoaderConformanceTest {
                 Files.copy(file, destination.resolve(source.relativize(file)));
         }
         return destination;
+    }
+
+    private ComposeProject loadMerged(String baseVolume, String overrideVolume) throws IOException {
+        Path directory = temporaryDirectory.resolve("volume-merge");
+        Files.createDirectories(directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: example/app
+                    volumes:
+                      - '%s'
+                """.formatted(baseVolume));
+        Files.writeString(directory.resolve("compose.override.yaml"), """
+                services:
+                  app:
+                    volumes:
+                      - '%s'
+                """.formatted(overrideVolume));
+        return new ComposeFileLoader().loadMerged(directory, List.of("compose.yaml", "compose.override.yaml"));
     }
 }

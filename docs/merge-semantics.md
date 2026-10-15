@@ -11,13 +11,13 @@ The current implementation is an incremental subset, not full Docker Compose mer
 | Standard lists | Appends every overlay entry, preserving duplicates and order. |
 | Service `ports` lists | Replaces entries with the same parsed `ip`, `target`, `published`, and `protocol` key for short and long entries; other entries are retained. Port ranges and every short/long syntax combination are not yet verified. |
 | `environment` and `labels` list form | Replaces an earlier entry with the same key (the text before `=` or `:`). |
-| Service `volumes`, `secrets`, and `configs` lists | Replaces an earlier entry with the same target when the short or long form can be identified. |
+| Service `volumes`, `secrets`, and `configs` lists | Replaces an earlier entry with the same target when the short or long form can be identified. Short volume syntax accounts for drive-letter colons in the covered Windows source and target forms; all path and syntax combinations are not verified. |
 | `command`, `entrypoint`, and `healthcheck.test` | The overlay list replaces the base list. |
 | Top-level `volumes`, `networks`, `secrets`, `configs` | Resource mappings merge recursively by name. |
 
 The loader resolves project-relative paths from the first Compose file. The merge implementation also interpolates each file while it is read, before overlaying its parsed mapping.
 
-Docker Compose defines unique-resource merge keys, special handling for several fields, and the `!reset` / `!override` tags. jcompose recognizes both tags on overlay values. `!override` uses the supplied value as a full replacement, bypassing recursive/list merging. `!reset` ignores its supplied value and clears the inherited value to an empty mapping/list when the inherited value has that shape, or to `null` otherwise. Other custom YAML tags still fail loading. jcompose has not verified port ranges and every short/long syntax combination, volume-like entries keyed by container target, and other Compose-specific edge cases. `extends` and `include` resolution are outside this overlay contract.
+Docker Compose defines unique-resource merge keys, special handling for several fields, and the `!reset` / `!override` tags. jcompose recognizes both tags on overlay values. `!override` uses the supplied value as a full replacement, bypassing recursive/list merging. `!reset` ignores its supplied value and clears the inherited value to an empty mapping/list when the inherited value has that shape, or to `null` otherwise. Other custom YAML tags still fail loading. jcompose has not verified port ranges and every short/long syntax combination, and other Compose-specific edge cases. `extends` and `include` resolution are outside this overlay contract.
 
 See Docker's [merge reference](https://docs.docker.com/reference/compose-file/merge/) and [multiple-file guide](https://docs.docker.com/compose/how-tos/multiple-compose-files/merge/) for the compatibility target. When porting merge behavior from ComposeSharp, verify it independently against those references and Docker Compose itself, then update this table and its conformance evidence.
 

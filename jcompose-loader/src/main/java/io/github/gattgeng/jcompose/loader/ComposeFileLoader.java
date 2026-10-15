@@ -545,8 +545,21 @@ public final class ComposeFileLoader {
             if (target != null) return String.valueOf(target);
         }
         String entry = String.valueOf(value);
-        String[] segments = entry.split(":", -1);
-        return segments.length >= 2 ? segments[1] : entry;
+        int sourceTargetSeparator = entry.indexOf(':');
+        if (sourceTargetSeparator < 0) return entry;
+        if (sourceTargetSeparator == 1 && Character.isLetter(entry.charAt(0)) && entry.length() > 2
+                && (entry.charAt(2) == '\\' || entry.charAt(2) == '/')) {
+            int drivePathSeparator = entry.indexOf(':', sourceTargetSeparator + 1);
+            if (drivePathSeparator >= 0) sourceTargetSeparator = drivePathSeparator;
+            else if (entry.charAt(2) == '\\') return entry;
+        }
+        int targetStart = sourceTargetSeparator + 1;
+        int modeSeparator = entry.indexOf(':', targetStart);
+        if (modeSeparator == targetStart + 1 && Character.isLetter(entry.charAt(targetStart))
+                && modeSeparator + 1 < entry.length()
+                && (entry.charAt(modeSeparator + 1) == '\\' || entry.charAt(modeSeparator + 1) == '/'))
+            modeSeparator = entry.indexOf(':', modeSeparator + 1);
+        return modeSeparator < 0 ? entry.substring(targetStart) : entry.substring(targetStart, modeSeparator);
     }
 
     private static Map<String, Object> stringKeyMapUnchecked(Map<?, ?> input) {
