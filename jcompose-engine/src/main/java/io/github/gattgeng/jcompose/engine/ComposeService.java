@@ -1666,6 +1666,20 @@ public final class ComposeService implements IComposeService {
         return result;
     }
 
+    private static <T> T await(CompletableFuture<T> operation) {
+        try {
+            return operation.get();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new java.util.concurrent.CancellationException("Compose operation was interrupted.");
+        } catch (java.util.concurrent.ExecutionException exception) {
+            Throwable failure = exception.getCause();
+            if (failure instanceof RuntimeException runtimeException) throw runtimeException;
+            if (failure instanceof Error error) throw error;
+            throw new java.util.concurrent.CompletionException(failure);
+        }
+    }
+
     private static DockerClient createDockerClient(ComposeProjectContext context) {
         OperationFuture<?> operation = CURRENT_OPERATION.get();
         if (operation != null && operation.isCancelled())
@@ -2097,9 +2111,9 @@ public final class ComposeService implements IComposeService {
             List<ServiceDefinition> buildServices = selected.stream()
                     .filter(service -> effective.build() || "build".equals(effectivePullPolicy(service, effective.pull())))
                     .toList();
-            if (!effective.noBuild() && !buildServices.isEmpty()) buildAsync(context, ComposeBuildOptions.builder()
+            if (!effective.noBuild() && !buildServices.isEmpty()) await(buildAsync(context, ComposeBuildOptions.builder()
                     .services(buildServices.stream().map(ServiceDefinition::name).toList())
-                    .logConsumer(effective.logConsumer()).build()).join();
+                    .logConsumer(effective.logConsumer()).build()));
             try (DockerClient client = createDockerClient(context)) {
                 ensureProjectResources(client, context.projectName(), project);
                 if (effective.removeOrphans()) removeOrphanContainers(client, context.projectName(), project);
@@ -2142,8 +2156,8 @@ public final class ComposeService implements IComposeService {
             List<ServiceDefinition> buildServices = selected.stream()
                     .filter(service -> effective.build() || "build".equals(effectivePullPolicy(service, effective.pull())))
                     .toList();
-            if (!buildServices.isEmpty()) buildAsync(context, ComposeBuildOptions.builder()
-                    .services(buildServices.stream().map(ServiceDefinition::name).toList()).build()).join();
+            if (!buildServices.isEmpty()) await(buildAsync(context, ComposeBuildOptions.builder()
+                    .services(buildServices.stream().map(ServiceDefinition::name).toList()).build()));
             try (DockerClient client = createDockerClient(context)) {
                 ensureProjectResources(client, context.projectName(), project);
                 if (effective.removeOrphans()) removeOrphanContainers(client, context.projectName(), project);
@@ -2459,10 +2473,10 @@ public final class ComposeService implements IComposeService {
                     });
                     waits.put(container.getId(), result);
                 }
-                CompletableFuture.allOf(waits.values().toArray(CompletableFuture[]::new)).join();
+                await(CompletableFuture.allOf(waits.values().toArray(CompletableFuture[]::new)));
                 List<String> ids = waits.keySet().stream().sorted().toList();
                 Map<String, Integer> exitCodes = new LinkedHashMap<>();
-                for (String id : ids) exitCodes.put(id, waits.get(id).join());
+                for (String id : ids) exitCodes.put(id, await(waits.get(id)));
                 int aggregateCode = exitCodes.values().stream().filter(code -> code != 0).findFirst().orElse(0);
                 return new WaitResult(exitCodes, aggregateCode);
             } catch (java.io.IOException exception) {
