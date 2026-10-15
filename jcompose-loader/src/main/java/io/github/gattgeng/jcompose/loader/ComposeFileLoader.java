@@ -194,7 +194,7 @@ public final class ComposeFileLoader {
                 else if (KEYED_LIST_FIELDS.contains(key)) result.put(key, mergeKeyedList(a, b));
                 else if (TARGETED_LIST_FIELDS.contains(key)) result.put(key, mergeTargetedList(a, b));
                 else if ("ports".equals(key)) result.put(key, mergePorts(a, b));
-                else result.put(key, appendUnique(a, b));
+                else result.put(key, appendAll(a, b));
             } else result.put(key, after);
         }
         return result;
@@ -254,9 +254,9 @@ public final class ComposeFileLoader {
         }
     }
 
-    private static List<Object> appendUnique(List<?> base, List<?> overlay) {
+    private static List<Object> appendAll(List<?> base, List<?> overlay) {
         List<Object> merged = new ArrayList<>(base);
-        for (Object value : overlay) if (!merged.contains(value)) merged.add(value);
+        merged.addAll(overlay);
         return List.copyOf(merged);
     }
 
