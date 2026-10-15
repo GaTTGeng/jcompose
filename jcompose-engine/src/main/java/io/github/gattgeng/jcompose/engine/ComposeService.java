@@ -281,9 +281,18 @@ public final class ComposeService implements IComposeService {
         boolean showAll = options == null || options.all();
         return supply(() -> {
             List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
+            List<String> statuses = new ArrayList<>();
+            if (options != null && options.status() != null && !options.status().isBlank()) statuses.add(options.status());
+            if (options != null && options.filter() != null && !options.filter().isBlank()) {
+                String filter = options.filter().trim();
+                if (!filter.startsWith("status=")) throw new IllegalArgumentException("Compose ps only supports the status filter.");
+                statuses.add(filter.substring("status=".length()).trim());
+            }
             try (DockerClient client = createDockerClient(context)) {
                 List<Container> containers = projectContainers(client, context.projectName(), selectedServices, showAll);
-                return containers.stream().map(container -> containerResult(container, context.projectName())).toList();
+                return containers.stream()
+                        .filter(container -> statuses.isEmpty() || statuses.stream().anyMatch(status -> status.equalsIgnoreCase(container.getState())))
+                        .map(container -> containerResult(container, context.projectName())).toList();
             } catch (java.io.IOException exception) {
                 throw new java.io.UncheckedIOException("Could not close Docker Engine client.", exception);
             }
