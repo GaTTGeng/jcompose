@@ -4,6 +4,7 @@ import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.async.ResultCallback.Adapter;
 import com.github.dockerjava.api.command.ListContainersCmd;
+import com.github.dockerjava.api.exception.DockerException;
 import com.github.dockerjava.api.model.AuthConfig;
 import com.github.dockerjava.api.model.AuthConfigurations;
 import com.github.dockerjava.api.model.Container;
@@ -2852,11 +2853,23 @@ public final class ComposeService implements IComposeService {
     @Override public CompletableFuture<WaitResult> waitAsync(ComposeProjectContext context, ComposeWaitOptions options) {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
+            List<String> requestedServices = options == null ? null : services(options.services());
+            if (requestedServices != null && requestedServices.isEmpty()) requestedServices = null;
+            List<String> selectedServices;
+            if (loader.hasComposeFile(context.workingDirectory(), context.composeFileName())) {
+                ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
+                selectedServices = selectConfigurationServices(project, context.profiles(), requestedServices).stream()
+                        .map(ServiceDefinition::name).toList();
+            } else if (context.profiles() != null && !context.profiles().isEmpty()) {
+                throw new IllegalArgumentException("Cannot select profiles because no Compose file exists under "
+                        + context.workingDirectory());
+            } else {
+                selectedServices = requestedServices;
+            }
             try (DockerClient client = createDockerClient(context)) {
                 List<Container> containers = projectContainers(client, context.projectName(),
-                                services(options == null ? null : options.services()), false)
+                                selectedServices, false)
                         .stream().filter(ComposeService::isRunning)
-                        .filter(container -> !"true".equalsIgnoreCase(label(container, ComposeConstants.ONE_OFF_LABEL)))
                         .sorted(containerOrder()).toList();
                 Map<String, CompletableFuture<Integer>> waits = new LinkedHashMap<>();
                 for (Container container : containers) {
@@ -2865,7 +2878,10 @@ public final class ComposeService implements IComposeService {
                         @Override public void onNext(com.github.dockerjava.api.model.WaitResponse response) {
                             result.complete(response.getStatusCode() == null ? -1 : response.getStatusCode());
                         }
-                        @Override public void onError(Throwable error) { result.completeExceptionally(error); }
+                        @Override public void onError(Throwable error) {
+                            if (error instanceof DockerException) result.complete(-1);
+                            else result.completeExceptionally(error);
+                        }
                     });
                     waits.put(container.getId(), result);
                 }

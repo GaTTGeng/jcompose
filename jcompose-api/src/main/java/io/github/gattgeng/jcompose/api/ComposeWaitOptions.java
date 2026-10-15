@@ -5,7 +5,7 @@ import java.util.Objects;
 
 /**
  * Options for waiting on container exit of the project.
- * @param services Restricts the wait to these service names; null waits for every project container.
+ * @param services Restricts the wait to these service names; null or empty selects services from the context's active profiles.
  * @param downProjectOnContainerExit Tear the whole project down as soon as any watched container exits.
  */
 public record ComposeWaitOptions(
