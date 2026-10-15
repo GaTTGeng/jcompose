@@ -32,6 +32,30 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void interpolationAppliesToYamlValuesButNotKeysCommentsOrSingleQuotedScalars() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                # ${MISSING:?comments must not be interpolated}
+                services:
+                  app:
+                    image: "example/${TAG}"
+                    environment:
+                      ${ENV_KEY}: literal-value
+                    labels:
+                      - "${LABEL_KEY}=interpolated-value"
+                    command: '${TAG}'
+                """);
+
+        var project = new ComposeFileLoader().load(directory, null,
+                Map.of("ENV_KEY", "literal-key", "TAG", "v1:blue", "LABEL_KEY", "resolved-label"));
+
+        Map<?, ?> configuration = project.services().get("app").configuration();
+        assertEquals("example/v1:blue", configuration.get("image"));
+        assertEquals("${TAG}", configuration.get("command"));
+        assertEquals(Map.of("${ENV_KEY}", "literal-value"), configuration.get("environment"));
+        assertEquals(List.of("resolved-label=interpolated-value"), configuration.get("labels"));
+    }
+
+    @Test
     void overlaysAppendUniqueListsAndMergeKeyedEntriesAndMountTargets() throws Exception {
         Files.writeString(directory.resolve("base.yaml"), """
                 services:

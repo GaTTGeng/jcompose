@@ -12,7 +12,7 @@ Invalid input raises `ComposeValidationException`. The exception exposes `source
 
 ## Variable interpolation
 
-Interpolation runs against raw YAML text before YAML parsing. The loader currently recognizes:
+Interpolation runs on each Compose file before multi-file merging. It applies to unquoted and double-quoted YAML scalar values; mapping keys, comments, single-quoted values, and literal/folded block scalars are preserved without interpolation. The loader currently recognizes:
 
 | Form | Current behavior |
 | --- | --- |
@@ -29,7 +29,7 @@ Process environment values take precedence over values in the project `.env` fil
 
 `ComposeFileLoader.load`, `loadProject`, and `loadMerged` accept per-call environment overrides. For that call, the precedence is explicit overrides, then the process environment, then the `.env` beside each Compose file. Overrides are never written to the process environment, so separate or concurrent loads remain isolated. On Windows, override names are matched without regard to case; on other platforms they are case-sensitive.
 
-The parser is intentionally smaller than the full Compose interpolation and dotenv grammars. In particular, it interpolates the document text before YAML parsing, rather than only Compose-defined value nodes, and the `.env` reader does not implement all quoting, escape, multiline, or format variants. Unsupported shell expressions are not evaluated. An unset variable without an operator becomes empty text.
+The parser is intentionally smaller than the full Compose interpolation and dotenv grammars. The `.env` reader does not implement all quoting, escape, multiline, or format variants. Unsupported shell expressions are not evaluated. An unset variable without an operator becomes empty text, without Docker Compose's warning.
 
 ## `.env` and service `env_file`
 

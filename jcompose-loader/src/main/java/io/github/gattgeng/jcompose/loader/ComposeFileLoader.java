@@ -10,11 +10,14 @@ import org.yaml.snakeyaml.constructor.AbstractConstruct;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 import org.yaml.snakeyaml.nodes.MappingNode;
 import org.yaml.snakeyaml.nodes.Node;
+import org.yaml.snakeyaml.nodes.NodeTuple;
 import org.yaml.snakeyaml.nodes.ScalarNode;
 import org.yaml.snakeyaml.nodes.SequenceNode;
 import org.yaml.snakeyaml.nodes.Tag;
 
 import java.io.IOException;
+import java.io.StringReader;
+import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -148,10 +151,16 @@ public final class ComposeFileLoader {
         try {
             String text = Files.readString(file);
             Map<String, String> envFile = parseEnvFile(file.getParent().resolve(".env"));
-            String expanded = interpolate(text, envFile, environmentWithOverrides(environmentOverrides));
+            Map<String, String> process = environmentWithOverrides(environmentOverrides);
             LoaderOptions options = new LoaderOptions();
             options.setAllowDuplicateKeys(false);
-            Object parsed = new Yaml(new ComposeSafeConstructor(options)).load(expanded);
+            Yaml yaml = new Yaml(new ComposeSafeConstructor(options));
+            Node document = yaml.compose(new StringReader(text));
+            if (document == null) throw new ComposeValidationException(file, "$", "the document must be a YAML mapping.");
+            Node expanded = interpolateValues(document, envFile, process);
+            StringWriter serialized = new StringWriter();
+            yaml.serialize(expanded, serialized);
+            Object parsed = yaml.load(serialized.toString());
             if (!(parsed instanceof Map<?, ?> raw)) throw new ComposeValidationException(file, "$", "the document must be a YAML mapping.");
             return stringKeyMap(raw, file, "$");
         } catch (ComposeValidationException exception) {
@@ -159,6 +168,29 @@ public final class ComposeFileLoader {
         } catch (IOException | RuntimeException exception) {
             throw new ComposeValidationException(file, "$", null, "could not load the Compose document: " + exception.getMessage(), null, null, exception);
         }
+    }
+
+    private static Node interpolateValues(Node node, Map<String, String> dotenv, Map<String, String> process) {
+        if (node instanceof MappingNode mapping) {
+            List<NodeTuple> entries = new ArrayList<>();
+            for (var entry : mapping.getValue())
+                entries.add(new NodeTuple(entry.getKeyNode(), interpolateValues(entry.getValueNode(), dotenv, process)));
+            mapping.setValue(entries);
+            return mapping;
+        }
+        if (node instanceof SequenceNode sequence) {
+            List<Node> values = sequence.getValue();
+            for (int index = 0; index < values.size(); index++)
+                values.set(index, interpolateValues(values.get(index), dotenv, process));
+            return sequence;
+        }
+        if (node instanceof ScalarNode scalar
+                && (scalar.getScalarStyle() == DumperOptions.ScalarStyle.PLAIN
+                || scalar.getScalarStyle() == DumperOptions.ScalarStyle.DOUBLE_QUOTED)) {
+            return new ScalarNode(scalar.getTag(), interpolate(scalar.getValue(), dotenv, process),
+                    scalar.getStartMark(), scalar.getEndMark(), scalar.getScalarStyle());
+        }
+        return node;
     }
 
     private static ComposeProject toProject(Path file, Map<String, Object> root,
