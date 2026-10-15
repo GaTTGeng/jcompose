@@ -2935,10 +2935,18 @@ public final class ComposeService implements IComposeService {
                         .stream().filter(ComposeService::isRunning)
                         .sorted(containerOrder()).toList();
                 Map<String, CompletableFuture<Integer>> waits = new LinkedHashMap<>();
+                boolean downOnContainerExit = options != null && options.downProjectOnContainerExit();
+                CompletableFuture<Void> firstContainerExit = new CompletableFuture<>();
+                CompletableFuture<Void> downOnExit = downOnContainerExit
+                        ? firstContainerExit.thenCompose(ignored -> downAsync(new ComposeProjectContext(
+                                context.projectName(), context.workingDirectory(), context.composeFileName(), null,
+                                context.socketPath(), context.registryAuth(), context.offline(), context.compatibility()), null))
+                        : null;
                 for (Container container : containers) {
                     CompletableFuture<Integer> result = new CompletableFuture<>();
                     client.waitContainerCmd(container.getId()).exec(new Adapter<>() {
                         @Override public void onNext(com.github.dockerjava.api.model.WaitResponse response) {
+                            firstContainerExit.complete(null);
                             result.complete(response.getStatusCode() == null ? -1 : response.getStatusCode());
                         }
                         @Override public void onError(Throwable error) {
@@ -2948,7 +2956,12 @@ public final class ComposeService implements IComposeService {
                     });
                     waits.put(container.getId(), result);
                 }
-                await(CompletableFuture.allOf(waits.values().toArray(CompletableFuture[]::new)));
+                CompletableFuture<Void> allWaits = CompletableFuture.allOf(waits.values().toArray(CompletableFuture[]::new));
+                if (downOnExit != null) {
+                    await(CompletableFuture.anyOf(allWaits, downOnExit));
+                    if (firstContainerExit.isDone()) await(downOnExit);
+                }
+                await(allWaits);
                 List<String> ids = waits.keySet().stream().sorted().toList();
                 Map<String, Integer> exitCodes = new LinkedHashMap<>();
                 for (String id : ids) exitCodes.put(id, await(waits.get(id)));

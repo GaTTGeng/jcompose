@@ -20,6 +20,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Aligned `stop` completion with ComposeSharp by polling container state for up to five seconds after a successful stop request; removed containers count as stopped.
 - Matched ComposeSharp's per-container Docker API error handling for lifecycle batches so a failed action does not prevent eligible remaining containers from being processed.
 - Made `remove` with `stop` enabled finish the stop phase for the selected containers before beginning removal.
+- Implemented `wait`'s `downProjectOnContainerExit` option: the first watched exit tears down all project containers and project networks before wait results are returned.
 - Established the Maven multi-module repository for the API, loader, Docker Engine integration, and Spring Boot starter.
 - Added Compose loading, interpolation, environment-file handling, and an incremental multi-file merge implementation.
 - Added the initial Docker Engine project-label-scoped container lifecycle implementation.
