@@ -1087,16 +1087,9 @@ public final class ComposeService implements IComposeService {
         if (config.get("read_only") instanceof Boolean value) host.withReadonlyRootfs(value);
         if (config.get("ipc") != null) host.withIpcMode(String.valueOf(config.get("ipc")));
         if (config.get("pid") != null) host.withPidMode(String.valueOf(config.get("pid")));
-        if (config.get("userns_mode") != null) host.withUsernsMode(String.valueOf(config.get("userns_mode")));
-        if (config.get("runtime") != null) host.withRuntime(String.valueOf(config.get("runtime")));
         if (config.get("cgroup_parent") != null) host.withCgroupParent(String.valueOf(config.get("cgroup_parent")));
         if (config.get("shm_size") != null) host.withShmSize(parseByteSize(String.valueOf(config.get("shm_size"))));
-        if (config.get("storage_opt") != null) {
-            if (!(config.get("storage_opt") instanceof Map<?, ?> storageOptions)) {
-                throw new IllegalArgumentException("Service 'storage_opt' must be a mapping.");
-            }
-            host.withStorageOpt(stringMap(storageOptions));
-        }
+        applyRuntimeOptions(host, config);
         applyDnsConfig(host, config);
         applyLoggingConfig(host, config);
 
@@ -1129,6 +1122,18 @@ public final class ComposeService implements IComposeService {
         if (!sysctls.isEmpty()) host.withSysctls(sysctls);
         applyResourceConfig(host, config);
         return host;
+    }
+
+    private static void applyRuntimeOptions(com.github.dockerjava.api.model.HostConfig host, Map<String, Object> config) {
+        if (config.get("userns_mode") != null) host.withUsernsMode(String.valueOf(config.get("userns_mode")));
+        if (config.get("runtime") != null) host.withRuntime(String.valueOf(config.get("runtime")));
+        Object configuredStorageOptions = config.get("storage_opt");
+        if (configuredStorageOptions != null) {
+            if (!(configuredStorageOptions instanceof Map<?, ?> storageOptions)) {
+                throw new IllegalArgumentException("Service 'storage_opt' must be a mapping.");
+            }
+            host.withStorageOpt(stringMap(storageOptions));
+        }
     }
 
     private static void applyVolumesFrom(DockerClient client, ComposeProject project, String projectName,
@@ -2393,6 +2398,7 @@ public final class ComposeService implements IComposeService {
                 applyDnsConfig(host, service.configuration());
                 applyResourceConfig(host, service.configuration());
                 applyDeviceCgroupRules(host, service.configuration());
+                applyRuntimeOptions(host, service.configuration());
                 List<com.github.dockerjava.api.model.Bind> binds = new ArrayList<>(serviceBinds(project, context.projectName(), service));
                 for (String volume : effective.volumes() == null ? List.<String>of() : effective.volumes())
                     binds.add(parseRunBind(volume));
