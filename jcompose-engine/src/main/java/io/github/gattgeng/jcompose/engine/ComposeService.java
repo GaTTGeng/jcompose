@@ -1315,24 +1315,37 @@ public final class ComposeService implements IComposeService {
             Object file = definition.get("file");
             if (file == null)
                 throw new IllegalArgumentException("Compose " + field + " '" + sourceName + "' must define a file source for the Docker Engine bind-mount backend.");
-            for (String option : List.of("uid", "gid", "mode")) {
-                if (grant.get(option) != null)
-                    throw new IllegalArgumentException("services." + service.name() + "." + field + "." + option
-                            + " cannot be applied to a host file bind mount.");
-            }
             Path source = project.sourceFile().getParent().resolve(String.valueOf(file)).normalize().toAbsolutePath();
             if (!java.nio.file.Files.isRegularFile(source))
                 throw new IllegalArgumentException("Compose " + field + " file for '" + sourceName + "' does not exist or is not a regular file: " + source);
             String target = stringValue(grant.get("target"), null);
-            if (target == null || target.isBlank()) target = defaultResourceTarget(sourceName, service);
+            if (target == null || target.isBlank()) target = defaultResourceTarget(sourceName, service, field);
+            else if (!isAbsoluteContainerPath(target)) {
+                if ("secrets".equals(field)) {
+                    if (stringValue(service.configuration().get("platform"), "linux")
+                            .toLowerCase(java.util.Locale.ROOT).contains("windows"))
+                        throw new IllegalArgumentException("Windows Compose secret targets must be absolute paths: " + target);
+                    target = "/run/secrets/" + target;
+                } else target = defaultResourceTarget(target, service, field);
+            }
             binds.add(new com.github.dockerjava.api.model.Bind(source.toString(),
                     new com.github.dockerjava.api.model.Volume(target), com.github.dockerjava.api.model.AccessMode.ro));
         }
     }
 
-    private static String defaultResourceTarget(String sourceName, ServiceDefinition service) {
+    private static String defaultResourceTarget(String sourceName, ServiceDefinition service, String field) {
         String platform = stringValue(service.configuration().get("platform"), "linux");
-        return platform.toLowerCase(java.util.Locale.ROOT).contains("windows") ? "C:\\" + sourceName : "/" + sourceName;
+        if (platform.toLowerCase(java.util.Locale.ROOT).contains("windows")) {
+            if ("secrets".equals(field))
+                throw new IllegalArgumentException("Windows containers require an explicit target for Compose secrets: " + sourceName);
+            return "C:\\" + sourceName;
+        }
+        return "secrets".equals(field) ? "/run/secrets/" + sourceName : "/" + sourceName;
+    }
+
+    private static boolean isAbsoluteContainerPath(String path) {
+        return path.startsWith("/") || path.startsWith("\\\\")
+                || path.matches("^[A-Za-z]:[\\\\/].*");
     }
 
     private static Map<String, String> parseKeyValueOptions(List<String> values, String optionName) {
