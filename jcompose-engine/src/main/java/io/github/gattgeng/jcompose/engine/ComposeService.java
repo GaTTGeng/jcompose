@@ -392,8 +392,25 @@ public final class ComposeService implements IComposeService {
                                                        String composeFileName,
                                                        String renderedYaml) {
         return new ComposeProjectConfig(projectName, project.sourceFile().getParent().toString(),
-                List.of(composeFileName), services.stream().map(ServiceDefinition::name).toList(),
+                projectConfigFiles(project, composeFileName), services.stream().map(ServiceDefinition::name).toList(),
                 project.networks(), project.volumes(), project.secrets(), project.configs(), Map.of(), renderedYaml);
+    }
+
+    private static List<String> projectConfigFiles(ComposeProject project, String composeFileName) {
+        List<String> files = new ArrayList<>(List.of(composeFileName));
+        Path requested = Path.of(composeFileName);
+        if (requested.isAbsolute() || requested.getNameCount() != 1) return List.copyOf(files);
+        String baseName = project.sourceFile().getFileName().toString();
+        String overrideName = switch (baseName) {
+            case "compose.yaml" -> "compose.override.yaml";
+            case "compose.yml" -> "compose.override.yml";
+            case "docker-compose.yaml" -> "docker-compose.override.yaml";
+            case "docker-compose.yml" -> "docker-compose.override.yml";
+            default -> null;
+        };
+        if (overrideName != null && Files.isRegularFile(project.sourceFile().resolveSibling(overrideName)))
+            files.add(overrideName);
+        return List.copyOf(files);
     }
 
     @Override
