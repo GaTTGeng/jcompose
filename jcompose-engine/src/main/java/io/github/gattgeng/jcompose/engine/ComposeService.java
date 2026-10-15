@@ -1970,7 +1970,7 @@ public final class ComposeService implements IComposeService {
     }
 
     private static long parseByteSize(String value) {
-        java.util.regex.Matcher matcher = Pattern.compile("(?i)^\\s*(\\d+)\\s*(b|k|kb|kib|m|mb|mib|g|gb|gib|t|tb|tib)?\\s*$").matcher(value);
+        java.util.regex.Matcher matcher = Pattern.compile("(?i)^\\s*(\\d+(?:\\.\\d+)?)\\s*(b|k|kb|kib|m|mb|mib|g|gb|gib|t|tb|tib|p|pb|pib)?\\s*$").matcher(value);
         if (!matcher.matches()) throw new IllegalArgumentException("Invalid byte size: " + value);
         long multiplier = switch (matcher.group(2) == null ? "b" : matcher.group(2).toLowerCase(java.util.Locale.ROOT)) {
             case "b" -> 1L;
@@ -1978,9 +1978,14 @@ public final class ComposeService implements IComposeService {
             case "m", "mb", "mib" -> 1024L * 1024;
             case "g", "gb", "gib" -> 1024L * 1024 * 1024;
             case "t", "tb", "tib" -> 1024L * 1024 * 1024 * 1024;
+            case "p", "pb", "pib" -> 1024L * 1024 * 1024 * 1024 * 1024;
             default -> throw new IllegalArgumentException("Invalid byte size: " + value);
         };
-        return Math.multiplyExact(Long.parseLong(matcher.group(1)), multiplier);
+        try {
+            return new BigDecimal(matcher.group(1)).multiply(BigDecimal.valueOf(multiplier)).toBigInteger().longValueExact();
+        } catch (ArithmeticException exception) {
+            throw new IllegalArgumentException("Byte size is outside the supported range: " + value, exception);
+        }
     }
 
     private static int positiveTimeout(Integer timeout) {
