@@ -1073,6 +1073,7 @@ public final class ComposeService implements IComposeService {
                 .toArray(com.github.dockerjava.api.model.Capability[]::new));
         List<com.github.dockerjava.api.model.Device> devices = deviceMappings(config.get("devices"));
         if (!devices.isEmpty()) host.withDevices(devices);
+        applyDeviceCgroupRules(host, config);
         List<String> securityOptions = asStringList(config.get("security_opt"));
         if (!securityOptions.isEmpty()) host.withSecurityOpts(securityOptions);
         List<String> groups = asStringList(config.get("group_add"));
@@ -1091,6 +1092,11 @@ public final class ComposeService implements IComposeService {
         if (!dnsOptions.isEmpty()) host.withDnsOptions(dnsOptions);
         List<String> dnsSearch = asStringList(config.get("dns_search"));
         if (!dnsSearch.isEmpty()) host.withDnsSearch(dnsSearch);
+    }
+
+    private static void applyDeviceCgroupRules(com.github.dockerjava.api.model.HostConfig host, Map<String, Object> config) {
+        List<String> rules = asStringList(config.get("device_cgroup_rules"));
+        if (!rules.isEmpty()) host.withDeviceCgroupRules(rules);
     }
 
     private static void applyLoggingConfig(com.github.dockerjava.api.model.HostConfig host, Map<String, Object> config) {
@@ -2306,6 +2312,7 @@ public final class ComposeService implements IComposeService {
                 applyLoggingConfig(host, service.configuration());
                 applyDnsConfig(host, service.configuration());
                 applyResourceConfig(host, service.configuration());
+                applyDeviceCgroupRules(host, service.configuration());
                 List<com.github.dockerjava.api.model.Bind> binds = new ArrayList<>(serviceBinds(project, context.projectName(), service));
                 for (String volume : effective.volumes() == null ? List.<String>of() : effective.volumes())
                     binds.add(parseRunBind(volume));
