@@ -15,7 +15,6 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 
 /** Loads Compose YAML, expands variables, resolves service env files, and merges overlays. */
@@ -69,7 +68,7 @@ public final class ComposeFileLoader {
             options.setAllowDuplicateKeys(false);
             Object parsed = new Yaml(new SafeConstructor(options)).load(expanded);
             if (!(parsed instanceof Map<?, ?> raw)) throw new ComposeValidationException(file, "$", "the document must be a YAML mapping.");
-            return stringKeyMap(raw, file, "$ ".trim());
+            return stringKeyMap(raw, file, "$");
         } catch (ComposeValidationException exception) {
             throw exception;
         } catch (IOException | RuntimeException exception) {
@@ -140,34 +139,7 @@ public final class ComposeFileLoader {
     }
 
     private static String interpolate(String text, Map<String, String> dotenv, Map<String, String> process) {
-        StringBuilder out = new StringBuilder(text.length());
-        for (int i = 0; i < text.length();) {
-            char ch = text.charAt(i);
-            if (ch != '$') { out.append(ch); i++; continue; }
-            if (i + 1 < text.length() && text.charAt(i + 1) == '$') { out.append('$'); i += 2; continue; }
-            if (i + 1 >= text.length() || text.charAt(i + 1) != '{') { out.append('$'); i++; continue; }
-            int end = text.indexOf('}', i + 2);
-            if (end < 0) throw new IllegalArgumentException("unterminated variable expression");
-            String expr = text.substring(i + 2, end);
-            int op = expr.indexOf(":-"); boolean colon = op >= 0;
-            if (op < 0) op = expr.indexOf('-');
-            int required = expr.indexOf(":?"); boolean reqColon = required >= 0;
-            if (required < 0) required = expr.indexOf('?');
-            if (required >= 0 && (op < 0 || required < op)) op = required;
-            String key = op < 0 ? expr : expr.substring(0, op);
-            String operator = op < 0 ? "" : expr.substring(op, (expr.startsWith(":", op) ? op + 2 : op + 1));
-            String fallback = op < 0 ? "" : expr.substring(op + operator.length());
-            String value = process.containsKey(key) ? process.get(key) : dotenv.get(key);
-            boolean unset = value == null;
-            boolean blank = value == null || value.isEmpty();
-            if (operator.equals("-") || operator.equals(":-")) out.append((operator.equals(":-") ? blank : unset) ? fallback : value);
-            else if (operator.equals("?") || operator.equals(":?")) {
-                if (operator.equals(":?") ? blank : unset) throw new IllegalArgumentException("required variable '" + key + "' is not set" + (fallback.isBlank() ? "" : ": " + fallback));
-                out.append(value);
-            } else out.append(value == null ? "" : value);
-            i = end + 1;
-        }
-        return out.toString();
+        return VariableInterpolator.expand(text, dotenv, process);
     }
 
     private static Map<String, Object> merge(Map<String, Object> base, Map<String, Object> overlay, String path) {

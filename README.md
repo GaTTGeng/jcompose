@@ -29,6 +29,8 @@ mvn verify
 
 jcompose aims to reproduce the documented contract and supported field subset of ComposeSharp 3.0.0, including project labels, Compose loading, profiles, build/up/down and container operations, archive copy/export, watch/events, publishing outcomes, and diagnostics. The compatibility matrix and operation-level behavior will be documented as implementation is completed. Similar names or versions do not imply source or binary compatibility with the .NET library.
 
+Loader interpolation and environment precedence are documented in [docs/loader-compatibility.md](docs/loader-compatibility.md).
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
