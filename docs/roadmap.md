@@ -34,7 +34,7 @@ The API exposes the synchronized operation surface, while each engine method cur
 
 ### Java integration
 
-- Implement the Spring Boot starter with predictable configuration and lifecycle behavior. The starter auto-configures `IComposeService`, binds `jcompose.*` defaults, and provides `JComposeContextFactory`; the five-module reactor compiles, while Spring lifecycle and configuration behavior still need review.
+- Implement the Spring Boot starter with predictable configuration and lifecycle behavior. The starter auto-configures `IComposeService`, binds `jcompose.*` defaults, and provides `JComposeContextFactory`; focused tests now cover property binding, context defaults, and back-off for a custom service. Application shutdown behavior remains to be reviewed.
 - Build a usable Java API example and document supported JDK, Maven, and Docker Engine versions.
 - Configure cross-platform CI and Docker-backed integration verification.
 - Decide and document Maven artifact hosting, namespace ownership, source/Javadoc packaging, signing, and release automation before the first publication.
