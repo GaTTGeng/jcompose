@@ -37,6 +37,8 @@ public final class ComposeFileLoader {
     private static final Set<String> REPLACE_FIELDS = Set.of("command", "entrypoint", "test");
     private static final Set<String> KEYED_LIST_FIELDS = Set.of("environment", "labels");
     private static final Set<String> TARGETED_LIST_FIELDS = Set.of("volumes", "secrets", "configs");
+    private static final Set<String> UNIQUE_LIST_FIELDS = Set.of("cap_add", "cap_drop", "constraints",
+            "device_cgroup_rules", "expose", "external_links", "generic_resources", "preferences", "security_opt");
 
     /** Loads one Compose file. Conventional default names are discovered from the working directory upward. */
     public ComposeProject load(Path workingDirectory, String composeFileName) {
@@ -394,6 +396,7 @@ public final class ComposeFileLoader {
                 if (REPLACE_FIELDS.contains(key)) result.put(key, after);
                 else if (KEYED_LIST_FIELDS.contains(key)) result.put(key, mergeKeyedList(a, b));
                 else if (TARGETED_LIST_FIELDS.contains(key)) result.put(key, mergeTargetedList(a, b));
+                else if (UNIQUE_LIST_FIELDS.contains(key)) result.put(key, mergeUniqueList(a, b));
                 else if ("ports".equals(key)) result.put(key, mergePorts(a, b));
                 else result.put(key, appendAll(a, b));
             } else result.put(key, after);
@@ -473,6 +476,12 @@ public final class ComposeFileLoader {
         for (Object value : base) entries.put(targetKey(value), value);
         for (Object value : overlay) entries.put(targetKey(value), value);
         return List.copyOf(entries.values());
+    }
+
+    private static List<Object> mergeUniqueList(List<?> base, List<?> overlay) {
+        java.util.LinkedHashSet<Object> entries = new java.util.LinkedHashSet<>(base);
+        entries.addAll(overlay);
+        return List.copyOf(entries);
     }
 
     private static List<Object> mergePorts(List<?> base, List<?> overlay) {

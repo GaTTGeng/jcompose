@@ -126,6 +126,34 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
+    void removesDuplicateEntriesFromComposeUniqueSequences() throws IOException {
+        Path directory = temporaryDirectory.resolve("unique-sequences");
+        Files.createDirectories(directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: example/app
+                    cap_add: [SYS_ADMIN, CHOWN]
+                    expose: [80, 443]
+                    security_opt: [label=role:ROLE]
+                """);
+        Files.writeString(directory.resolve("compose.override.yaml"), """
+                services:
+                  app:
+                    cap_add: [CHOWN, NET_ADMIN]
+                    expose: [443, 8080]
+                    security_opt: [label=role:ROLE, no-new-privileges:true]
+                """);
+
+        ServiceDefinition app = new ComposeFileLoader().loadMerged(directory,
+                List.of("compose.yaml", "compose.override.yaml")).services().get("app");
+
+        assertEquals(List.of("SYS_ADMIN", "CHOWN", "NET_ADMIN"), app.configuration().get("cap_add"));
+        assertEquals(List.of(80, 443, 8080), app.configuration().get("expose"));
+        assertEquals(List.of("label=role:ROLE", "no-new-privileges:true"), app.configuration().get("security_opt"));
+    }
+
+    @Test
     void replacesWindowsBindMountByContainerTarget() throws IOException {
         ComposeProject project = loadMerged("C:\\base:/data:ro", "D:\\override:/data:rw");
 
