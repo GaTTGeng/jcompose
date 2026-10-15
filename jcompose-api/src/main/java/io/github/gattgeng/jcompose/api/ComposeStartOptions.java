@@ -7,9 +7,9 @@ import java.util.Objects;
  * Options for starting already-created containers.
  * @param services Restricts the start to these service names; null starts every project service.
  * @param attach Receives output from the started containers; null does not attach.
- * @param attachTo Stream names to attach to when {@link Attach} is set.
+ * @param attachTo Stream names to attach to when {@link #attach()} is set.
  * @param waitForCompletion Block until the started containers are running (or healthy), instead of returning once start is issued.
- * @param waitTimeoutSeconds Upper bound in seconds for {@link Wait} before the call fails.
+ * @param waitTimeoutSeconds Upper bound in seconds for {@link #waitForCompletion()} before the call fails.
  * @param dependencyWaitTimeoutSeconds Maximum seconds to wait for each dependency to become ready; null waits until readiness, failure, or cancellation.
  */
 public record ComposeStartOptions(
@@ -50,8 +50,8 @@ public record ComposeStartOptions(
         public Builder attach(ILogConsumer value) { this.attach = value; return this; }
 
         /**
-         * Stream names to attach to when {@link Attach} is set.
-         * @param value Stream names to attach to when {@link Attach} is set.
+         * Stream names to attach to when {@link ComposeStartOptions#attach()} is set.
+         * @param value Stream names to attach to when {@link ComposeStartOptions#attach()} is set.
          * @return this builder
          */
         public Builder attachTo(List<String> value) { this.attachTo = value; return this; }
@@ -64,8 +64,8 @@ public record ComposeStartOptions(
         public Builder waitForCompletion(boolean value) { this.waitForCompletion = value; return this; }
 
         /**
-         * Upper bound in seconds for {@link Wait} before the call fails.
-         * @param value Upper bound in seconds for {@link Wait} before the call fails.
+         * Upper bound in seconds for {@link ComposeStartOptions#waitForCompletion()} before the call fails.
+         * @param value Upper bound in seconds for {@link ComposeStartOptions#waitForCompletion()} before the call fails.
          * @return this builder
          */
         public Builder waitTimeoutSeconds(Integer value) { this.waitTimeoutSeconds = value; return this; }
