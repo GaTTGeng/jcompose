@@ -126,12 +126,14 @@ public final class ComposeService implements IComposeService {
 
     @Override
     public CompletableFuture<Void> stopAsync(ComposeProjectContext context, ComposeStopOptions options) {
-        int timeout = positiveTimeout(options == null ? null : options.timeoutSeconds());
+        Integer timeout = options == null ? null : options.timeoutSeconds();
         return execute(context, client -> {
             List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
             for (Container container : projectContainers(client, context.projectName(), selectedServices)) {
                 try {
-                    client.stopContainerCmd(container.getId()).withTimeout(timeout).exec();
+                    var stop = client.stopContainerCmd(container.getId());
+                    if (timeout != null) stop.withTimeout(timeout);
+                    stop.exec();
                 } catch (DockerException ignored) {
                     continue;
                 }
@@ -142,11 +144,13 @@ public final class ComposeService implements IComposeService {
 
     @Override
     public CompletableFuture<Void> restartAsync(ComposeProjectContext context, ComposeRestartOptions options) {
-        int timeout = positiveTimeout(options == null ? null : options.timeoutSeconds());
+        Integer timeout = options == null ? null : options.timeoutSeconds();
         return execute(context, client -> {
             List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
             for (Container container : projectContainers(client, context.projectName(), selectedServices)) {
-                client.restartContainerCmd(container.getId()).withTimeout(timeout).exec();
+                var restart = client.restartContainerCmd(container.getId());
+                if (timeout != null) restart.withTimeout(timeout);
+                restart.exec();
             }
         });
     }
@@ -160,7 +164,7 @@ public final class ComposeService implements IComposeService {
                 for (Container container : containers) {
                     boolean stopAccepted = true;
                     try {
-                        client.stopContainerCmd(container.getId()).withTimeout(DEFAULT_STOP_TIMEOUT_SECONDS).exec();
+                        client.stopContainerCmd(container.getId()).exec();
                     } catch (DockerException ignored) {
                         stopAccepted = false;
                         // Continue removing the remaining project containers.
@@ -183,7 +187,7 @@ public final class ComposeService implements IComposeService {
 
     @Override
     public CompletableFuture<Void> downAsync(ComposeProjectContext context, ComposeDownOptions options) {
-        int timeout = positiveTimeout(options == null ? null : options.timeoutSeconds());
+        Integer timeout = options == null ? null : options.timeoutSeconds();
         return execute(context, client -> {
             String removeImages = options == null ? null : options.removeImages();
             if (removeImages != null && !removeImages.equals("all") && !removeImages.equals("local"))
@@ -204,7 +208,9 @@ public final class ComposeService implements IComposeService {
                     : downImageReferences(context, selection, removeImages, project, containers, options != null && options.removeOrphans());
             for (Container container : containers) {
                 try {
-                    client.stopContainerCmd(container.getId()).withTimeout(timeout).exec();
+                    var stop = client.stopContainerCmd(container.getId());
+                    if (timeout != null) stop.withTimeout(timeout);
+                    stop.exec();
                 } catch (DockerException ignored) {
                     // Continue teardown when the container is already stopped or unavailable.
                 }

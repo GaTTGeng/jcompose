@@ -6,7 +6,7 @@ import java.util.Objects;
 /**
  * Options for stopping the project's containers.
  * @param services Restricts the stop to these service names; null stops every project service.
- * @param timeoutSeconds Grace period in seconds before containers are force-killed.
+ * @param timeoutSeconds Optional grace period in seconds before containers are force-killed; null uses each container's configured stop timeout.
  */
 public record ComposeStopOptions(
         List<String> services,
@@ -30,8 +30,8 @@ public record ComposeStopOptions(
         public Builder services(List<String> value) { this.services = value; return this; }
 
         /**
-         * Grace period in seconds before containers are force-killed.
-         * @param value Grace period in seconds before containers are force-killed.
+         * Optional grace period in seconds before containers are force-killed; null uses each container's configured stop timeout.
+         * @param value Grace period in seconds before containers are force-killed; null uses each container's configured stop timeout.
          * @return this builder
          */
         public Builder timeoutSeconds(Integer value) { this.timeoutSeconds = value; return this; }

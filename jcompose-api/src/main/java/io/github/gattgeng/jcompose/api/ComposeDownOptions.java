@@ -9,7 +9,7 @@ import java.util.Objects;
  * @param removeOrphans Also remove containers of services that no longer exist in the Compose file.
  * @param removeImages Image removal policy: <code>all</code> removes every project image, <code>local</code> only untagged ones.
  * @param services Restricts the teardown to these service names; networks are cleaned up only when the whole project goes down.
- * @param timeoutSeconds Grace period in seconds when stopping containers before force-removal.
+ * @param timeoutSeconds Optional grace period in seconds when stopping containers before force-removal; null uses each container's configured stop timeout.
  */
 public record ComposeDownOptions(
         boolean removeVolumes,
@@ -60,8 +60,8 @@ public record ComposeDownOptions(
         public Builder services(List<String> value) { this.services = value; return this; }
 
         /**
-         * Grace period in seconds when stopping containers before force-removal.
-         * @param value Grace period in seconds when stopping containers before force-removal.
+         * Optional grace period in seconds when stopping containers before force-removal; null uses each container's configured stop timeout.
+         * @param value Grace period in seconds when stopping containers before force-removal; null uses each container's configured stop timeout.
          * @return this builder
          */
         public Builder timeoutSeconds(Integer value) { this.timeoutSeconds = value; return this; }
