@@ -1277,7 +1277,8 @@ public final class ComposeService implements IComposeService {
                 value -> parseByteSize(String.valueOf(value)));
         Object memoryReservation = serviceMemoryReservation != null ? serviceMemoryReservation : deployMemoryReservation;
         if (memoryReservation != null) host.withMemoryReservation(parseByteSize(String.valueOf(memoryReservation)));
-        List<com.github.dockerjava.api.model.DeviceRequest> deviceRequests = deployDeviceRequests(config);
+        List<com.github.dockerjava.api.model.DeviceRequest> deviceRequests = new ArrayList<>(deployDeviceRequests(config));
+        deviceRequests.addAll(serviceGpuRequests(config.get("gpus")));
         if (!deviceRequests.isEmpty()) host.withDeviceRequests(deviceRequests);
         if (config.get("mem_swappiness") != null) host.withMemorySwappiness(parseLong(config.get("mem_swappiness"), "mem_swappiness"));
         if (config.get("cpu_shares") != null) host.withCpuShares(Math.toIntExact(parseLong(config.get("cpu_shares"), "cpu_shares")));
@@ -1343,6 +1344,49 @@ public final class ComposeService implements IComposeService {
                     .withCapabilities(List.of(capabilities));
             if (count != null) request.withCount(count);
             if (idsValue != null) request.withDeviceIds(deviceIds);
+            if (!options.isEmpty()) request.withOptions(options);
+            requests.add(request);
+        }
+        return List.copyOf(requests);
+    }
+
+    private static List<com.github.dockerjava.api.model.DeviceRequest> serviceGpuRequests(Object configured) {
+        if (configured == null) return List.of();
+        if ("all".equalsIgnoreCase(String.valueOf(configured))) {
+            return List.of(new com.github.dockerjava.api.model.DeviceRequest()
+                    .withCount(-1).withCapabilities(List.of(List.of("gpu"))));
+        }
+        if (!(configured instanceof List<?> entries)) {
+            throw new IllegalArgumentException("Service 'gpus' must be 'all' or a list of mappings.");
+        }
+        List<com.github.dockerjava.api.model.DeviceRequest> requests = new ArrayList<>();
+        for (Object entry : entries) {
+            if (!(entry instanceof Map<?, ?> values)) {
+                throw new IllegalArgumentException("Each service 'gpus' entry must be a mapping.");
+            }
+            List<String> capabilities = asStringList(values.get("capabilities"));
+            if (capabilities.isEmpty()) capabilities = List.of("gpu");
+            Object countValue = values.get("count");
+            Object idsValue = values.get("device_ids");
+            if (countValue != null && idsValue != null) {
+                throw new IllegalArgumentException("Service 'gpus' count and device_ids are mutually exclusive.");
+            }
+            var request = new com.github.dockerjava.api.model.DeviceRequest()
+                    .withDriver(stringValue(values.get("driver"), null))
+                    .withCapabilities(List.of(capabilities));
+            if (countValue != null) {
+                if ("all".equalsIgnoreCase(String.valueOf(countValue))) request.withCount(-1);
+                else {
+                    long count = parseLong(countValue, "gpus.count");
+                    if (count < 0) throw new IllegalArgumentException("Service 'gpus.count' must be non-negative or 'all'.");
+                    request.withCount(Math.toIntExact(count));
+                }
+            } else if (idsValue != null) {
+                request.withDeviceIds(asStringList(idsValue));
+            } else {
+                request.withCount(-1);
+            }
+            Map<String, String> options = stringMap(values.get("options"));
             if (!options.isEmpty()) request.withOptions(options);
             requests.add(request);
         }
