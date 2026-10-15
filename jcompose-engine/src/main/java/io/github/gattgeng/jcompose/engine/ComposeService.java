@@ -189,8 +189,20 @@ public final class ComposeService implements IComposeService {
             if (removeImages != null && !removeImages.equals("all") && !removeImages.equals("local"))
                 throw new IllegalArgumentException("Invalid image removal policy '" + removeImages + "'; expected 'local' or 'all'.");
             ExistingServiceSelection selection = selectExistingServices(context, options == null ? null : options.services());
-            List<String> imagesToRemove = removeImages == null ? List.of() : downImageReferences(client, context, selection, removeImages);
-            for (Container container : projectContainers(client, context.projectName(), selection.serviceNames())) {
+            ComposeProject project = loader.hasComposeFile(context.workingDirectory(), context.composeFileName())
+                    ? loader.loadProject(context.workingDirectory(), context.composeFileName()) : null;
+            List<Container> containers = new ArrayList<>(projectContainers(client, context.projectName(), selection.serviceNames()));
+            if (options != null && options.removeOrphans() && project != null) {
+                java.util.Set<String> containerIds = containers.stream().map(Container::getId).collect(java.util.stream.Collectors.toSet());
+                for (Container container : projectContainers(client, context.projectName(), null)) {
+                    String service = label(container, ComposeConstants.SERVICE_LABEL);
+                    if ((service == null || !project.services().containsKey(service)) && containerIds.add(container.getId()))
+                        containers.add(container);
+                }
+            }
+            List<String> imagesToRemove = removeImages == null ? List.of()
+                    : downImageReferences(context, selection, removeImages, project, containers, options != null && options.removeOrphans());
+            for (Container container : containers) {
                 try {
                     client.stopContainerCmd(container.getId()).withTimeout(timeout).exec();
                 } catch (DockerException ignored) {
@@ -213,10 +225,10 @@ public final class ComposeService implements IComposeService {
         });
     }
 
-    private List<String> downImageReferences(DockerClient client, ComposeProjectContext context, ExistingServiceSelection selection, String policy) {
+    private List<String> downImageReferences(ComposeProjectContext context, ExistingServiceSelection selection, String policy,
+                                            ComposeProject project, List<Container> containers, boolean removeOrphans) {
         java.util.Set<String> images = new java.util.LinkedHashSet<>();
-        if (loader.hasComposeFile(context.workingDirectory(), context.composeFileName())) {
-            ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
+        if (project != null) {
             for (String serviceName : selection.serviceNames()) {
                 ServiceDefinition service = project.services().get(serviceName);
                 if (service == null) continue;
@@ -226,8 +238,16 @@ public final class ComposeService implements IComposeService {
                 if ((image == null || image.isBlank()) && !hasBuild) continue;
                 images.add(image == null || image.isBlank() ? context.projectName() + "-" + serviceName : image);
             }
+            if (removeOrphans) for (Container container : containers) {
+                String service = label(container, ComposeConstants.SERVICE_LABEL);
+                if (service != null && project.services().containsKey(service)) continue;
+                String image = container.getImage();
+                if (image == null || image.isBlank()) continue;
+                if (policy.equals("local") && (service == null || !image.equals(context.projectName() + "-" + service))) continue;
+                images.add(image);
+            }
         } else {
-            for (Container container : projectContainers(client, context.projectName(), selection.serviceNames())) {
+            for (Container container : containers) {
                 String service = label(container, ComposeConstants.SERVICE_LABEL);
                 String image = container.getImage();
                 if (image == null || image.isBlank()) continue;
