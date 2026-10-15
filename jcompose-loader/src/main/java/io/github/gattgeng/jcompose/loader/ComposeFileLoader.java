@@ -138,9 +138,22 @@ public final class ComposeFileLoader {
         Map<String, String> resolved = new LinkedHashMap<>();
         try {
             for (Object item : files) {
-                String path = item instanceof Map<?, ?> m ? String.valueOf(m.get("path")) : String.valueOf(item);
+                String path;
+                boolean required = true;
+                if (item instanceof Map<?, ?> mapping) {
+                    Object rawPath = mapping.get("path");
+                    if (!(rawPath instanceof String value) || value.isBlank())
+                        throw new IOException("env_file entries must define a non-empty path.");
+                    path = value;
+                    Object rawRequired = mapping.get("required");
+                    if (Boolean.FALSE.equals(rawRequired) || "false".equalsIgnoreCase(String.valueOf(rawRequired)))
+                        required = false;
+                } else path = String.valueOf(item);
                 Path envPath = base.resolve(path).normalize();
-                if (!Files.isRegularFile(envPath)) throw new IOException("env_file not found: " + envPath);
+                if (!Files.isRegularFile(envPath)) {
+                    if (!required) continue;
+                    throw new IOException("env_file not found: " + envPath);
+                }
                 resolved.putAll(parseEnvFile(envPath));
             }
         } catch (IOException exception) {
