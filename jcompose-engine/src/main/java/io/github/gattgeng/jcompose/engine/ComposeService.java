@@ -470,7 +470,10 @@ public final class ComposeService implements IComposeService {
                     if (image == null || image.isBlank()) continue;
                     if (!shouldPullForExplicitPull(client, image, service)) continue;
                     try {
-                        pullImage(client, context.registryAuth(), image, options == null ? null : options.platform());
+                        String platform = options == null ? null : options.platform();
+                        if (platform == null || platform.isBlank())
+                            platform = stringValue(service.configuration().get("platform"), null);
+                        pullImage(client, context.registryAuth(), image, platform);
                     } catch (RuntimeException failure) {
                         if (failure instanceof java.util.concurrent.CancellationException) throw failure;
                         if (options == null || !options.ignoreFailures()) throw failure;
