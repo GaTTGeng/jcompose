@@ -109,7 +109,7 @@ The engine is being ported from the ComposeSharp feature scope, one documented a
 | Generation | `generateAsync` renders a normalized YAML snapshot from configuration retained by the loader; it does not connect to Docker or write files. |
 | Orchestration | Basic service reconciliation, one-off `run`, host/container `copy`, replica scaling, exit waiting, selected dependency conditions, health checks, declared network/volume resource definitions, project network attachments, DNS settings, CPU/memory limits, image builds/publishing, `exec`/`attach`, build-context watch events, container filesystem export, and image commit are implemented as subsets; full Compose lifecycle behavior is in progress. |
 
-The [Docker Compose field support matrix](docs/compose-field-matrix.md) is the source of truth for field-level and operation status. For example, `volumesAsync` lists project-labeled Docker volumes; a nonempty service selection is currently not applied. The [roadmap](docs/roadmap.md) records the complete 3.0.0 synchronization scope and release criteria.
+The [Docker Compose field support matrix](docs/compose-field-matrix.md) is the source of truth for field-level and operation status. For example, `volumesAsync` lists project-labeled Docker volumes and applies an explicit service selection across running and stopped project containers. The [roadmap](docs/roadmap.md) records the complete 3.0.0 synchronization scope and release criteria.
 
 ## Docker Compose compatibility
 

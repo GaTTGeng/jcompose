@@ -561,7 +561,7 @@ public final class ComposeService implements IComposeService {
                 if (requestedServices != null) {
                     List<String> selectedServices = selectExistingServices(context, requestedServices).serviceNames();
                     usedVolumeNames = new java.util.HashSet<>();
-                    for (Container container : projectContainers(client, context.projectName(), selectedServices, false)) {
+                    for (Container container : projectContainers(client, context.projectName(), selectedServices, true)) {
                         if (container.getMounts() == null) continue;
                         for (var mount : container.getMounts()) {
                             if (mount.getName() != null) usedVolumeNames.add(mount.getName());

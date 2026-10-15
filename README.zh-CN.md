@@ -109,7 +109,7 @@ jcompose 以 ComposeSharp 的功能范围作为同步路线，并为每一项记
 | 配置生成 | `generateAsync` 从 Loader 保留的配置渲染规范化 YAML 快照；不连接 Docker，也不写文件。 |
 | 服务编排 | 已实现基础服务协调、一次性 `run`、主机与容器间 `copy`、副本伸缩、容器退出等待、部分依赖条件、健康检查、网络/卷资源定义、项目网络附件、DNS 设置、CPU/内存限制、镜像构建与推送、`exec`/`attach`、构建目录变更流、文件系统导出和容器提交等子集；完整 Compose 生命周期行为仍在开发中。 |
 
-[Docker Compose 字段支持矩阵](docs/compose-field-matrix.md)是字段和操作状态的准确信息源。例如，`volumesAsync` 会列出带项目标签的 Docker 卷；当前不会应用非空的服务筛选。[路线图](docs/roadmap.md)记录完整的 3.0.0 同步范围和发布条件。
+[Docker Compose 字段支持矩阵](docs/compose-field-matrix.md)是字段和操作状态的准确信息源。例如，`volumesAsync` 会列出带项目标签的 Docker 卷，并根据显式服务筛选关联到该服务的运行中或已停止容器所挂载的卷。[路线图](docs/roadmap.md)记录完整的 3.0.0 同步范围和发布条件。
 
 ## Docker Compose 兼容性
 
