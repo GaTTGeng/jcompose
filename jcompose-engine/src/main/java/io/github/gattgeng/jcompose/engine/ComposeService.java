@@ -582,6 +582,43 @@ public final class ComposeService implements IComposeService {
         return List.of();
     }
 
+    private record VolumeFromReference(String source, boolean externalContainer,
+                                       com.github.dockerjava.api.model.AccessMode accessMode) {}
+
+    private static List<VolumeFromReference> volumeFromReferences(Object value) {
+        List<VolumeFromReference> references = new ArrayList<>();
+        for (String entry : asStringList(value)) {
+            String[] parts = entry.split(":", -1);
+            boolean externalContainer = "container".equals(parts[0]);
+            int sourceIndex = externalContainer ? 1 : 0;
+            int expectedParts = externalContainer ? 2 : 1;
+            if (parts.length < expectedParts || parts.length > expectedParts + 1
+                    || parts[sourceIndex].isBlank()) {
+                throw new IllegalArgumentException("Invalid volumes_from entry: " + entry);
+            }
+            com.github.dockerjava.api.model.AccessMode accessMode = com.github.dockerjava.api.model.AccessMode.DEFAULT;
+            if (parts.length == expectedParts + 1) {
+                try {
+                    accessMode = com.github.dockerjava.api.model.AccessMode.valueOf(parts[expectedParts]);
+                } catch (IllegalArgumentException exception) {
+                    throw new IllegalArgumentException("Invalid volumes_from access mode in entry: " + entry, exception);
+                }
+            }
+            references.add(new VolumeFromReference(parts[sourceIndex], externalContainer, accessMode));
+        }
+        return List.copyOf(references);
+    }
+
+    private static List<String> serviceDependencyNames(ServiceDefinition service) {
+        java.util.LinkedHashSet<String> dependencies = new java.util.LinkedHashSet<>(
+                dependencyNames(service.configuration().get("depends_on")));
+        volumeFromReferences(service.configuration().get("volumes_from")).stream()
+                .filter(reference -> !reference.externalContainer())
+                .map(VolumeFromReference::source)
+                .forEach(dependencies::add);
+        return List.copyOf(dependencies);
+    }
+
     private static java.util.Comparator<Container> containerOrder() {
         return java.util.Comparator
                 .comparing((Container container) -> label(container, ComposeConstants.SERVICE_LABEL),
@@ -711,7 +748,7 @@ public final class ComposeService implements IComposeService {
         // Include only the transitive dependency closure of the selected services.
         for (int index = 0; index < pending.size(); index++) {
             ServiceDefinition service = pending.get(index);
-            for (String name : dependencyNames(service.configuration().get("depends_on"))) {
+            for (String name : serviceDependencyNames(service)) {
                 ServiceDefinition dependency = byName.get(name);
                 if (dependency == null) throw new IllegalArgumentException("Service '" + service.name()
                         + "' depends on unknown service '" + name + "'.");
@@ -725,7 +762,7 @@ public final class ComposeService implements IComposeService {
         while (!remainingNames.isEmpty()) {
             List<ServiceDefinition> ready = project.services().values().stream()
                     .filter(service -> remainingNames.contains(service.name()))
-                    .filter(service -> dependencyNames(service.configuration().get("depends_on")).stream()
+                    .filter(service -> serviceDependencyNames(service).stream()
                             .allMatch(orderedNames::contains))
                     .toList();
             if (ready.isEmpty()) throw new IllegalArgumentException("Circular service dependency among: "
@@ -864,7 +901,7 @@ public final class ComposeService implements IComposeService {
             labels.put(ComposeConstants.CONFIG_FILES_LABEL, project.sourceFile().toString());
             labels.putAll(stringMap(service.configuration().get("labels")));
 
-            com.github.dockerjava.api.model.HostConfig host = serviceHostConfig(project, context.projectName(), service);
+            com.github.dockerjava.api.model.HostConfig host = serviceHostConfig(client, project, context.projectName(), service);
             var command = client.createContainerCmd(image).withName(containerName(context.projectName(), service, replicas, index))
                     .withLabels(labels).withHostConfig(host);
             com.github.dockerjava.api.model.HealthCheck healthcheck = serviceHealthcheck(service);
@@ -1036,13 +1073,14 @@ public final class ComposeService implements IComposeService {
         }
     }
 
-    private static com.github.dockerjava.api.model.HostConfig serviceHostConfig(ComposeProject project, String projectName,
+    private static com.github.dockerjava.api.model.HostConfig serviceHostConfig(DockerClient client, ComposeProject project, String projectName,
                                                                                 ServiceDefinition service) {
         Map<String, Object> config = service.configuration();
         var host = com.github.dockerjava.api.model.HostConfig.newHostConfig();
         host.withNetworkMode(stringValue(config.get("network_mode"), primaryNetwork(projectName, project, service)));
         List<com.github.dockerjava.api.model.Bind> binds = serviceBinds(project, projectName, service);
         if (!binds.isEmpty()) host.withBinds(binds);
+        applyVolumesFrom(client, project, projectName, service, host);
         Object restart = config.get("restart");
         if (restart != null) host.withRestartPolicy(restartPolicy(String.valueOf(restart)));
         if (config.get("privileged") instanceof Boolean value) host.withPrivileged(value);
@@ -1083,6 +1121,33 @@ public final class ComposeService implements IComposeService {
         if (!sysctls.isEmpty()) host.withSysctls(sysctls);
         applyResourceConfig(host, config);
         return host;
+    }
+
+    private static void applyVolumesFrom(DockerClient client, ComposeProject project, String projectName,
+                                         ServiceDefinition service,
+                                         com.github.dockerjava.api.model.HostConfig host) {
+        List<com.github.dockerjava.api.model.VolumesFrom> volumesFrom = new ArrayList<>();
+        for (VolumeFromReference reference : volumeFromReferences(service.configuration().get("volumes_from"))) {
+            String containerName;
+            if (reference.externalContainer()) {
+                containerName = reference.source();
+            } else {
+                ServiceDefinition sourceService = project.services().get(reference.source());
+                if (sourceService == null) {
+                    throw new IllegalArgumentException("Service '" + service.name() + "' volumes_from references unknown service '"
+                            + reference.source() + "'.");
+                }
+                Container sourceContainer = projectContainers(client, projectName, List.of(sourceService.name()), true).stream()
+                        .sorted(containerOrder()).findFirst()
+                        .orElseThrow(() -> new IllegalStateException("Service '" + service.name()
+                                + "' volumes_from requires service '" + sourceService.name() + "' to have a container first."));
+                String[] names = sourceContainer.getNames();
+                containerName = names == null || names.length == 0 ? sourceContainer.getId()
+                        : names[0].startsWith("/") ? names[0].substring(1) : names[0];
+            }
+            volumesFrom.add(new com.github.dockerjava.api.model.VolumesFrom(containerName, reference.accessMode()));
+        }
+        if (!volumesFrom.isEmpty()) host.withVolumesFrom(volumesFrom);
     }
 
     private static void applyDnsConfig(com.github.dockerjava.api.model.HostConfig host, Map<String, Object> config) {
@@ -2309,6 +2374,7 @@ public final class ComposeService implements IComposeService {
                 var host = com.github.dockerjava.api.model.HostConfig.newHostConfig();
                 host.withNetworkMode(stringValue(service.configuration().get("network_mode"),
                         primaryNetwork(context.projectName(), project, service)));
+                applyVolumesFrom(client, project, context.projectName(), service, host);
                 applyLoggingConfig(host, service.configuration());
                 applyDnsConfig(host, service.configuration());
                 applyResourceConfig(host, service.configuration());
