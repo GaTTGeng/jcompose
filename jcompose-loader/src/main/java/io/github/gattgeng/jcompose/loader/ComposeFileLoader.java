@@ -29,6 +29,11 @@ import java.util.TreeMap;
 /** Loads Compose YAML, expands variables, resolves service env files, and merges overlays. */
 public final class ComposeFileLoader {
     private static final List<String> DEFAULT_FILES = List.of("compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml");
+    private static final Map<String, String> DEFAULT_OVERRIDES = Map.of(
+            "compose.yaml", "compose.override.yaml",
+            "compose.yml", "compose.override.yml",
+            "docker-compose.yaml", "docker-compose.override.yaml",
+            "docker-compose.yml", "docker-compose.override.yml");
     private static final Set<String> REPLACE_FIELDS = Set.of("command", "entrypoint", "test");
     private static final Set<String> KEYED_LIST_FIELDS = Set.of("environment", "labels");
     private static final Set<String> TARGETED_LIST_FIELDS = Set.of("volumes", "secrets", "configs");
@@ -47,6 +52,28 @@ public final class ComposeFileLoader {
         Path file = resolve(workingDirectory, composeFileName);
         Map<String, Object> root = read(file, environmentOverrides);
         return toProject(file, root);
+    }
+
+    /**
+     * Loads a project using Docker Compose's conventional default override file when the
+     * requested name is a conventional default. Custom file paths remain single-file loads.
+     */
+    public ComposeProject loadProject(Path workingDirectory, String composeFileName) {
+        return loadProject(workingDirectory, composeFileName, null);
+    }
+
+    /** Loads a project and its conventional override, applying per-call interpolation values. */
+    public ComposeProject loadProject(Path workingDirectory, String composeFileName,
+                                      Map<String, String> environmentOverrides) {
+        Path file = resolve(workingDirectory, composeFileName);
+        String overrideName = defaultOverrideName(composeFileName, file.getFileName().toString());
+        if (overrideName != null) {
+            Path override = file.resolveSibling(overrideName);
+            if (Files.isRegularFile(override)) {
+                return loadMerged(workingDirectory, List.of(file.toString(), override.toString()), environmentOverrides);
+            }
+        }
+        return toProject(file, read(file, environmentOverrides));
     }
 
     /** Returns whether the requested/default Compose file can be discovered from the working directory. */
@@ -83,6 +110,15 @@ public final class ComposeFileLoader {
         if (file != null) return file;
         Path root = directory.toAbsolutePath().normalize();
         throw new IllegalArgumentException("Compose file not found from " + root + ": " + requested);
+    }
+
+    private static String defaultOverrideName(String requested, String resolvedName) {
+        if (requested == null || requested.isBlank()) return DEFAULT_OVERRIDES.get(resolvedName);
+        Path requestedPath = Path.of(requested);
+        Path requestedName = requestedPath.getFileName();
+        if (requestedPath.isAbsolute() || requestedPath.getNameCount() != 1 || requestedName == null
+                || !DEFAULT_FILES.contains(requestedName.toString())) return null;
+        return DEFAULT_OVERRIDES.get(resolvedName);
     }
 
     private static Path find(Path directory, String requested) {

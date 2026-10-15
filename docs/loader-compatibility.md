@@ -4,7 +4,7 @@ This page documents behavior in the current jcompose loader. Docker Compose is t
 
 ## File discovery and project validation
 
-The loader uses the requested file when it exists under the supplied working directory. When the requested name is one of the conventional defaults, it searches `compose.yaml`, `compose.yml`, `docker-compose.yaml`, and `docker-compose.yml` in that order in the working directory and then each parent directory. A missing custom filename is treated as an explicit missing path and does not fall back to another file. Paths are normalized to absolute paths for loading. The YAML root must be a mapping with a nonempty `services` mapping. Each service must be a mapping and currently must declare either `image` or `build`.
+The loader uses the requested file when it exists under the supplied working directory. When the requested name is one of the conventional defaults, it searches `compose.yaml`, `compose.yml`, `docker-compose.yaml`, and `docker-compose.yml` in that order in the working directory and then each parent directory. `loadProject` also merges the matching optional conventional override file beside the resolved base file (for example, `compose.yaml` with `compose.override.yaml`). A missing custom filename is treated as an explicit missing path and does not fall back to another file. Paths are normalized to absolute paths for loading. The YAML root must be a mapping with a nonempty `services` mapping. Each service must be a mapping and currently must declare either `image` or `build`.
 
 YAML is loaded with SnakeYAML's safe constructor and duplicate mapping keys are rejected. Service values are exposed through `ServiceDefinition` as normalized mappings; this should not be mistaken for comprehensive schema validation. Consult the [field support matrix](compose-field-matrix.md) before using a field at runtime.
 
@@ -27,7 +27,7 @@ Interpolation runs against raw YAML text before YAML parsing. The loader current
 
 Process environment values take precedence over values in the project `.env` file. Defaults and replacement expressions are recursively interpolated, with a guard against excessive nesting. This is the current implementation contract; verify edge cases against Docker Compose before expanding compatibility claims.
 
-`ComposeFileLoader.load` and `loadMerged` accept per-call environment overrides. For that call, the precedence is explicit overrides, then the process environment, then the `.env` beside each Compose file. Overrides are never written to the process environment, so separate or concurrent loads remain isolated. On Windows, override names are matched without regard to case; on other platforms they are case-sensitive.
+`ComposeFileLoader.load`, `loadProject`, and `loadMerged` accept per-call environment overrides. For that call, the precedence is explicit overrides, then the process environment, then the `.env` beside each Compose file. Overrides are never written to the process environment, so separate or concurrent loads remain isolated. On Windows, override names are matched without regard to case; on other platforms they are case-sensitive.
 
 The parser is intentionally smaller than the full Compose interpolation and dotenv grammars. In particular, it interpolates the document text before YAML parsing, rather than only Compose-defined value nodes, and the `.env` reader does not implement all quoting, escape, multiline, nested-expression, or format variants. Unsupported shell expressions are not evaluated. An unset variable without an operator becomes empty text.
 
@@ -41,7 +41,7 @@ Service `env_file` values are container environment input and do not participate
 
 The loader retains service profile values; operation-level selection is handled by the engine. A null service selection uses the active profiles in `ComposeProjectContext`; explicit selection and profile semantics are documented per operation as those operations are implemented.
 
-`loadMerged` accepts an ordered list of Compose files, interpolates each file as it is read, then applies the incremental mapping/list merge described in [multi-file merge semantics](merge-semantics.md). It is not full Docker Compose merge compatibility. The `!reset` and `!override` overlay tags are recognized: `!reset` clears to the inherited value's empty collection shape or `null`, and `!override` replaces the inherited value. Other custom YAML tags and unsupported constructs are not treated as Compose directives.
+`loadProject` applies the matching optional conventional override file. `loadMerged` accepts an explicit ordered list of Compose files, interpolates each file as it is read, then applies the incremental mapping/list merge described in [multi-file merge semantics](merge-semantics.md). These paths are not full Docker Compose merge compatibility. The `!reset` and `!override` overlay tags are recognized: `!reset` clears to the inherited value's empty collection shape or `null`, and `!override` replaces the inherited value. Other custom YAML tags and unsupported constructs are not treated as Compose directives.
 
 ## Compatibility changes
 

@@ -1,6 +1,6 @@
 # Multi-file merge semantics
 
-`ComposeFileLoader.loadMerged` accepts an ordered list of Compose files. The first file is the base and each following file is an overlay. The merged project resolves relative paths from the first file's directory, matching Docker Compose's base-file path rule.
+`ComposeFileLoader.loadProject` automatically merges the matching optional conventional override file when present. `ComposeFileLoader.loadMerged` accepts an explicit ordered list of Compose files. In either case, the first file is the base and each following file is an overlay. The merged project resolves relative paths from the first file's directory, matching Docker Compose's base-file path rule.
 
 The current implementation is an incremental subset, not full Docker Compose merge compatibility. These rules describe current jcompose behavior; ComposeSharp is the feature synchronization source, while Docker Compose defines the compatibility behavior:
 

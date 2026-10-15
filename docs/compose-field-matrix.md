@@ -12,7 +12,7 @@ This matrix tracks **jcompose's** behavior against Docker Compose. ComposeSharp 
 | Planned | In the ComposeSharp 3.0.0 feature scope, but not implemented or verified in jcompose. |
 | Unsupported | Known unsupported behavior; no compatibility claim is made. |
 
-The repository is currently an early `3.0.0-SNAPSHOT`. When no Compose filename is explicitly supplied, jcompose prefers `compose.yaml` and searches conventional filenames from the working directory upward. It does not yet load the conventional `compose.override.yaml` automatically. Most Compose-shaped service fields are retained in `ServiceDefinition` as raw values. The engine implements a limited subset of build and service lifecycle behavior. Therefore, **no field should be read as full Docker Compose support unless its row explicitly says Implemented**. At this snapshot, no Compose service field has been verified as fully implemented against Docker Compose.
+The repository is currently an early `3.0.0-SNAPSHOT`. When no Compose filename is explicitly supplied, jcompose prefers `compose.yaml` and searches conventional filenames from the working directory upward. Project loading also merges the matching optional conventional override file. Most Compose-shaped service fields are retained in `ServiceDefinition` as raw values. The engine implements a limited subset of build and service lifecycle behavior. Therefore, **no field should be read as full Docker Compose support unless its row explicitly says Implemented**. At this snapshot, no Compose service field has been verified as fully implemented against Docker Compose.
 
 ## Project and service fields
 
