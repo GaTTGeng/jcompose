@@ -30,10 +30,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.Flow;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -49,6 +54,8 @@ import java.util.regex.Pattern;
  */
 public final class ComposeService implements IComposeService {
     private static final int DEFAULT_STOP_TIMEOUT_SECONDS = 10;
+    private static final ExecutorService OPERATION_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
+    private static final ThreadLocal<OperationFuture<?>> CURRENT_OPERATION = new ThreadLocal<>();
     private static final Pattern ANSI_ESCAPE = Pattern.compile("\\u001B(?:\\[[0-?]*[ -/]*[@-~]|\\][^\\u0007]*(?:\\u0007|\\u001B\\\\))");
     private final ComposeFileLoader loader;
 
@@ -85,7 +92,7 @@ public final class ComposeService implements IComposeService {
             List<ServiceDefinition> ordered = project == null ? List.of()
                     : dependencyOrderedServices(project, selectConfigurationServices(project, context.profiles(),
                     options == null ? null : options.services()));
-            try (DockerClient client = DockerClientFactory.create(context)) {
+            try (DockerClient client = createDockerClient(context)) {
                 if (project == null) {
                     startExistingContainers(client, context.projectName(), options == null ? null : options.services());
                     return null;
@@ -170,7 +177,7 @@ public final class ComposeService implements IComposeService {
             java.util.Objects.requireNonNull(consumer, "consumer");
             ComposeLogsOptions effective = options == null ? ComposeLogsOptions.builder().build() : options;
             Integer tail = parseTail(effective.tail());
-            try (DockerClient client = DockerClientFactory.create(context)) {
+            try (DockerClient client = createDockerClient(context)) {
                 List<Container> containers = projectContainers(client, context.projectName(), services(effective.services()), true)
                         .stream().sorted(containerOrder()).toList();
                 List<LogCallback> callbacks = new ArrayList<>();
@@ -228,7 +235,7 @@ public final class ComposeService implements IComposeService {
         List<String> selectedServices = services(options == null ? null : options.services());
         boolean showAll = options == null || options.all();
         return supply(() -> {
-            try (DockerClient client = DockerClientFactory.create(context)) {
+            try (DockerClient client = createDockerClient(context)) {
                 List<Container> containers = projectContainers(client, context.projectName(), selectedServices, showAll);
                 return containers.stream().map(container -> containerResult(container, context.projectName())).toList();
             } catch (java.io.IOException exception) {
@@ -240,7 +247,7 @@ public final class ComposeService implements IComposeService {
     @Override
     public CompletableFuture<List<Stack>> listAsync(ComposeListOptions options) {
         return supply(() -> {
-            try (DockerClient client = DockerClientFactory.create(null)) {
+            try (DockerClient client = createDockerClient(null)) {
                 List<Container> allContainers = projectContainers(client, null, null, true);
                 java.util.Set<String> visibleProjects = null;
                 if (options == null || !options.all()) {
@@ -271,7 +278,7 @@ public final class ComposeService implements IComposeService {
     public CompletableFuture<List<ContainerProcSummary>> topAsync(ComposeProjectContext context, ComposeTopOptions options) {
         List<String> selectedServices = services(options == null ? null : options.services());
         return supply(() -> {
-            try (DockerClient client = DockerClientFactory.create(context)) {
+            try (DockerClient client = createDockerClient(context)) {
                 return projectContainers(client, context.projectName(), selectedServices, true).stream()
                         .filter(ComposeService::isRunning)
                         .sorted(containerOrder())
@@ -299,7 +306,7 @@ public final class ComposeService implements IComposeService {
     public CompletableFuture<List<ImageSummary>> imagesAsync(ComposeProjectContext context, ComposeImagesOptions options) {
         List<String> selectedServices = services(options == null ? null : options.services());
         return supply(() -> {
-            try (DockerClient client = DockerClientFactory.create(context)) {
+            try (DockerClient client = createDockerClient(context)) {
                 java.util.Set<String> usedImageIds = projectContainers(client, context.projectName(), selectedServices, true)
                         .stream().map(Container::getImageId).filter(java.util.Objects::nonNull)
                         .collect(java.util.stream.Collectors.toSet());
@@ -330,7 +337,7 @@ public final class ComposeService implements IComposeService {
                 case "sctp" -> InternetProtocol.SCTP;
                 default -> throw new IllegalArgumentException("Unsupported port protocol: " + protocolName);
             };
-            try (DockerClient client = DockerClientFactory.create(context)) {
+            try (DockerClient client = createDockerClient(context)) {
                 List<Container> running = projectContainers(client, context.projectName(), List.of(service), true).stream()
                         .filter(ComposeService::isRunning)
                         .sorted(containerOrder())
@@ -412,7 +419,7 @@ public final class ComposeService implements IComposeService {
     public CompletableFuture<List<VolumesSummary>> volumesAsync(ComposeProjectContext context, ComposeVolumesOptions options) {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
-            try (DockerClient client = DockerClientFactory.create(context)) {
+            try (DockerClient client = createDockerClient(context)) {
                 var response = client.listVolumesCmd().exec();
                 if (response == null || response.getVolumes() == null) return List.of();
                 List<String> requestedServices = options == null ? null : services(options.services());
@@ -438,7 +445,7 @@ public final class ComposeService implements IComposeService {
             List<ServiceDefinition> selected = selectConfigurationServices(project, context.profiles(),
                     options == null ? null : options.services());
             if (options != null && options.includeDeps()) selected = dependencyClosure(project, selected);
-            try (DockerClient client = DockerClientFactory.create(context)) {
+            try (DockerClient client = createDockerClient(context)) {
                 for (ServiceDefinition service : selected) {
                     String image = service.image();
                     if (image == null || image.isBlank()) continue;
@@ -463,7 +470,7 @@ public final class ComposeService implements IComposeService {
             ComposeProject project = loader.load(context.workingDirectory(), context.composeFileName());
             List<ServiceDefinition> selected = selectConfigurationServices(project, context.profiles(),
                     options == null ? null : options.services());
-            try (DockerClient client = DockerClientFactory.create(context)) {
+            try (DockerClient client = createDockerClient(context)) {
                 for (ServiceDefinition service : selected) {
                     String image = service.image();
                     if (image == null || image.isBlank()) continue;
@@ -1631,7 +1638,7 @@ public final class ComposeService implements IComposeService {
 
     private CompletableFuture<Void> execute(ComposeProjectContext context, DockerOperation operation) {
         return supply(() -> {
-            try (DockerClient client = DockerClientFactory.create(context)) {
+            try (DockerClient client = createDockerClient(context)) {
                 operation.accept(client);
                 return null;
             } catch (java.io.IOException exception) {
@@ -1641,7 +1648,73 @@ public final class ComposeService implements IComposeService {
     }
 
     private static <T> CompletableFuture<T> supply(Supplier<T> operation) {
-        return CompletableFuture.supplyAsync(operation);
+        OperationFuture<T> result = new OperationFuture<>();
+        Future<?> task = OPERATION_EXECUTOR.submit(() -> {
+            CURRENT_OPERATION.set(result);
+            try {
+                result.complete(operation.get());
+            } catch (Throwable failure) {
+                result.completeExceptionally(failure);
+            } finally {
+                CURRENT_OPERATION.remove();
+                result.releaseClients();
+            }
+        });
+        result.attach(task);
+        OperationFuture<?> parent = CURRENT_OPERATION.get();
+        if (parent != null) parent.registerChild(result);
+        return result;
+    }
+
+    private static DockerClient createDockerClient(ComposeProjectContext context) {
+        OperationFuture<?> operation = CURRENT_OPERATION.get();
+        if (operation != null && operation.isCancelled())
+            throw new java.util.concurrent.CancellationException("Compose operation was cancelled.");
+        DockerClient client = DockerClientFactory.create(context);
+        if (operation != null) operation.register(client);
+        return client;
+    }
+
+    private static final class OperationFuture<T> extends CompletableFuture<T> {
+        private final Set<DockerClient> clients = ConcurrentHashMap.newKeySet();
+        private final Set<OperationFuture<?>> children = ConcurrentHashMap.newKeySet();
+        private volatile Future<?> task;
+
+        private void attach(Future<?> value) {
+            task = value;
+            if (isCancelled()) value.cancel(true);
+        }
+
+        private void register(DockerClient client) {
+            clients.add(client);
+            if (isCancelled()) closeClients();
+        }
+
+        private void registerChild(OperationFuture<?> child) {
+            children.add(child);
+            child.whenComplete((value, failure) -> children.remove(child));
+            if (isCancelled()) child.cancel(true);
+        }
+
+        private void releaseClients() { clients.clear(); }
+
+        @Override
+        public boolean cancel(boolean mayInterruptIfRunning) {
+            boolean cancelled = super.cancel(mayInterruptIfRunning);
+            if (!cancelled) return false;
+            Future<?> activeTask = task;
+            if (activeTask != null) activeTask.cancel(mayInterruptIfRunning);
+            for (OperationFuture<?> child : children) child.cancel(mayInterruptIfRunning);
+            if (mayInterruptIfRunning) closeClients();
+            return true;
+        }
+
+        private void closeClients() {
+            for (DockerClient client : clients) {
+                try { client.close(); } catch (Exception ignored) { }
+            }
+            clients.clear();
+        }
     }
 
     private static Integer parseTail(String tail) {
@@ -1761,7 +1834,7 @@ public final class ComposeService implements IComposeService {
 
         private void subscribeToDocker() {
             try {
-                DockerClient activeClient = DockerClientFactory.create(context);
+                DockerClient activeClient = createDockerClient(context);
                 client = activeClient;
                 if (isCancelled()) { closeResources(); return; }
                 ProjectResources resources = projectResources(activeClient, context);
@@ -1929,7 +2002,7 @@ public final class ComposeService implements IComposeService {
             ComposeProject project = loader.load(context.workingDirectory(), context.composeFileName());
             List<ServiceDefinition> selected = selectConfigurationServices(project, context.profiles(),
                     options == null ? null : options.services());
-            try (DockerClient client = DockerClientFactory.create(context)) {
+            try (DockerClient client = createDockerClient(context)) {
                 for (ServiceDefinition service : selected) {
                     Object buildValue = service.build();
                     if (buildValue == null || Boolean.FALSE.equals(buildValue)) continue;
@@ -2027,7 +2100,7 @@ public final class ComposeService implements IComposeService {
             if (!effective.noBuild() && !buildServices.isEmpty()) buildAsync(context, ComposeBuildOptions.builder()
                     .services(buildServices.stream().map(ServiceDefinition::name).toList())
                     .logConsumer(effective.logConsumer()).build()).join();
-            try (DockerClient client = DockerClientFactory.create(context)) {
+            try (DockerClient client = createDockerClient(context)) {
                 ensureProjectResources(client, context.projectName(), project);
                 if (effective.removeOrphans()) removeOrphanContainers(client, context.projectName(), project);
                 for (ServiceDefinition service : selected) {
@@ -2071,7 +2144,7 @@ public final class ComposeService implements IComposeService {
                     .toList();
             if (!buildServices.isEmpty()) buildAsync(context, ComposeBuildOptions.builder()
                     .services(buildServices.stream().map(ServiceDefinition::name).toList()).build()).join();
-            try (DockerClient client = DockerClientFactory.create(context)) {
+            try (DockerClient client = createDockerClient(context)) {
                 ensureProjectResources(client, context.projectName(), project);
                 if (effective.removeOrphans()) removeOrphanContainers(client, context.projectName(), project);
                 for (ServiceDefinition service : selected) {
@@ -2100,7 +2173,7 @@ public final class ComposeService implements IComposeService {
             ComposeProject project = loader.load(context.workingDirectory(), context.composeFileName());
             ServiceDefinition service = selectConfigurationServices(project, context.profiles(), List.of(serviceName))
                     .stream().findFirst().orElseThrow(() -> new IllegalArgumentException("Service '" + serviceName + "' not found."));
-            try (DockerClient client = DockerClientFactory.create(context)) {
+            try (DockerClient client = createDockerClient(context)) {
                 ensureProjectResources(client, context.projectName(), project);
                 if (!effective.noDeps()) {
                     for (ServiceDefinition dependency : dependencyOrderedServices(project, List.of(service))) {
@@ -2209,7 +2282,7 @@ public final class ComposeService implements IComposeService {
             java.util.Objects.requireNonNull(options, "options");
             if (service == null || service.isBlank()) throw new IllegalArgumentException("Service must not be blank.");
             if (options.command().isEmpty()) throw new IllegalArgumentException("Exec command must not be empty.");
-            try (DockerClient client = DockerClientFactory.create(context)) {
+            try (DockerClient client = createDockerClient(context)) {
                 List<Container> running = projectContainers(client, context.projectName(), List.of(service), false).stream()
                         .filter(container -> !"true".equalsIgnoreCase(label(container, ComposeConstants.ONE_OFF_LABEL)))
                         .sorted(containerOrder()).toList();
@@ -2245,7 +2318,7 @@ public final class ComposeService implements IComposeService {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
             ComposeAttachOptions effective = options == null ? ComposeAttachOptions.builder().build() : options;
-            try (DockerClient client = DockerClientFactory.create(context)) {
+            try (DockerClient client = createDockerClient(context)) {
                 List<Container> running = projectContainers(client, context.projectName(),
                                 effective.serviceName() == null ? null : List.of(effective.serviceName()), false).stream()
                         .filter(ComposeService::isRunning)
@@ -2286,7 +2359,7 @@ public final class ComposeService implements IComposeService {
             CopyPath destination = CopyPath.parse(options.destination());
             if (source.container() == destination.container())
                 throw new IllegalArgumentException("Exactly one copy path must use the 'service:/container/path' form.");
-            try (DockerClient client = DockerClientFactory.create(context)) {
+            try (DockerClient client = createDockerClient(context)) {
                 if (source.container()) {
                     Container container = archiveContainer(client, context.projectName(), source.service(), options.index(), options.all());
                     String archivePath = source.path();
@@ -2345,7 +2418,7 @@ public final class ComposeService implements IComposeService {
             List<ServiceDefinition> selected = selectConfigurationServices(project, context.profiles(), requested);
             Map<String, ServiceDefinition> definitions = new LinkedHashMap<>();
             selected.forEach(service -> definitions.put(service.name(), service));
-            try (DockerClient client = DockerClientFactory.create(context)) {
+            try (DockerClient client = createDockerClient(context)) {
                 ensureProjectResources(client, context.projectName(), project);
                 List<ServiceStatus> results = new ArrayList<>();
                 for (Map.Entry<String, Integer> entry : options.services().entrySet()) {
@@ -2369,7 +2442,7 @@ public final class ComposeService implements IComposeService {
     @Override public CompletableFuture<WaitResult> waitAsync(ComposeProjectContext context, ComposeWaitOptions options) {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
-            try (DockerClient client = DockerClientFactory.create(context)) {
+            try (DockerClient client = createDockerClient(context)) {
                 List<Container> containers = projectContainers(client, context.projectName(),
                                 services(options == null ? null : options.services()), false)
                         .stream().filter(ComposeService::isRunning)
@@ -2421,7 +2494,7 @@ public final class ComposeService implements IComposeService {
             java.util.Objects.requireNonNull(options, "options");
             if (options.service().isBlank()) throw new IllegalArgumentException("Service must not be blank.");
             if (options.outputPath().isBlank()) throw new IllegalArgumentException("Output path must not be blank.");
-            try (DockerClient client = DockerClientFactory.create(context)) {
+            try (DockerClient client = createDockerClient(context)) {
                 Container container = selectServiceContainer(client, context.projectName(), options.service(), options.index());
                 Path outputPath = Path.of(options.outputPath()).toAbsolutePath().normalize();
                 Path parent = outputPath.getParent();
@@ -2452,7 +2525,7 @@ public final class ComposeService implements IComposeService {
             String repository = colon > slash ? reference.substring(0, colon) : reference;
             String tag = colon > slash ? reference.substring(colon + 1) : "latest";
             if (repository.isBlank() || tag.isBlank()) throw new IllegalArgumentException("Image reference must contain a repository and a non-empty tag.");
-            try (DockerClient client = DockerClientFactory.create(context)) {
+            try (DockerClient client = createDockerClient(context)) {
                 Container container = selectServiceContainer(client, context.projectName(), options.service(), options.index());
                 var command = client.commitCmd(container.getId())
                         .withRepository(repository)
@@ -2507,7 +2580,7 @@ public final class ComposeService implements IComposeService {
                 throw new UnsupportedOperationException("Digest resolution, environment packaging, OCI version selection, and insecure registries are not supported by this publish implementation.");
             ComposeProject project = loader.load(context.workingDirectory(), context.composeFileName());
             List<ServiceDefinition> selected = selectConfigurationServices(project, context.profiles(), null);
-            try (DockerClient client = DockerClientFactory.create(context)) {
+            try (DockerClient client = createDockerClient(context)) {
                 List<PublishResult> results = new ArrayList<>();
                 for (ServiceDefinition service : selected) {
                     String sourceImage = service.image();
