@@ -2744,6 +2744,8 @@ public final class ComposeService implements IComposeService {
         ComposeCreateOptions effective = options == null ? ComposeCreateOptions.builder().build() : options;
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
+            if (effective.forceRecreate() && effective.noRecreate())
+                throw new IllegalArgumentException("forceRecreate and noRecreate cannot both be enabled.");
             ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
             List<ServiceDefinition> selected = dependencyOrderedServices(project,
                     selectConfigurationServices(project, context.profiles(), effective.services()));
