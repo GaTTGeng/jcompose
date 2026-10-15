@@ -73,7 +73,7 @@ public final class ComposeService implements IComposeService {
             java.util.Objects.requireNonNull(context, "context");
             ComposeProject project = loader.load(context.workingDirectory(), context.composeFileName());
             List<ServiceDefinition> services = selectConfigurationServices(project, context.profiles(), null);
-            return projectConfig(project, services, context.projectName(), null);
+            return projectConfig(project, services, context.projectName(), context.composeFileName(), null);
         });
     }
 
@@ -383,15 +383,16 @@ public final class ComposeService implements IComposeService {
             List<ServiceDefinition> services = selectConfigurationServices(project, context.profiles(),
                     options == null ? null : options.services());
             String yaml = ComposeConfigRenderer.render(project, services, projectName);
-            return projectConfig(project, services, projectName, yaml);
+            return projectConfig(project, services, projectName, context.composeFileName(), yaml);
         });
     }
 
     private static ComposeProjectConfig projectConfig(ComposeProject project, List<ServiceDefinition> services,
                                                        String projectName,
+                                                       String composeFileName,
                                                        String renderedYaml) {
         return new ComposeProjectConfig(projectName, project.sourceFile().getParent().toString(),
-                List.of(project.sourceFile().toString()), services.stream().map(ServiceDefinition::name).toList(),
+                List.of(composeFileName), services.stream().map(ServiceDefinition::name).toList(),
                 project.networks(), project.volumes(), project.secrets(), project.configs(), Map.of(), renderedYaml);
     }
 
