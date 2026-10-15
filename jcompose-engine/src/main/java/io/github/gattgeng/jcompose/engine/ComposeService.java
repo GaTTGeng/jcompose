@@ -1087,8 +1087,16 @@ public final class ComposeService implements IComposeService {
         if (config.get("read_only") instanceof Boolean value) host.withReadonlyRootfs(value);
         if (config.get("ipc") != null) host.withIpcMode(String.valueOf(config.get("ipc")));
         if (config.get("pid") != null) host.withPidMode(String.valueOf(config.get("pid")));
+        if (config.get("userns_mode") != null) host.withUsernsMode(String.valueOf(config.get("userns_mode")));
+        if (config.get("runtime") != null) host.withRuntime(String.valueOf(config.get("runtime")));
         if (config.get("cgroup_parent") != null) host.withCgroupParent(String.valueOf(config.get("cgroup_parent")));
         if (config.get("shm_size") != null) host.withShmSize(parseByteSize(String.valueOf(config.get("shm_size"))));
+        if (config.get("storage_opt") != null) {
+            if (!(config.get("storage_opt") instanceof Map<?, ?> storageOptions)) {
+                throw new IllegalArgumentException("Service 'storage_opt' must be a mapping.");
+            }
+            host.withStorageOpt(stringMap(storageOptions));
+        }
         applyDnsConfig(host, config);
         applyLoggingConfig(host, config);
 
@@ -1218,6 +1226,12 @@ public final class ComposeService implements IComposeService {
         requireConsistentResource(serviceCpus, deployCpusLimit, "cpus", "deploy.resources.limits.cpus", ComposeService::parseNanoCpus);
         Object cpus = serviceCpus != null ? serviceCpus : deployCpusLimit;
         if (cpus != null) host.withNanoCPUs(parseNanoCpus(cpus));
+        Object deployPidsLimit = deployResourceValue(config, "limits", "pids");
+        Object servicePidsLimit = config.get("pids_limit");
+        requireConsistentResource(servicePidsLimit, deployPidsLimit, "pids_limit", "deploy.resources.limits.pids",
+                value -> parseLong(value, "pids_limit"));
+        Object pidsLimit = servicePidsLimit != null ? servicePidsLimit : deployPidsLimit;
+        if (pidsLimit != null) host.withPidsLimit(parseLong(pidsLimit, "pids_limit"));
         if (config.get("cpu_count") != null) host.withCpuCount(parseLong(config.get("cpu_count"), "cpu_count"));
         if (config.get("cpu_percent") != null) host.withCpuPercent(parseLong(config.get("cpu_percent"), "cpu_percent"));
         if (config.get("oom_kill_disable") instanceof Boolean value) host.withOomKillDisable(value);
