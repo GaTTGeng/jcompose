@@ -4,7 +4,7 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Expands Docker Compose-style variables in YAML text before parsing. */
+/** Expands Docker Compose-style variables in YAML values and environment files. */
 final class VariableInterpolator {
     private static final Pattern NAME = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
     private static final Pattern EXPRESSION = Pattern.compile(

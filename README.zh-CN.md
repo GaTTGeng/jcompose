@@ -94,7 +94,7 @@ Loader 会读取 Compose YAML、`.env` 和服务的 `env_file` 输入，执行�
 
 ### 变量插值和环境文件
 
-Loader 支持 `$NAME`、`${NAME}`、`$$` 以及 `:-`、`-`、`:?`、`?`、`:+`、`+` 插值操作符；插值只处理 YAML 标量值，不处理键、注释、单引号值和块标量。进程环境变量优先于项目 `.env`。服务的 `env_file` 值会进入该服务的容器环境，但不会作为 Compose YAML 的插值来源。内联 `environment` 值优先于这些文件中的值。
+Loader 支持 `$NAME`、`${NAME}`、`$$` 以及 `:-`、`-`、`:?`、`?`、`:+`、`+` 插值操作符；插值只处理 YAML 标量值，不处理键、注释、单引号值和块标量。项目 `.env` 支持 `=`/`:` 分隔符、单双引号、单引号多行值、常用双引号转义和变量引用；进程环境变量优先于 `.env`。服务的 `env_file` 值会进入该服务的容器环境，但不会作为 Compose YAML 的插值来源。内联 `environment` 值优先于这些文件中的值。
 
 详细优先级、操作符行为和当前限制见 [Loader 兼容性](docs/loader-compatibility.md)。多文件输入见[合并规则](docs/merge-semantics.md)。这里记录的是 jcompose 当前行为；每项语义都应对照 Docker Compose 验证，不能仅因 ComposeSharp 也有类似逻辑就视为兼容。
 

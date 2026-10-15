@@ -150,8 +150,8 @@ public final class ComposeFileLoader {
     private static Map<String, Object> read(Path file, Map<String, String> environmentOverrides) {
         try {
             String text = Files.readString(file);
-            Map<String, String> envFile = parseEnvFile(file.getParent().resolve(".env"));
             Map<String, String> process = environmentWithOverrides(environmentOverrides);
+            Map<String, String> envFile = parseEnvFile(file.getParent().resolve(".env"), process);
             LoaderOptions options = new LoaderOptions();
             options.setAllowDuplicateKeys(false);
             Yaml yaml = new Yaml(new ComposeSafeConstructor(options));
@@ -230,8 +230,8 @@ public final class ComposeFileLoader {
         List<?> files = envFile instanceof List<?> list ? list : List.of(envFile);
         Map<String, String> resolved = new LinkedHashMap<>();
         try {
-            Map<String, String> dotenv = parseEnvFile(base.resolve(".env"));
             Map<String, String> process = environmentWithOverrides(environmentOverrides);
+            Map<String, String> dotenv = parseEnvFile(base.resolve(".env"), process);
             for (Object item : files) {
                 String path;
                 boolean required = true;
@@ -271,18 +271,21 @@ public final class ComposeFileLoader {
         if (!resolved.isEmpty()) service.put("environment", Collections.unmodifiableMap(resolved));
     }
 
-    private static Map<String, String> parseEnvFile(Path path) throws IOException {
-        return parseEnvFile(path, false, true);
+    private static Map<String, String> parseEnvFile(Path path, Map<String, String> process) throws IOException {
+        return parseEnvFile(path, false, true, process);
     }
 
     private static Map<String, String> parseEnvFile(Path path, boolean rawFormat) throws IOException {
-        return parseEnvFile(path, rawFormat, false);
+        return parseEnvFile(path, rawFormat, false, Map.of());
     }
 
-    private static Map<String, String> parseEnvFile(Path path, boolean rawFormat, boolean bareKeysAreUnset) throws IOException {
+    private static Map<String, String> parseEnvFile(Path path, boolean rawFormat, boolean bareKeysAreUnset,
+                                                     Map<String, String> process) throws IOException {
         Map<String, String> result = new LinkedHashMap<>();
         if (!Files.isRegularFile(path)) return result;
-        for (String line : Files.readAllLines(path)) {
+        List<String> lines = Files.readAllLines(path);
+        for (int lineIndex = 0; lineIndex < lines.size(); lineIndex++) {
+            String line = lines.get(lineIndex);
             if (rawFormat) {
                 String trimmed = line.trim();
                 if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
@@ -296,17 +299,34 @@ public final class ComposeFileLoader {
             if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
             if (trimmed.startsWith("export ")) trimmed = trimmed.substring(7).trim();
             int equals = trimmed.indexOf('=');
-            if (equals == 0) continue;
-            String key = (equals < 0 ? trimmed : trimmed.substring(0, equals)).trim();
+            int colon = trimmed.indexOf(':');
+            int separator = equals < 0 ? colon : colon < 0 ? equals : Math.min(equals, colon);
+            if (separator == 0) continue;
+            String key = (separator < 0 ? trimmed : trimmed.substring(0, separator)).trim();
             if (key.isEmpty()) continue;
-            if (equals < 0) {
+            if (separator < 0) {
                 result.put(key, bareKeysAreUnset ? null : "");
                 continue;
             }
-            String value = trimmed.substring(equals + 1).trim();
-            if (value.length() >= 2 && ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))))
-                value = value.substring(1, value.length() - 1);
-            else { int comment = value.indexOf(" #"); if (comment >= 0) value = value.substring(0, comment).trim(); }
+            String value = trimmed.substring(separator + 1).trim();
+            if (!value.isEmpty() && (value.charAt(0) == '\'' || value.charAt(0) == '"')) {
+                char quote = value.charAt(0);
+                int closing = findClosingQuote(value, quote);
+                while (closing < 0 && quote == '\'' && lineIndex + 1 < lines.size()) {
+                    value += "\n" + lines.get(++lineIndex);
+                    closing = findClosingQuote(value, quote);
+                }
+                if (closing < 0) throw new IOException("Unterminated quoted value for " + key + " in " + path);
+                String trailing = value.substring(closing + 1).trim();
+                if (!trailing.isEmpty() && !trailing.startsWith("#"))
+                    throw new IOException("Unexpected characters after quoted value for " + key + " in " + path);
+                value = unescapeEnvValue(value.substring(1, closing), quote);
+                if (quote != '\'') value = interpolate(value, result, process);
+            } else {
+                int comment = value.indexOf(" #");
+                if (comment >= 0) value = value.substring(0, comment).trim();
+                value = interpolate(value, result, process);
+            }
             result.put(key, value);
         }
         return result;

@@ -56,6 +56,58 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void projectEnvSupportsComposeDelimitersQuotesEscapesAndMultilineValues() throws Exception {
+        Files.writeString(directory.resolve(".env"), String.join("\n",
+                "JCOMPOSE_ENV_COLON: value",
+                "JCOMPOSE_ENV_SINGLE='$JCOMPOSE_ENV_MISSING'",
+                "JCOMPOSE_ENV_MULTI='first",
+                "second'",
+                "JCOMPOSE_ENV_SINGLE_ESCAPE='Let\\'s go!'",
+                "JCOMPOSE_ENV_DOUBLE=\"line\\nnext\"",
+                "JCOMPOSE_ENV_REFERENCE=${JCOMPOSE_ENV_COLON}-suffix",
+                "JCOMPOSE_ENV_REFERENCE_CHAIN=${JCOMPOSE_ENV_REFERENCE}-next",
+                "JCOMPOSE_ENV_FORWARD=${JCOMPOSE_ENV_LATER}",
+                "JCOMPOSE_ENV_LATER=late",
+                "JCOMPOSE_ENV_HASH=hash#value",
+                "JCOMPOSE_ENV_COMMENT=value # comment",
+                "JCOMPOSE_ENV_EMPTY=",
+                "JCOMPOSE_ENV_UNSET",
+                ""));
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: "example/${JCOMPOSE_ENV_COLON}"
+                    environment:
+                      SINGLE: "${JCOMPOSE_ENV_SINGLE}"
+                      MULTI: "${JCOMPOSE_ENV_MULTI}"
+                      SINGLE_ESCAPE: "${JCOMPOSE_ENV_SINGLE_ESCAPE}"
+                      DOUBLE: "${JCOMPOSE_ENV_DOUBLE}"
+                      REFERENCE: "${JCOMPOSE_ENV_REFERENCE}"
+                      REFERENCE_CHAIN: "${JCOMPOSE_ENV_REFERENCE_CHAIN}"
+                      FORWARD: "${JCOMPOSE_ENV_FORWARD}"
+                      HASH: "${JCOMPOSE_ENV_HASH}"
+                      COMMENT: "${JCOMPOSE_ENV_COMMENT}"
+                      EMPTY: "${JCOMPOSE_ENV_EMPTY:-empty-default}"
+                      UNSET: "${JCOMPOSE_ENV_UNSET:-unset-default}"
+                """);
+
+        var project = new ComposeFileLoader().load(directory, null);
+        Map<?, ?> environment = (Map<?, ?>) project.services().get("app").configuration().get("environment");
+        assertEquals("example/value", project.services().get("app").configuration().get("image"));
+        assertEquals("$JCOMPOSE_ENV_MISSING", environment.get("SINGLE"));
+        assertEquals("first\nsecond", environment.get("MULTI"));
+        assertEquals("Let's go!", environment.get("SINGLE_ESCAPE"));
+        assertEquals("line\nnext", environment.get("DOUBLE"));
+        assertEquals("value-suffix", environment.get("REFERENCE"));
+        assertEquals("value-suffix-next", environment.get("REFERENCE_CHAIN"));
+        assertEquals("", environment.get("FORWARD"));
+        assertEquals("hash#value", environment.get("HASH"));
+        assertEquals("value", environment.get("COMMENT"));
+        assertEquals("empty-default", environment.get("EMPTY"));
+        assertEquals("unset-default", environment.get("UNSET"));
+    }
+
+    @Test
     void overlaysAppendUniqueListsAndMergeKeyedEntriesAndMountTargets() throws Exception {
         Files.writeString(directory.resolve("base.yaml"), """
                 services:
