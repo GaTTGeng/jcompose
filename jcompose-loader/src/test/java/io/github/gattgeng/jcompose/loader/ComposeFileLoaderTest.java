@@ -16,7 +16,15 @@ class ComposeFileLoaderTest {
 
     @Test
     void inlineEnvironmentOverridesEnvFiles() throws Exception {
-        Files.writeString(directory.resolve("app.env"), "MODE=from-file\nFILE_ONLY=yes\n");
+        Files.writeString(directory.resolve("app.env"), String.join("\n",
+                "MODE=from-file",
+                "FILE_ONLY=yes",
+                "MULTILINE='first",
+                "second'",
+                "SINGLE='$JCOMPOSE_ENV_MISSING'",
+                "DOUBLE=\"line\\nnext\"",
+                "COLON: colon-value",
+                ""));
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:
                   app:
@@ -27,7 +35,8 @@ class ComposeFileLoaderTest {
                 """);
 
         var project = new ComposeFileLoader().load(directory, null);
-        assertEquals(Map.of("MODE", "inline", "FILE_ONLY", "yes"),
+        assertEquals(Map.of("MODE", "inline", "FILE_ONLY", "yes", "MULTILINE", "first\nsecond",
+                        "SINGLE", "$JCOMPOSE_ENV_MISSING", "DOUBLE", "line\nnext", "COLON", "colon-value"),
                 project.services().get("app").configuration().get("environment"));
     }
 

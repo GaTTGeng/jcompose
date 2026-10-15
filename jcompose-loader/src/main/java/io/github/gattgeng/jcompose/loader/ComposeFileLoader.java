@@ -335,7 +335,9 @@ public final class ComposeFileLoader {
     private static Map<String, String> parseServiceEnvFile(Path path, Map<String, String> dotenv,
                                                             Map<String, String> process) throws IOException {
         Map<String, String> result = new LinkedHashMap<>();
-        for (String originalLine : Files.readAllLines(path)) {
+        List<String> lines = Files.readAllLines(path);
+        for (int lineIndex = 0; lineIndex < lines.size(); lineIndex++) {
+            String originalLine = lines.get(lineIndex);
             String line = originalLine.trim();
             if (line.isEmpty() || line.startsWith("#")) continue;
             if (line.startsWith("export ")) line = line.substring(7).trim();
@@ -358,6 +360,10 @@ public final class ComposeFileLoader {
             char quote = value.charAt(0);
             if (quote == '\'' || quote == '"') {
                 int closing = findClosingQuote(value, quote);
+                while (closing < 0 && quote == '\'' && lineIndex + 1 < lines.size()) {
+                    value += "\n" + lines.get(++lineIndex);
+                    closing = findClosingQuote(value, quote);
+                }
                 if (closing < 0) throw new IOException("Unterminated quoted value for " + key + " in " + path);
                 String parsed = unescapeEnvValue(value.substring(1, closing), quote);
                 String trailing = value.substring(closing + 1).trim();
