@@ -1,0 +1,19 @@
+name: build-definition
+
+services:
+  app:
+    image: example/app:build
+    build:
+      context: ./app
+      dockerfile: Dockerfile.test
+      args:
+        BUILD_MODE: test
+      target: runtime
+      tags:
+        - example/app:test
+      labels:
+        build.label: enabled
+      platforms:
+        - linux/amd64
+      pull: true
+      no_cache: true

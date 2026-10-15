@@ -1,0 +1,23 @@
+name: service-resources
+
+services:
+  app:
+    image: example/app:resources
+    secrets:
+      - app-secret
+    configs:
+      - app-config
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 512M
+          cpus: 2
+        reservations:
+          memory: 128M
+
+secrets:
+  app-secret:
+
+configs:
+  app-config:

@@ -1,0 +1,11 @@
+name: command-environment
+
+services:
+  app:
+    image: ${LOADER_FIXTURE_APP_IMAGE}
+    command: ["dotnet", "app.dll"]
+    entrypoint: ["/bin/sh", "-c"]
+    env_file: app.env
+    environment:
+      ASPNETCORE_ENVIRONMENT: Testing
+      FEATURE_FLAG: enabled

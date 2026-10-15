@@ -1,0 +1,34 @@
+services:
+  app:
+    image: example/app:override
+    command: ["run", "--verbose"]
+    environment:
+      OVERLAY_ONLY: overlay
+      SHARED: override
+    labels:
+      com.example.component: api
+      com.example.shared: override
+    ports:
+      - "9090:81"
+    volumes:
+      - override-data:/var/lib/app
+      - logs:/var/log/app
+    networks:
+      - backend
+    configs:
+      - app-config-override
+    secrets:
+      - app-secret-override
+  worker:
+    image: example/worker:1.0
+volumes:
+  override-data:
+  logs:
+networks:
+  backend:
+configs:
+  app-config-override:
+    file: ./override-config.json
+secrets:
+  app-secret-override:
+    file: ./override-secret.txt

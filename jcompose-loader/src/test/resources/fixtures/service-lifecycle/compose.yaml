@@ -1,0 +1,13 @@
+name: service-lifecycle
+
+services:
+  app:
+    image: example/app:lifecycle
+    restart: on-failure:4
+    profiles: ["debug", "tests"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail http://localhost:8081/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

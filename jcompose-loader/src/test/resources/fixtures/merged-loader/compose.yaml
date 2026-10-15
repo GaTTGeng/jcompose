@@ -1,0 +1,33 @@
+services:
+  app:
+    image: example/app:base
+    command: ["serve"]
+    entrypoint: ["/bin/app"]
+    environment:
+      BASE_ONLY: base
+      SHARED: base
+    labels:
+      com.example.tier: frontend
+      com.example.shared: base
+    ports:
+      - "8080:80"
+    volumes:
+      - app-data:/var/lib/app
+      - cache:/cache
+    networks:
+      - frontend
+    configs:
+      - app-config
+    secrets:
+      - app-secret
+volumes:
+  app-data:
+  cache:
+networks:
+  frontend:
+configs:
+  app-config:
+    file: ./base-config.json
+secrets:
+  app-secret:
+    file: ./base-secret.txt
