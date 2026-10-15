@@ -5,6 +5,7 @@ import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.async.ResultCallback.Adapter;
 import com.github.dockerjava.api.command.ListContainersCmd;
 import com.github.dockerjava.api.exception.DockerException;
+import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.AuthConfig;
 import com.github.dockerjava.api.model.AuthConfigurations;
 import com.github.dockerjava.api.model.Container;
@@ -127,7 +128,12 @@ public final class ComposeService implements IComposeService {
         return execute(context, client -> {
             List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
             for (Container container : projectContainers(client, context.projectName(), selectedServices)) {
-                if (isRunning(container)) client.stopContainerCmd(container.getId()).withTimeout(timeout).exec();
+                try {
+                    client.stopContainerCmd(container.getId()).withTimeout(timeout).exec();
+                } catch (DockerException ignored) {
+                    continue;
+                }
+                waitUntilNotRunning(client, container.getId());
             }
         });
     }
@@ -1651,6 +1657,26 @@ public final class ComposeService implements IComposeService {
     private static boolean isRunning(com.github.dockerjava.api.command.InspectContainerResponse.ContainerState state) {
         return Boolean.TRUE.equals(state.getRunning()) && !Boolean.TRUE.equals(state.getPaused())
                 && !Boolean.TRUE.equals(state.getRestarting());
+    }
+
+    private static void waitUntilNotRunning(DockerClient client, String containerId) {
+        for (int attempt = 0; attempt < 50; attempt++) {
+            try {
+                var state = client.inspectContainerCmd(containerId).exec().getState();
+                if (state == null || !Boolean.TRUE.equals(state.getRunning())) return;
+            } catch (NotFoundException ignored) {
+                return;
+            }
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new java.util.concurrent.CancellationException("Interrupted while waiting for Docker to report the stopped container.");
+            }
+        }
+        throw new java.util.concurrent.CompletionException(
+                new java.util.concurrent.TimeoutException("Container '" + containerId
+                        + "' was still running after waiting 5 seconds for Docker to report its stopped state."));
     }
 
     private static String dependencyCondition(Object rawDependencies, String name) {
