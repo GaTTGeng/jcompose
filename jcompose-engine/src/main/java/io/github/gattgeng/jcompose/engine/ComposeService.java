@@ -1277,6 +1277,8 @@ public final class ComposeService implements IComposeService {
                 value -> parseByteSize(String.valueOf(value)));
         Object memoryReservation = serviceMemoryReservation != null ? serviceMemoryReservation : deployMemoryReservation;
         if (memoryReservation != null) host.withMemoryReservation(parseByteSize(String.valueOf(memoryReservation)));
+        List<com.github.dockerjava.api.model.DeviceRequest> deviceRequests = deployDeviceRequests(config);
+        if (!deviceRequests.isEmpty()) host.withDeviceRequests(deviceRequests);
         if (config.get("mem_swappiness") != null) host.withMemorySwappiness(parseLong(config.get("mem_swappiness"), "mem_swappiness"));
         if (config.get("cpu_shares") != null) host.withCpuShares(Math.toIntExact(parseLong(config.get("cpu_shares"), "cpu_shares")));
         if (config.get("cpuset") != null) host.withCpusetCpus(String.valueOf(config.get("cpuset")));
@@ -1299,6 +1301,52 @@ public final class ComposeService implements IComposeService {
         if (config.get("oom_score_adj") != null) host.withOomScoreAdj(Math.toIntExact(parseLong(config.get("oom_score_adj"), "oom_score_adj")));
         if (config.get("uts") != null) host.withUtSMode(String.valueOf(config.get("uts")));
         applyUlimits(host, config.get("ulimits"));
+    }
+
+    private static List<com.github.dockerjava.api.model.DeviceRequest> deployDeviceRequests(Map<String, Object> config) {
+        Object configured = deployResourceValue(config, "reservations", "devices");
+        if (configured == null) return List.of();
+        if (!(configured instanceof List<?> entries)) {
+            throw new IllegalArgumentException("Service 'deploy.resources.reservations.devices' must be a list.");
+        }
+        List<com.github.dockerjava.api.model.DeviceRequest> requests = new ArrayList<>();
+        for (Object entry : entries) {
+            if (!(entry instanceof Map<?, ?> values)) {
+                throw new IllegalArgumentException("Each deploy.resources.reservations.devices entry must be a mapping.");
+            }
+            List<String> capabilities = asStringList(values.get("capabilities"));
+            if (capabilities.isEmpty()) {
+                throw new IllegalArgumentException("Each deploy.resources.reservations.devices entry requires capabilities.");
+            }
+            Object countValue = values.get("count");
+            Object idsValue = values.get("device_ids");
+            if (countValue != null && idsValue != null) {
+                throw new IllegalArgumentException("deploy.resources.reservations.devices count and device_ids are mutually exclusive.");
+            }
+            List<String> deviceIds = asStringList(idsValue);
+            Integer count = null;
+            if (countValue != null) {
+                if ("all".equalsIgnoreCase(String.valueOf(countValue))) count = -1;
+                else {
+                    long parsedCount = parseLong(countValue, "deploy.resources.reservations.devices.count");
+                    if (parsedCount < 0) {
+                        throw new IllegalArgumentException("deploy.resources.reservations.devices.count must be non-negative or 'all'.");
+                    }
+                    count = Math.toIntExact(parsedCount);
+                }
+            } else if (idsValue == null) {
+                count = -1;
+            }
+            Map<String, String> options = stringMap(values.get("options"));
+            var request = new com.github.dockerjava.api.model.DeviceRequest()
+                    .withDriver(stringValue(values.get("driver"), null))
+                    .withCapabilities(List.of(capabilities));
+            if (count != null) request.withCount(count);
+            if (idsValue != null) request.withDeviceIds(deviceIds);
+            if (!options.isEmpty()) request.withOptions(options);
+            requests.add(request);
+        }
+        return List.copyOf(requests);
     }
 
     private static void applyUlimits(com.github.dockerjava.api.model.HostConfig host, Object configured) {
