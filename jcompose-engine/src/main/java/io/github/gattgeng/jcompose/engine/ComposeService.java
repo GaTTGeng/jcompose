@@ -2690,9 +2690,16 @@ public final class ComposeService implements IComposeService {
         ComposeUpOptions effective = options == null ? ComposeUpOptions.builder().build() : options;
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
+            if (effective.forceRecreate() && effective.noRecreate())
+                throw new IllegalArgumentException("forceRecreate and noRecreate cannot both be enabled.");
+            if (effective.alwaysRecreateDeps() && effective.noRecreate())
+                throw new IllegalArgumentException("alwaysRecreateDeps cannot be enabled with noRecreate.");
             ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
-            List<ServiceDefinition> selected = dependencyOrderedServices(project,
-                    selectConfigurationServices(project, context.profiles(), effective.services()));
+            List<ServiceDefinition> requested = selectConfigurationServices(project, context.profiles(), effective.services());
+            List<ServiceDefinition> selected = dependencyOrderedServices(project, requested);
+            java.util.Set<String> dependencies = selected.stream()
+                    .flatMap(service -> serviceDependencyNames(service).stream())
+                    .collect(java.util.stream.Collectors.toSet());
             List<ServiceDefinition> buildServices = selected.stream()
                     .filter(service -> effective.build() || "build".equals(effectivePullPolicy(service, effective.pull())))
                     .toList();
@@ -2715,8 +2722,10 @@ public final class ComposeService implements IComposeService {
                     }
                     int replicas = effective.scale() != null && effective.scale().containsKey(service.name())
                             ? effective.scale().get(service.name()) : replicaCount(service);
+                    boolean forceRecreate = effective.forceRecreate()
+                            || effective.alwaysRecreateDeps() && dependencies.contains(service.name());
                     ensureServiceContainers(client, context, project, service, replicas,
-                            effective.forceRecreate(), effective.noRecreate(), !effective.noStart(),
+                            forceRecreate, effective.noRecreate(), !effective.noStart(),
                             positiveTimeout(effective.timeoutSeconds()), effective.logConsumer());
                 }
                 if (effective.waitForCompletion() && !effective.noStart()) {
