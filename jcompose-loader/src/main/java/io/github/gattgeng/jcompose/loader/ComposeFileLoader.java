@@ -224,10 +224,10 @@ public final class ComposeFileLoader {
             throw new ComposeValidationException(source, "services." + name + ".env_file", name, exception.getMessage(), null, null, exception);
         }
         Object existing = service.get("environment");
-        if (existing instanceof Map<?, ?> map) map.forEach((k, v) -> resolved.put(String.valueOf(k), v == null ? "" : String.valueOf(v)));
+        if (existing instanceof Map<?, ?> map) map.forEach((k, v) -> resolved.put(String.valueOf(k), v == null ? null : String.valueOf(v)));
         else if (existing instanceof List<?> list) for (Object pair : list) {
             String value = String.valueOf(pair); int split = value.indexOf('=');
-            resolved.put(split < 0 ? value : value.substring(0, split), split < 0 ? "" : value.substring(split + 1));
+            resolved.put(split < 0 ? value : value.substring(0, split), split < 0 ? null : value.substring(split + 1));
         }
         if (!resolved.isEmpty()) service.put("environment", Collections.unmodifiableMap(resolved));
     }
@@ -253,8 +253,13 @@ public final class ComposeFileLoader {
             if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
             if (trimmed.startsWith("export ")) trimmed = trimmed.substring(7).trim();
             int equals = trimmed.indexOf('=');
-            if (equals <= 0) continue;
-            String key = trimmed.substring(0, equals).trim();
+            if (equals == 0) continue;
+            String key = (equals < 0 ? trimmed : trimmed.substring(0, equals)).trim();
+            if (key.isEmpty()) continue;
+            if (equals < 0) {
+                result.put(key, null);
+                continue;
+            }
             String value = trimmed.substring(equals + 1).trim();
             if (value.length() >= 2 && ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))))
                 value = value.substring(1, value.length() - 1);
