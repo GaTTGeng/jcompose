@@ -11,7 +11,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Applied Compose `blkio_config`, GPU and deploy device reservations to service and one-off containers, and deploy restart policies to service containers.
 - Parsed fractional and composite Compose duration values such as `1.5s` and `1m30s`.
 - Parsed fractional Compose byte sizes such as `1.5gb` for memory and block I/O settings.
-- Matched Docker Compose image pull behavior for the `if_not_present` alias and cached `latest` tags.
+- Matched Docker Compose image pull behavior for the `if_not_present` alias, cached `latest` tags, and explicit `pull` policy handling (`always`, `missing`, `never`, `build`, and refresh windows).
 - Established the Maven multi-module repository for the API, loader, Docker Engine integration, and Spring Boot starter.
 - Added Compose loading, interpolation, environment-file handling, and an incremental multi-file merge implementation.
 - Added the initial Docker Engine project-label-scoped container lifecycle implementation.

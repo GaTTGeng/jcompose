@@ -468,6 +468,7 @@ public final class ComposeService implements IComposeService {
                 for (ServiceDefinition service : selected) {
                     String image = service.image();
                     if (image == null || image.isBlank()) continue;
+                    if (!shouldPullForExplicitPull(client, image, service)) continue;
                     try {
                         pullImage(client, context.registryAuth(), image, options == null ? null : options.platform());
                     } catch (RuntimeException failure) {
@@ -859,6 +860,21 @@ public final class ComposeService implements IComposeService {
         int lastSlash = image.lastIndexOf('/');
         int lastColon = image.lastIndexOf(':');
         return lastColon <= lastSlash || "latest".equalsIgnoreCase(image.substring(lastColon + 1));
+    }
+
+    private static boolean shouldPullForExplicitPull(DockerClient client, String image, ServiceDefinition service) {
+        String configured = stringValue(service.configuration().get("pull_policy"), null);
+        if (configured == null || configured.isBlank()) return true;
+        String policy = configured.toLowerCase(java.util.Locale.ROOT);
+        return switch (policy) {
+            case "always", "daily", "weekly", "refresh" -> true;
+            case "missing", "if_not_present" -> shouldPullImage(client, image, "missing");
+            case "never", "build" -> false;
+            default -> {
+                if (policy.matches("every_([0-9]+[wdhms])+")) yield true;
+                throw new IllegalArgumentException("Unsupported pull policy for service '" + service.name() + "': " + policy);
+            }
+        };
     }
 
     private static boolean imageExists(DockerClient client, String image) {
