@@ -359,10 +359,14 @@ public final class ComposeService implements IComposeService {
                         .stream().map(Container::getImageId).filter(java.util.Objects::nonNull)
                         .collect(java.util.stream.Collectors.toSet());
                 if (usedImageIds.isEmpty()) return List.of();
-                return client.listImagesCmd().exec().stream()
+                List<ImageSummary> summaries = client.listImagesCmd().exec().stream()
                         .filter(image -> usedImageIds.contains(image.getId()))
                         .sorted(java.util.Comparator.comparing(Image::getId))
                         .map(ComposeService::imageSummary)
+                        .toList();
+                if (options == null || !options.quiet()) return summaries;
+                return summaries.stream()
+                        .map(image -> new ImageSummary(image.id(), null, null, null, 0L, null, null))
                         .toList();
             } catch (java.io.IOException exception) {
                 throw new java.io.UncheckedIOException("Could not close Docker Engine client.", exception);
