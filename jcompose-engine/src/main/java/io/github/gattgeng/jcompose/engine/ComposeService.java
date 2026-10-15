@@ -2772,6 +2772,16 @@ public final class ComposeService implements IComposeService {
             } catch (java.io.IOException exception) {
                 throw new java.io.UncheckedIOException("Could not close Docker Engine client.", exception);
             }
+            if (!effective.detach() && !effective.noStart()) {
+                ILogConsumer consumer = effective.logConsumer() == null ? new ILogConsumer() {
+                    @Override public void onLog(String serviceName, String message, boolean standardError) { }
+                    @Override public void onLogComplete(String serviceName) { }
+                    @Override public void onStatus(String serviceName, String message) { }
+                } : effective.logConsumer();
+                await(logsAsync(context, ComposeLogsOptions.builder()
+                        .services(selected.stream().map(ServiceDefinition::name).toList())
+                        .follow(true).build(), consumer));
+            }
             return null;
         });
     }
