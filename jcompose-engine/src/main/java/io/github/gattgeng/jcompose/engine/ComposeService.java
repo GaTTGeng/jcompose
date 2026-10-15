@@ -48,6 +48,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.math.BigDecimal;
 import java.util.regex.Pattern;
 
@@ -210,6 +212,8 @@ public final class ComposeService implements IComposeService {
             java.util.Objects.requireNonNull(consumer, "consumer");
             ComposeLogsOptions effective = options == null ? ComposeLogsOptions.builder().build() : options;
             Integer tail = parseTail(effective.tail());
+            Integer since = parseLogTimestamp(effective.since(), Instant.now());
+            Integer until = parseLogTimestamp(effective.until(), Instant.now());
             List<String> selectedServices = selectExistingServices(context, effective.services()).serviceNames();
             try (DockerClient client = createDockerClient(context)) {
                 List<Container> containers = projectContainers(client, context.projectName(), selectedServices, true)
@@ -225,6 +229,8 @@ public final class ComposeService implements IComposeService {
                             .withStdOut(true)
                             .withStdErr(true);
                     if (tail == null) command.withTailAll(); else command.withTail(tail);
+                    if (since != null) command.withSince(since);
+                    if (until != null) command.withUntil(until);
                     command.exec(callback);
                     callbacks.add(callback);
                 }
@@ -2206,6 +2212,33 @@ public final class ComposeService implements IComposeService {
             return value;
         } catch (NumberFormatException exception) {
             throw new IllegalArgumentException("tail must be 'all' or a non-negative number", exception);
+        }
+    }
+
+    private static Integer parseLogTimestamp(String value, Instant now) {
+        if (value == null || value.isBlank()) return null;
+        String input = value.trim();
+        try {
+            if (input.matches("\\d+")) return Integer.valueOf(input);
+            Instant timestamp;
+            try {
+                timestamp = Instant.parse(input);
+            } catch (java.time.format.DateTimeParseException ignored) {
+                try {
+                    timestamp = OffsetDateTime.parse(input).toInstant();
+                } catch (java.time.format.DateTimeParseException ignoredOffset) {
+                    try {
+                        timestamp = LocalDate.parse(input).atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
+                    } catch (java.time.format.DateTimeParseException ignoredDate) {
+                        long durationNanos = parseDurationNanos(input);
+                        if (durationNanos < 0) throw new IllegalArgumentException("Log timestamp duration must not be negative: " + value);
+                        timestamp = now.minusNanos(durationNanos);
+                    }
+                }
+            }
+            return Math.toIntExact(timestamp.getEpochSecond());
+        } catch (ArithmeticException | NumberFormatException exception) {
+            throw new IllegalArgumentException("Log timestamp is outside the supported range: " + value, exception);
         }
     }
 

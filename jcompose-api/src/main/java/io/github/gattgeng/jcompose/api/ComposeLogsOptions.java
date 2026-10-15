@@ -7,8 +7,8 @@ import java.util.Objects;
  * Options controlling which container log lines are streamed.
  * @param services Restricts log streaming to these service names; null covers every project service.
  * @param follow Keep streaming new lines after the existing backlog is delivered.
- * @param since Only include lines at or after this timestamp or duration; currently retained but not applied by the engine.
- * @param until Only include lines at or before this timestamp or duration; currently retained but not applied by the engine.
+ * @param since Only include lines at or after this Unix timestamp, ISO-8601 timestamp/date, or relative duration.
+ * @param until Only include lines at or before this Unix timestamp, ISO-8601 timestamp/date, or relative duration.
  * @param timestamps Prefix each line with its timestamp.
  * @param tail Number of trailing lines to deliver, or <code>all</code> for the full backlog.
  * @param noColor Strip ANSI color codes from the streamed lines.
@@ -55,14 +55,14 @@ public record ComposeLogsOptions(
         public Builder follow(boolean value) { this.follow = value; return this; }
 
         /**
-         * Only include lines at or after this timestamp or duration; currently retained but not applied by the engine.
+         * Only include lines at or after this Unix timestamp, ISO-8601 timestamp/date, or relative duration.
          * @param value Only include lines at or after this timestamp or duration (for example <code>2024-01-01</code> or <code>10m</code>).
          * @return this builder
          */
         public Builder since(String value) { this.since = value; return this; }
 
         /**
-         * Only include lines at or before this timestamp or duration; currently retained but not applied by the engine.
+         * Only include lines at or before this Unix timestamp, ISO-8601 timestamp/date, or relative duration.
          * @param value Only include lines at or before this timestamp or duration.
          * @return this builder
          */
