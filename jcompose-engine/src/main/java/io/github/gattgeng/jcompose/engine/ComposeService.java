@@ -494,9 +494,22 @@ public final class ComposeService implements IComposeService {
                 if (response == null || response.getVolumes() == null) return List.of();
                 List<String> requestedServices = options == null ? null : services(options.services());
                 if (requestedServices != null && requestedServices.isEmpty()) return List.of();
+                java.util.Set<String> usedVolumeNames = null;
+                if (requestedServices != null) {
+                    List<String> selectedServices = selectExistingServices(context, requestedServices).serviceNames();
+                    usedVolumeNames = new java.util.HashSet<>();
+                    for (Container container : projectContainers(client, context.projectName(), selectedServices, false)) {
+                        if (container.getMounts() == null) continue;
+                        for (var mount : container.getMounts()) {
+                            if (mount.getName() != null) usedVolumeNames.add(mount.getName());
+                        }
+                    }
+                }
+                java.util.Set<String> selectedVolumeNames = usedVolumeNames;
                 return response.getVolumes().stream()
                         .filter(volume -> volume.getLabels() != null
-                                && context.projectName().equals(volume.getLabels().get(ComposeConstants.PROJECT_LABEL)))
+                                && context.projectName().equals(volume.getLabels().get(ComposeConstants.PROJECT_LABEL))
+                                && (selectedVolumeNames == null || selectedVolumeNames.contains(volume.getName())))
                         .map(volume -> {
                             return new VolumesSummary(volume.getName(), volume.getDriver(), volume.getMountpoint(),
                                     volume.getLabels(), null, volume.getOptions(), null);

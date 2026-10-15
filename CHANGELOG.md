@@ -23,6 +23,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Implemented `wait`'s `downProjectOnContainerExit` option: the first watched exit tears down all project containers and project networks before wait results are returned.
 - Applied `logs` `since` and `until` filters for Unix timestamps, ISO-8601 dates/timestamps, and relative durations.
 - Applied `images` quiet mode by returning image IDs without summary fields.
+- Filtered listed project volumes by the mounts used by explicitly selected running services.
 - Established the Maven multi-module repository for the API, loader, Docker Engine integration, and Spring Boot starter.
 - Added Compose loading, interpolation, environment-file handling, and an incremental multi-file merge implementation.
 - Added the initial Docker Engine project-label-scoped container lifecycle implementation.
