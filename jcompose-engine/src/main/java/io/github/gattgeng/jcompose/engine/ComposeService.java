@@ -1052,6 +1052,7 @@ public final class ComposeService implements IComposeService {
         if (config.get("cgroup_parent") != null) host.withCgroupParent(String.valueOf(config.get("cgroup_parent")));
         if (config.get("shm_size") != null) host.withShmSize(parseByteSize(String.valueOf(config.get("shm_size"))));
         applyDnsConfig(host, config);
+        applyLoggingConfig(host, config);
 
         List<String> extraHosts = extraHostEntries(config.get("extra_hosts"));
         if (!extraHosts.isEmpty()) host.withExtraHosts(extraHosts.toArray(String[]::new));
@@ -1090,6 +1091,36 @@ public final class ComposeService implements IComposeService {
         if (!dnsOptions.isEmpty()) host.withDnsOptions(dnsOptions);
         List<String> dnsSearch = asStringList(config.get("dns_search"));
         if (!dnsSearch.isEmpty()) host.withDnsSearch(dnsSearch);
+    }
+
+    private static void applyLoggingConfig(com.github.dockerjava.api.model.HostConfig host, Map<String, Object> config) {
+        Object configured = config.get("logging");
+        if (configured == null) return;
+        if (!(configured instanceof Map<?, ?> logging)) {
+            throw new IllegalArgumentException("Service 'logging' must be a mapping.");
+        }
+        String driverName = stringValue(logging.get("driver"), null);
+        com.github.dockerjava.api.model.LogConfig.LoggingType driver = null;
+        if (driverName != null && !driverName.isBlank()) {
+            driver = com.github.dockerjava.api.model.LogConfig.LoggingType.fromValue(driverName);
+            if (driver == null) {
+                throw new IllegalArgumentException("Logging driver '" + driverName
+                        + "' is not supported by the current Docker Java API model.");
+            }
+        }
+        Object optionsValue = logging.get("options");
+        Map<String, String> options = Map.of();
+        if (optionsValue != null) {
+            if (!(optionsValue instanceof Map<?, ?> optionMap)) {
+                throw new IllegalArgumentException("Service 'logging.options' must be a mapping.");
+            }
+            Map<String, String> parsedOptions = new LinkedHashMap<>();
+            optionMap.forEach((key, value) -> {
+                if (value != null) parsedOptions.put(String.valueOf(key), String.valueOf(value));
+            });
+            options = parsedOptions;
+        }
+        host.withLogConfig(new com.github.dockerjava.api.model.LogConfig(driver, options));
     }
 
     private static void applyResourceConfig(com.github.dockerjava.api.model.HostConfig host, Map<String, Object> config) {
@@ -2246,6 +2277,7 @@ public final class ComposeService implements IComposeService {
                 var host = com.github.dockerjava.api.model.HostConfig.newHostConfig();
                 host.withNetworkMode(stringValue(service.configuration().get("network_mode"),
                         primaryNetwork(context.projectName(), project, service)));
+                applyLoggingConfig(host, service.configuration());
                 applyDnsConfig(host, service.configuration());
                 applyResourceConfig(host, service.configuration());
                 List<com.github.dockerjava.api.model.Bind> binds = new ArrayList<>(serviceBinds(project, context.projectName(), service));
