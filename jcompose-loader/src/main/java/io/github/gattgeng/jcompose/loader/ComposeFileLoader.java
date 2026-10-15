@@ -103,8 +103,9 @@ public final class ComposeFileLoader {
         Path base = null;
         for (String name : composeFiles) {
             Path file = resolve(workingDirectory, name);
-            Map<String, Object> next = read(file, environmentOverrides);
-            if (merged == null) { merged = unwrapMergeTags(next); base = file; }
+            if (base == null) base = file;
+            Map<String, Object> next = read(file, environmentOverrides, base.getParent().resolve(".env"));
+            if (merged == null) merged = unwrapMergeTags(next);
             else merged = merge(merged, next, "");
         }
         return toProject(base, merged, environmentOverrides);
@@ -148,10 +149,15 @@ public final class ComposeFileLoader {
 
     @SuppressWarnings("unchecked")
     private static Map<String, Object> read(Path file, Map<String, String> environmentOverrides) {
+        return read(file, environmentOverrides, file.getParent().resolve(".env"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> read(Path file, Map<String, String> environmentOverrides, Path dotenvPath) {
         try {
             String text = Files.readString(file);
             Map<String, String> process = environmentWithOverrides(environmentOverrides);
-            Map<String, String> envFile = parseEnvFile(file.getParent().resolve(".env"), process);
+            Map<String, String> envFile = parseEnvFile(dotenvPath, process);
             LoaderOptions options = new LoaderOptions();
             options.setAllowDuplicateKeys(false);
             Yaml yaml = new Yaml(new ComposeSafeConstructor(options));

@@ -154,6 +154,35 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
+    void usesFirstComposeFilesDotEnvForEveryMergedFile() throws IOException {
+        Path directory = temporaryDirectory.resolve("project-dotenv-merge");
+        Path overlayDirectory = Files.createDirectories(directory.resolve("overlay"));
+        String variable = "JCOMPOSE_PROJECT_DOTENV_CONFORMANCE";
+        Files.writeString(directory.resolve(".env"), variable + "=project\n");
+        Files.writeString(overlayDirectory.resolve(".env"), variable + "=overlay\n");
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: example/app
+                    environment:
+                      FROM_BASE: ${JCOMPOSE_PROJECT_DOTENV_CONFORMANCE}
+                """);
+        Files.writeString(overlayDirectory.resolve("compose.override.yaml"), """
+                services:
+                  app:
+                    environment:
+                      FROM_OVERLAY: ${JCOMPOSE_PROJECT_DOTENV_CONFORMANCE}
+                """);
+
+        ServiceDefinition app = new ComposeFileLoader().loadMerged(directory,
+                List.of("compose.yaml", "overlay/compose.override.yaml")).services().get("app");
+        Map<?, ?> environment = (Map<?, ?>) app.configuration().get("environment");
+
+        assertEquals("project", environment.get("FROM_BASE"));
+        assertEquals("project", environment.get("FROM_OVERLAY"));
+    }
+
+    @Test
     void replacesWindowsBindMountByContainerTarget() throws IOException {
         ComposeProject project = loadMerged("C:\\base:/data:ro", "D:\\override:/data:rw");
 
