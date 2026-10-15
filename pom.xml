@@ -7,7 +7,7 @@
   <version>3.0.0-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>jcompose</name>
-  <description>JDK implementation of the ComposeSharp 3.0.0 managed Docker Compose SDK contract.</description>
+  <description>JDK library for Docker Compose project loading and lifecycle operations, synchronized with the ComposeSharp 3.0.0 feature set.</description>
   <url>https://github.com/GaTTGeng/jcompose</url>
   <licenses><license><name>MIT License</name><url>https://opensource.org/license/mit</url></license></licenses>
   <developers><developer><id>GaTTGeng</id><name>jcompose contributors</name></developer></developers>

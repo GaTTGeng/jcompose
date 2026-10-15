@@ -17,9 +17,9 @@ public final class DockerClientFactory {
 
     public static DockerClient create(ComposeProjectContext context) {
         var builder = DefaultDockerClientConfig.createDefaultConfigBuilder();
-        String endpoint = normalizeEndpoint(context.socketPath());
+        String endpoint = normalizeEndpoint(context == null ? null : context.socketPath());
         if (endpoint != null) builder.withDockerHost(endpoint);
-        if (context.registryAuth() != null) {
+        if (context != null && context.registryAuth() != null) {
             var auth = context.registryAuth();
             if (auth.username() != null) builder.withRegistryUsername(auth.username());
             if (auth.password() != null) builder.withRegistryPassword(auth.password());

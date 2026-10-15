@@ -1,0 +1,34 @@
+# Generate and watch contracts
+
+This page records the current jcompose behavior for two operations in the ComposeSharp feature synchronization scope. Docker Compose remains the compatibility target. These operations have distinct purposes: `generateAsync` serializes configuration retained by the loader; `watchAsync` is intended to expose filesystem changes through the JDK Flow API. A ComposeSharp implementation is a porting reference, not compatibility evidence.
+
+## `generateAsync`
+
+`generateAsync` loads the local Compose project and returns a typed `ComposeProjectConfig` summary with a normalized YAML snapshot in `renderedYaml`. It does not require a Docker connection and does not write a file. `loadProject` returns the same typed summary without generated YAML. Both operations honor the profile selection in `ComposeProjectContext`.
+
+Service selection uses the explicit service list when provided, including services outside the active profiles. A null selection follows the profile selection in `ComposeProjectContext`; an empty list selects no services. Unknown service names fail. Selection does not add a service's dependencies. The project-name option changes only the returned document and summary, not Docker resource ownership. Nonempty legacy `containers` selections fail because generation serializes configuration rather than inspecting containers.
+
+The output is a normalized snapshot of the loader's retained model, not a source-preserving round trip. It can include fields and resource names the model retains, but it cannot restore comments, original formatting/quoting, unknown fields, or syntax details lost by loading. Resource definitions whose options are not retained cannot be reconstructed from their names alone. `env_file` references are omitted when values have already been folded into the service environment. Resolved environment values may contain credentials or other secrets; handle generated YAML as sensitive data.
+
+Paths in the snapshot remain relative to the original Compose project directory. Moving generated YAML to a different directory can therefore change how those paths resolve. Deploy values and other shapes preserved by the loader should not be interpreted as proof of full Compose CLI output compatibility. See the [field support matrix](compose-field-matrix.md) for loader limitations and retained fields.
+
+Example:
+
+```java
+var generated = service.generateAsync(context, options).join();
+System.out.println(generated.renderedYaml());
+```
+
+The rendered document is available from `ComposeProjectConfig.renderedYaml()`.
+
+## `watchAsync`
+
+`watchAsync` returns a JDK `Flow.Publisher<WatchEvent>` that recursively watches the selected services' local `build.context` directories. Create, modify, and delete notifications are reported with the service name, absolute changed path, and action `rebuild`. It reports filesystem changes only; it does not build images, start services, or apply a Compose `develop.watch` action.
+
+The publisher honors subscriber demand and cancellation. Projects with no selected local build contexts complete without notifications. A watcher registration or queue-overflow failure is delivered to the subscriber as `onError`. Notifications can repeat for one logical editor save, and services sharing a context each receive an event. `prune` is currently rejected.
+
+Docker Compose `develop.watch` remains a separate compatibility target: rebuild, sync, restart, and sync+restart actions have additional behavior. This JDK publisher is an SDK-level filesystem stream and must not be treated as implementing those actions.
+
+## Conformance evidence
+
+When adding or changing either operation, keep this page aligned with the implementation and link only to verification that has actually run. Cover profile and explicit service selection, invalid service names, generated secrets handling, relative paths, subscriber cancellation/back-pressure, missing build contexts, repeated/shared-path notifications, and watcher failure behavior as applicable. Do not list planned checks as completed evidence.
