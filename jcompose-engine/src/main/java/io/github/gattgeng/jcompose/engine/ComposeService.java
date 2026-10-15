@@ -1081,8 +1081,8 @@ public final class ComposeService implements IComposeService {
         List<com.github.dockerjava.api.model.Bind> binds = serviceBinds(project, projectName, service);
         if (!binds.isEmpty()) host.withBinds(binds);
         applyVolumesFrom(client, project, projectName, service, host);
-        Object restart = config.get("restart");
-        if (restart != null) host.withRestartPolicy(restartPolicy(String.valueOf(restart)));
+        com.github.dockerjava.api.model.RestartPolicy restart = effectiveRestartPolicy(config);
+        if (restart != null) host.withRestartPolicy(restart);
         if (config.get("privileged") instanceof Boolean value) host.withPrivileged(value);
         if (config.get("read_only") instanceof Boolean value) host.withReadonlyRootfs(value);
         if (config.get("ipc") != null) host.withIpcMode(String.valueOf(config.get("ipc")));
@@ -1861,6 +1861,27 @@ public final class ComposeService implements IComposeService {
             case "unless-stopped" -> com.github.dockerjava.api.model.RestartPolicy.unlessStoppedRestart();
             case "on-failure" -> com.github.dockerjava.api.model.RestartPolicy.onFailureRestart(retries);
             default -> throw new IllegalArgumentException("Unsupported restart policy: " + value);
+        };
+    }
+
+    private static com.github.dockerjava.api.model.RestartPolicy effectiveRestartPolicy(Map<String, Object> config) {
+        Object deployValue = config.get("deploy");
+        Object policyValue = deployValue instanceof Map<?, ?> deploy ? deploy.get("restart_policy") : null;
+        if (!(policyValue instanceof Map<?, ?> policy)) {
+            Object restart = config.get("restart");
+            return restart == null ? null : restartPolicy(String.valueOf(restart));
+        }
+        String condition = stringValue(policy.get("condition"), "any").toLowerCase(java.util.Locale.ROOT);
+        return switch (condition) {
+            case "none" -> com.github.dockerjava.api.model.RestartPolicy.noRestart();
+            case "any" -> com.github.dockerjava.api.model.RestartPolicy.alwaysRestart();
+            case "on-failure" -> {
+                Object attempts = policy.get("max_attempts");
+                long retries = attempts == null ? 0 : parseLong(attempts, "deploy.restart_policy.max_attempts");
+                if (retries < 0) throw new IllegalArgumentException("deploy.restart_policy.max_attempts must be non-negative.");
+                yield com.github.dockerjava.api.model.RestartPolicy.onFailureRestart(Math.toIntExact(retries));
+            }
+            default -> throw new IllegalArgumentException("Unsupported deploy.restart_policy.condition: " + condition);
         };
     }
 
