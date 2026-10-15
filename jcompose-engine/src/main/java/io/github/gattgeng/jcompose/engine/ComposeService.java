@@ -154,13 +154,24 @@ public final class ComposeService implements IComposeService {
         return execute(context, client -> {
             List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
             for (Container container : projectContainers(client, context.projectName(), selectedServices)) {
-                if (options != null && options.stop() && isRunning(container)) {
-                    client.stopContainerCmd(container.getId()).withTimeout(DEFAULT_STOP_TIMEOUT_SECONDS).exec();
+                if (options != null && options.stop()) {
+                    boolean stopAccepted = true;
+                    try {
+                        client.stopContainerCmd(container.getId()).withTimeout(DEFAULT_STOP_TIMEOUT_SECONDS).exec();
+                    } catch (DockerException ignored) {
+                        stopAccepted = false;
+                        // Continue removing the remaining project containers.
+                    }
+                    if (stopAccepted) waitUntilNotRunning(client, container.getId());
                 }
-                client.removeContainerCmd(container.getId())
-                        .withForce(options != null && options.force())
-                        .withRemoveVolumes(options != null && options.volumes())
-                        .exec();
+                try {
+                    client.removeContainerCmd(container.getId())
+                            .withForce(options != null && options.force())
+                            .withRemoveVolumes(options != null && options.volumes())
+                            .exec();
+                } catch (DockerException ignored) {
+                    // ComposeSharp continues the batch when Docker rejects one removal.
+                }
             }
         });
     }
@@ -171,8 +182,16 @@ public final class ComposeService implements IComposeService {
         return execute(context, client -> {
             ExistingServiceSelection selection = selectExistingServices(context, options == null ? null : options.services());
             for (Container container : projectContainers(client, context.projectName(), selection.serviceNames())) {
-                if (isRunning(container)) client.stopContainerCmd(container.getId()).withTimeout(timeout).exec();
-                client.removeContainerCmd(container.getId()).withForce(true).withRemoveVolumes(false).exec();
+                try {
+                    client.stopContainerCmd(container.getId()).withTimeout(timeout).exec();
+                } catch (DockerException ignored) {
+                    // Continue teardown when the container is already stopped or unavailable.
+                }
+                try {
+                    client.removeContainerCmd(container.getId()).withForce(true).withRemoveVolumes(false).exec();
+                } catch (NotFoundException ignored) {
+                    // A container removed concurrently is already down.
+                }
             }
             if (selection.includesAllDefinedServices()) {
                 removeProjectNetworks(client, context.projectName());
@@ -219,7 +238,8 @@ public final class ComposeService implements IComposeService {
         return execute(context, client -> {
             List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
             for (Container container : projectContainers(client, context.projectName(), selectedServices)) {
-                if (isRunning(container)) client.pauseContainerCmd(container.getId()).exec();
+                try { client.pauseContainerCmd(container.getId()).exec(); }
+                catch (DockerException ignored) { /* Continue with the remaining containers. */ }
             }
         });
     }
@@ -229,7 +249,8 @@ public final class ComposeService implements IComposeService {
         return execute(context, client -> {
             List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
             for (Container container : projectContainers(client, context.projectName(), selectedServices)) {
-                if ("paused".equalsIgnoreCase(container.getState())) client.unpauseContainerCmd(container.getId()).exec();
+                try { client.unpauseContainerCmd(container.getId()).exec(); }
+                catch (DockerException ignored) { /* Continue with the remaining containers. */ }
             }
         });
     }
@@ -240,7 +261,8 @@ public final class ComposeService implements IComposeService {
         return execute(context, client -> {
             List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
             for (Container container : projectContainers(client, context.projectName(), selectedServices)) {
-                if (isRunning(container)) client.killContainerCmd(container.getId()).withSignal(signal).exec();
+                try { client.killContainerCmd(container.getId()).withSignal(signal).exec(); }
+                catch (DockerException ignored) { /* Continue with the remaining containers. */ }
             }
         });
     }
