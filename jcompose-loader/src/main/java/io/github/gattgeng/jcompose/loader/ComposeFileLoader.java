@@ -233,10 +233,14 @@ public final class ComposeFileLoader {
     }
 
     private static Map<String, String> parseEnvFile(Path path) throws IOException {
-        return parseEnvFile(path, false);
+        return parseEnvFile(path, false, true);
     }
 
     private static Map<String, String> parseEnvFile(Path path, boolean rawFormat) throws IOException {
+        return parseEnvFile(path, rawFormat, false);
+    }
+
+    private static Map<String, String> parseEnvFile(Path path, boolean rawFormat, boolean bareKeysAreUnset) throws IOException {
         Map<String, String> result = new LinkedHashMap<>();
         if (!Files.isRegularFile(path)) return result;
         for (String line : Files.readAllLines(path)) {
@@ -257,7 +261,7 @@ public final class ComposeFileLoader {
             String key = (equals < 0 ? trimmed : trimmed.substring(0, equals)).trim();
             if (key.isEmpty()) continue;
             if (equals < 0) {
-                result.put(key, null);
+                result.put(key, bareKeysAreUnset ? null : "");
                 continue;
             }
             String value = trimmed.substring(equals + 1).trim();
