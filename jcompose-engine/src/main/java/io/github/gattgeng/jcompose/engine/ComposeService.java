@@ -2005,7 +2005,7 @@ public final class ComposeService implements IComposeService {
         return bytes;
     }
 
-    private static CopyExtraction extractTar(InputStream archive, Path destination) throws java.io.IOException {
+    static CopyExtraction extractTar(InputStream archive, Path destination) throws java.io.IOException {
         Path root = destination.toAbsolutePath().normalize();
         long bytes = 0;
         boolean directory = false;
@@ -2016,11 +2016,26 @@ public final class ComposeService implements IComposeService {
                 if (first) { directory = entry.isDirectory(); first = false; }
                 Path target = root.resolve(entry.getName()).normalize();
                 if (!target.startsWith(root)) throw new java.io.IOException("Docker archive contains a path outside destination: " + entry.getName());
-                if (entry.isSymbolicLink() || entry.isLink() || !(entry.isDirectory() || entry.isFile()))
+                if (entry.isSymbolicLink() || !(entry.isDirectory() || entry.isFile() || entry.isLink()))
                     throw new java.io.IOException("Docker archive contains unsupported entry type: " + entry.getName());
                 ensureNoSymlinkPath(root, target);
                 if (entry.isDirectory()) Files.createDirectories(target);
-                else {
+                else if (entry.isLink()) {
+                    String linkName = entry.getLinkName();
+                    if (linkName == null || linkName.isBlank())
+                        throw new java.io.IOException("Docker archive contains a hard link without a target: " + entry.getName());
+                    Path linkTarget = root.resolve(linkName).normalize();
+                    if (!linkTarget.startsWith(root))
+                        throw new java.io.IOException("Docker archive contains a hard link outside destination: " + linkName);
+                    ensureNoSymlinkPath(root, linkTarget);
+                    if (!Files.isRegularFile(linkTarget, java.nio.file.LinkOption.NOFOLLOW_LINKS))
+                        throw new java.io.IOException("Docker archive contains a hard link before its target: " + linkName);
+                    Path parent = target.getParent();
+                    if (parent != null) Files.createDirectories(parent);
+                    long linkBytes = Files.size(linkTarget);
+                    Files.copy(linkTarget, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    bytes = Math.addExact(bytes, linkBytes);
+                } else {
                     Path parent = target.getParent();
                     if (parent != null) Files.createDirectories(parent);
                     try (var output = Files.newOutputStream(target)) { bytes = Math.addExact(bytes, tar.transferTo(output)); }
@@ -2041,8 +2056,17 @@ public final class ComposeService implements IComposeService {
         }
     }
 
-    private record CopyExtraction(long bytes, boolean directory) { }
+    static void ensureNoSymlinkAncestors(Path path) throws java.io.IOException {
+        Path current = path.getRoot();
+        if (current == null) throw new java.io.IOException("Copy destination must be an absolute path: " + path);
+        for (Path segment : path) {
+            current = current.resolve(segment);
+            if (Files.exists(current, java.nio.file.LinkOption.NOFOLLOW_LINKS) && Files.isSymbolicLink(current))
+                throw new java.io.IOException("Copy destination traverses a symbolic link: " + current);
+        }
+    }
 
+    record CopyExtraction(long bytes, boolean directory) { }
     private record CopyPath(boolean container, String service, String path) {
         private static final Pattern SERVICE_PATH = Pattern.compile("^([A-Za-z0-9][A-Za-z0-9_.-]*):(/.*)$");
         static CopyPath parse(String value) {
@@ -3041,6 +3065,7 @@ public final class ComposeService implements IComposeService {
                     String archivePath = source.path();
                     try (InputStream archive = client.copyArchiveFromContainerCmd(container.getId(), archivePath).exec()) {
                         Path target = Path.of(destination.path()).toAbsolutePath().normalize();
+                        ensureNoSymlinkAncestors(target);
                         Files.createDirectories(target);
                         CopyExtraction extraction = extractTar(archive, target);
                         return new CopyResult(null, extraction.directory(), extraction.bytes(), 0);
