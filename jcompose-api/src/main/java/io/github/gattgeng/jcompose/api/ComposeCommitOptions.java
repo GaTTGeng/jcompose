@@ -1,5 +1,7 @@
 package io.github.gattgeng.jcompose.api;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -23,7 +25,7 @@ public record ComposeCommitOptions(
         Integer index) {
     public ComposeCommitOptions {
         Objects.requireNonNull(service, "service");
-        changes = changes == null ? null : Map.copyOf(changes);
+        changes = changes == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(changes));
     }
 
     public static Builder builder() { return new Builder(); }

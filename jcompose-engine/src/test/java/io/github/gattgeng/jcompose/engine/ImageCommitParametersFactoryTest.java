@@ -1,5 +1,6 @@
 package io.github.gattgeng.jcompose.engine;
 
+import io.github.gattgeng.jcompose.api.ComposeCommitOptions;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
@@ -36,5 +37,16 @@ class ImageCommitParametersFactoryTest {
     void leavesOtherEndpointsAndEmptyInstructionsUntouched() {
         assertEquals("/containers/json", DockerClientFactory.appendCommitChanges("/containers/json", java.util.List.of("CMD x")));
         assertEquals("/commit?container=id", DockerClientFactory.appendCommitChanges("/commit?container=id", java.util.List.of()));
+    }
+
+    @Test
+    void preservesCommitInstructionOrderInImmutableOptions() {
+        Map<String, String> changes = new LinkedHashMap<>();
+        changes.put("ENTRYPOINT", "[\"app\"]");
+        changes.put("CMD", "[\"serve\"]");
+        ComposeCommitOptions options = new ComposeCommitOptions("api", null, null, null, changes, true, null);
+        changes.clear();
+        assertEquals(java.util.List.of("ENTRYPOINT [\"app\"]", "CMD [\"serve\"]"),
+                ImageCommitParametersFactory.toDockerfileChanges(options.changes()));
     }
 }
