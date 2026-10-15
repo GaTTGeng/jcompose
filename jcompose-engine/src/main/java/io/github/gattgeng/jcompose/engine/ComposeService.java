@@ -1152,6 +1152,32 @@ public final class ComposeService implements IComposeService {
         if (config.get("oom_kill_disable") instanceof Boolean value) host.withOomKillDisable(value);
         if (config.get("oom_score_adj") != null) host.withOomScoreAdj(Math.toIntExact(parseLong(config.get("oom_score_adj"), "oom_score_adj")));
         if (config.get("uts") != null) host.withUtSMode(String.valueOf(config.get("uts")));
+        applyUlimits(host, config.get("ulimits"));
+    }
+
+    private static void applyUlimits(com.github.dockerjava.api.model.HostConfig host, Object configured) {
+        if (configured == null) return;
+        if (!(configured instanceof Map<?, ?> limits)) {
+            throw new IllegalArgumentException("Service 'ulimits' must be a mapping.");
+        }
+        List<com.github.dockerjava.api.model.Ulimit> parsed = new ArrayList<>();
+        limits.forEach((nameValue, limitValue) -> {
+            String name = String.valueOf(nameValue);
+            long soft;
+            long hard;
+            if (limitValue instanceof Map<?, ?> values) {
+                if (!values.containsKey("soft") || !values.containsKey("hard")) {
+                    throw new IllegalArgumentException("Service 'ulimits." + name + "' must define both soft and hard.");
+                }
+                soft = parseLong(values.get("soft"), "ulimits." + name + ".soft");
+                hard = parseLong(values.get("hard"), "ulimits." + name + ".hard");
+            } else {
+                soft = parseLong(limitValue, "ulimits." + name);
+                hard = soft;
+            }
+            parsed.add(new com.github.dockerjava.api.model.Ulimit(name, soft, hard));
+        });
+        if (!parsed.isEmpty()) host.withUlimits(parsed);
     }
 
     private static Object deployResourceValue(Map<String, Object> config, String section, String field) {
