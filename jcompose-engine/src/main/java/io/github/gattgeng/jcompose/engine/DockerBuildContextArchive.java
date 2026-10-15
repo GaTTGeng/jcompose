@@ -171,7 +171,6 @@ final class DockerBuildContextArchive implements AutoCloseable {
                 int end = pattern.indexOf(']', i + 1);
                 if (end > i + 1) {
                     String group = pattern.substring(i + 1, end);
-                    if (group.charAt(0) == '!') group = "^" + group.substring(1);
                     expression.append('[').append(group).append(']');
                     i = end;
                 } else expression.append("\\[");
