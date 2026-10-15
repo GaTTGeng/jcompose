@@ -1120,8 +1120,64 @@ public final class ComposeService implements IComposeService {
 
         Map<String, String> sysctls = stringMap(config.get("sysctls"));
         if (!sysctls.isEmpty()) host.withSysctls(sysctls);
+        applyBlockIoConfig(host, config.get("blkio_config"));
         applyResourceConfig(host, config);
         return host;
+    }
+
+    private static void applyBlockIoConfig(com.github.dockerjava.api.model.HostConfig host, Object configured) {
+        if (configured == null) return;
+        if (!(configured instanceof Map<?, ?> options)) {
+            throw new IllegalArgumentException("Service 'blkio_config' must be a mapping.");
+        }
+        if (options.get("weight") != null)
+            host.withBlkioWeight(Math.toIntExact(parseLong(options.get("weight"), "blkio_config.weight")));
+        List<com.github.dockerjava.api.model.BlkioWeightDevice> weights = blkioWeightDevices(options.get("weight_device"));
+        if (!weights.isEmpty()) host.withBlkioWeightDevice(weights);
+        List<com.github.dockerjava.api.model.BlkioRateDevice> readBps = blkioRateDevices(options.get("device_read_bps"), "blkio_config.device_read_bps", true);
+        if (!readBps.isEmpty()) host.withBlkioDeviceReadBps(readBps);
+        List<com.github.dockerjava.api.model.BlkioRateDevice> writeBps = blkioRateDevices(options.get("device_write_bps"), "blkio_config.device_write_bps", true);
+        if (!writeBps.isEmpty()) host.withBlkioDeviceWriteBps(writeBps);
+        List<com.github.dockerjava.api.model.BlkioRateDevice> readIops = blkioRateDevices(options.get("device_read_iops"), "blkio_config.device_read_iops", false);
+        if (!readIops.isEmpty()) host.withBlkioDeviceReadIOps(readIops);
+        List<com.github.dockerjava.api.model.BlkioRateDevice> writeIops = blkioRateDevices(options.get("device_write_iops"), "blkio_config.device_write_iops", false);
+        if (!writeIops.isEmpty()) host.withBlkioDeviceWriteIOps(writeIops);
+    }
+
+    private static List<com.github.dockerjava.api.model.BlkioWeightDevice> blkioWeightDevices(Object configured) {
+        if (configured == null) return List.of();
+        if (!(configured instanceof List<?> entries))
+            throw new IllegalArgumentException("Service 'blkio_config.weight_device' must be a list.");
+        List<com.github.dockerjava.api.model.BlkioWeightDevice> devices = new ArrayList<>();
+        for (Object entry : entries) {
+            if (!(entry instanceof Map<?, ?> values))
+                throw new IllegalArgumentException("Each blkio_config.weight_device entry must be a mapping.");
+            String path = stringValue(values.get("path"), null);
+            if (path == null || path.isBlank() || values.get("weight") == null)
+                throw new IllegalArgumentException("Each blkio_config.weight_device entry requires path and weight.");
+            devices.add(new com.github.dockerjava.api.model.BlkioWeightDevice().withPath(path)
+                    .withWeight(Math.toIntExact(parseLong(values.get("weight"), "blkio_config.weight_device.weight"))));
+        }
+        return List.copyOf(devices);
+    }
+
+    private static List<com.github.dockerjava.api.model.BlkioRateDevice> blkioRateDevices(Object configured, String field,
+                                                                                          boolean bytesPerSecond) {
+        if (configured == null) return List.of();
+        if (!(configured instanceof List<?> entries))
+            throw new IllegalArgumentException("Service '" + field + "' must be a list.");
+        List<com.github.dockerjava.api.model.BlkioRateDevice> devices = new ArrayList<>();
+        for (Object entry : entries) {
+            if (!(entry instanceof Map<?, ?> values))
+                throw new IllegalArgumentException("Each " + field + " entry must be a mapping.");
+            String path = stringValue(values.get("path"), null);
+            Object rate = values.get("rate");
+            if (path == null || path.isBlank() || rate == null)
+                throw new IllegalArgumentException("Each " + field + " entry requires path and rate.");
+            long parsedRate = bytesPerSecond ? parseByteSize(String.valueOf(rate)) : parseLong(rate, field + ".rate");
+            devices.add(new com.github.dockerjava.api.model.BlkioRateDevice().withPath(path).withRate(parsedRate));
+        }
+        return List.copyOf(devices);
     }
 
     private static void applyRuntimeOptions(com.github.dockerjava.api.model.HostConfig host, Map<String, Object> config) {
@@ -2398,6 +2454,7 @@ public final class ComposeService implements IComposeService {
                 applyDnsConfig(host, service.configuration());
                 applyResourceConfig(host, service.configuration());
                 applyDeviceCgroupRules(host, service.configuration());
+                applyBlockIoConfig(host, service.configuration().get("blkio_config"));
                 applyRuntimeOptions(host, service.configuration());
                 List<com.github.dockerjava.api.model.Bind> binds = new ArrayList<>(serviceBinds(project, context.projectName(), service));
                 for (String volume : effective.volumes() == null ? List.<String>of() : effective.volumes())
