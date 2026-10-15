@@ -153,8 +153,9 @@ public final class ComposeService implements IComposeService {
     public CompletableFuture<Void> removeAsync(ComposeProjectContext context, ComposeRemoveOptions options) {
         return execute(context, client -> {
             List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
-            for (Container container : projectContainers(client, context.projectName(), selectedServices)) {
-                if (options != null && options.stop()) {
+            List<Container> containers = projectContainers(client, context.projectName(), selectedServices);
+            if (options != null && options.stop()) {
+                for (Container container : containers) {
                     boolean stopAccepted = true;
                     try {
                         client.stopContainerCmd(container.getId()).withTimeout(DEFAULT_STOP_TIMEOUT_SECONDS).exec();
@@ -164,6 +165,8 @@ public final class ComposeService implements IComposeService {
                     }
                     if (stopAccepted) waitUntilNotRunning(client, container.getId());
                 }
+            }
+            for (Container container : containers) {
                 try {
                     client.removeContainerCmd(container.getId())
                             .withForce(options != null && options.force())
