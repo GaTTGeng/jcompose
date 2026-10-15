@@ -1,5 +1,6 @@
 package io.github.gattgeng.jcompose.engine;
 
+import io.github.gattgeng.jcompose.api.ServiceDefinition;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -19,5 +20,15 @@ class ComposeLabelValidationTest {
     @Test
     void acceptsLabelsOutsideReservedComposeNamespace() {
         assertDoesNotThrow(() -> ComposeService.validateComposeLabels(Map.of("com.example.component", "api")));
+    }
+
+    @Test
+    void rejectsScalingServicesWithFixedContainerNames() {
+        ServiceDefinition named = new ServiceDefinition("app", Map.of("container_name", "app-container"));
+        assertThrows(IllegalArgumentException.class,
+                () -> ComposeService.validateContainerNameScaling(named, 2));
+        assertDoesNotThrow(() -> ComposeService.validateContainerNameScaling(named, 1));
+        assertDoesNotThrow(() -> ComposeService.validateContainerNameScaling(
+                new ServiceDefinition("app", Map.of()), 2));
     }
 }

@@ -1002,6 +1002,12 @@ public final class ComposeService implements IComposeService {
         return 1;
     }
 
+    static void validateContainerNameScaling(ServiceDefinition service, int replicas) {
+        if (replicas > 1 && service.configuration().get("container_name") != null)
+            throw new IllegalArgumentException("Service '" + service.name()
+                    + "' cannot be scaled beyond one container when container_name is set.");
+    }
+
     private static String effectivePullPolicy(ServiceDefinition service, String requested) {
         String policy = requested == null || requested.isBlank() || "policy".equalsIgnoreCase(requested)
                 ? stringValue(service.configuration().get("pull_policy"), "missing") : requested;
@@ -1047,6 +1053,7 @@ public final class ComposeService implements IComposeService {
                                                 ServiceDefinition service, int replicas, boolean forceRecreate,
                                                 boolean noRecreate, boolean renewAnonVolumes, boolean start,
                                                 int stopTimeoutSeconds, ILogConsumer logConsumer) {
+        validateContainerNameScaling(service, replicas);
         validateComposeLabels(stringMap(service.configuration().get("labels")));
         if (replicas < 0) throw new IllegalArgumentException("Replica count must not be negative for service '" + service.name() + "'.");
         int effectiveStopTimeout = service.configuration().get("stop_grace_period") == null ? stopTimeoutSeconds
@@ -2798,6 +2805,11 @@ public final class ComposeService implements IComposeService {
             List<ServiceDefinition> requested = selectConfigurationServices(project, context.profiles(), effective.services());
             List<ServiceDefinition> selected = dependencyOrderedServices(project, requested);
             selected.forEach(ComposeService::validateServiceLabelConfiguration);
+            for (ServiceDefinition service : selected) {
+                int replicas = effective.scale() != null && effective.scale().containsKey(service.name())
+                        ? effective.scale().get(service.name()) : replicaCount(service);
+                validateContainerNameScaling(service, replicas);
+            }
             java.util.Set<String> dependencies = selected.stream()
                     .flatMap(service -> serviceDependencyNames(service).stream())
                     .collect(java.util.stream.Collectors.toSet());
@@ -2861,6 +2873,11 @@ public final class ComposeService implements IComposeService {
             List<ServiceDefinition> selected = dependencyOrderedServices(project,
                     selectConfigurationServices(project, context.profiles(), effective.services()));
             selected.forEach(ComposeService::validateServiceLabelConfiguration);
+            for (ServiceDefinition service : selected) {
+                int replicas = effective.scale() != null && effective.scale().containsKey(service.name())
+                        ? effective.scale().get(service.name()) : 1;
+                validateContainerNameScaling(service, replicas);
+            }
             List<ServiceDefinition> buildServices = selected.stream()
                     .filter(service -> effective.build() || "build".equals(effectivePullPolicy(service, effective.pull())))
                     .toList();
@@ -3149,6 +3166,10 @@ public final class ComposeService implements IComposeService {
             List<ServiceDefinition> selected = selectConfigurationServices(project, context.profiles(), requested);
             Map<String, ServiceDefinition> definitions = new LinkedHashMap<>();
             selected.forEach(service -> definitions.put(service.name(), service));
+            for (Map.Entry<String, Integer> entry : options.services().entrySet()) {
+                ServiceDefinition service = definitions.get(entry.getKey());
+                if (service != null) validateContainerNameScaling(service, entry.getValue());
+            }
             try (DockerClient client = createDockerClient(context)) {
                 ensureProjectResources(client, context.projectName(), project);
                 List<ServiceStatus> results = new ArrayList<>();
