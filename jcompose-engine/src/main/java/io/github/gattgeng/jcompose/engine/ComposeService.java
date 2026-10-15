@@ -460,6 +460,7 @@ public final class ComposeService implements IComposeService {
     public CompletableFuture<Void> pullAsync(ComposeProjectContext context, ComposePullOptions options) {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
+            if (context.offline()) throw new IllegalStateException("Cannot pull images when the Compose project context is offline.");
             ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
             List<ServiceDefinition> selected = selectConfigurationServices(project, context.profiles(),
                     options == null ? null : options.services());
@@ -493,6 +494,7 @@ public final class ComposeService implements IComposeService {
     public CompletableFuture<Void> pushAsync(ComposeProjectContext context, ComposePushOptions options) {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
+            if (context.offline()) throw new IllegalStateException("Cannot push images when the Compose project context is offline.");
             ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
             List<ServiceDefinition> selected = selectConfigurationServices(project, context.profiles(),
                     options == null ? null : options.services());
@@ -2428,7 +2430,7 @@ public final class ComposeService implements IComposeService {
                                 .withDockerfilePath(archive.dockerfilePath())
                                 .withTag(image)
                                 .withNoCache(options != null && options.noCache() || Boolean.TRUE.equals(build.get("no_cache")))
-                                .withPull(options != null && options.pull() || Boolean.TRUE.equals(build.get("pull")))
+                                .withPull(!context.offline() && (options != null && options.pull() || Boolean.TRUE.equals(build.get("pull"))))
                                 .withQuiet(options != null && options.quiet())
                                 .withTarget(options != null && options.target() != null
                                         ? options.target() : stringValue(build.get("target"), null));
@@ -2514,7 +2516,7 @@ public final class ComposeService implements IComposeService {
                     String pullPolicy = effectivePullPolicy(service, effective.pull());
                     if ("build".equals(pullPolicy) && effective.noBuild() && !imageExists(client, image))
                         throw new IllegalStateException("Service '" + service.name() + "' requires a build, but noBuild is enabled and its image is missing.");
-                    if (shouldPullImage(client, image, pullPolicy)) {
+                    if (!context.offline() && shouldPullImage(client, image, pullPolicy)) {
                         pullImage(client, context.registryAuth(), image, stringValue(service.configuration().get("platform"), null));
                     }
                     int replicas = effective.scale() != null && effective.scale().containsKey(service.name())
@@ -2554,7 +2556,7 @@ public final class ComposeService implements IComposeService {
                     String image = service.image() == null || service.image().isBlank()
                             ? context.projectName() + "-" + service.name() : service.image();
                     String pullPolicy = effectivePullPolicy(service, effective.pull());
-                    if (shouldPullImage(client, image, pullPolicy))
+                    if (!context.offline() && shouldPullImage(client, image, pullPolicy))
                         pullImage(client, context.registryAuth(), image, stringValue(service.configuration().get("platform"), null));
                     int replicas = effective.scale() != null && effective.scale().containsKey(service.name())
                             ? effective.scale().get(service.name()) : 1;
@@ -2584,7 +2586,7 @@ public final class ComposeService implements IComposeService {
                         String image = dependency.image() == null || dependency.image().isBlank()
                                 ? context.projectName() + "-" + dependency.name() : dependency.image();
                         String pullPolicy = effectivePullPolicy(dependency, null);
-                        if (shouldPullImage(client, image, pullPolicy))
+                        if (!context.offline() && shouldPullImage(client, image, pullPolicy))
                             pullImage(client, context.registryAuth(), image, stringValue(dependency.configuration().get("platform"), null));
                         ensureServiceContainers(client, context, project, dependency, replicaCount(dependency), false, false,
                                 true, DEFAULT_STOP_TIMEOUT_SECONDS, null);
@@ -2595,7 +2597,7 @@ public final class ComposeService implements IComposeService {
                 String image = service.image() == null || service.image().isBlank()
                         ? context.projectName() + "-" + service.name() : service.image();
                 String pullPolicy = effectivePullPolicy(service, null);
-                if (shouldPullImage(client, image, pullPolicy))
+                if (!context.offline() && shouldPullImage(client, image, pullPolicy))
                     pullImage(client, context.registryAuth(), image, stringValue(service.configuration().get("platform"), null));
 
                 int index = effective.index() == null ? 0 : effective.index();
@@ -2982,6 +2984,7 @@ public final class ComposeService implements IComposeService {
             ComposeProjectContext context, String repository, ComposePublishOptions options) {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
+            if (context.offline()) throw new IllegalStateException("Cannot publish images when the Compose project context is offline.");
             if (repository == null || repository.isBlank()) throw new IllegalArgumentException("Repository must not be blank.");
             if (options != null && (options.resolveImageDigests() || options.withEnvironment()
                     || options.ocIVersion() != null && !options.ocIVersion().isBlank() || options.insecureRegistry()))

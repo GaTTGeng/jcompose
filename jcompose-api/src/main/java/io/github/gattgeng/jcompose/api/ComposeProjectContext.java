@@ -3,7 +3,10 @@ package io.github.gattgeng.jcompose.api;
 import java.nio.file.Path;
 import java.util.List;
 
-/** Identifies a Compose project and the local settings used to load and manage it. */
+/** Identifies a Compose project and the local settings used to load and manage it.
+ * @param offline Prevents jcompose from initiating registry pulls or pushes; Docker builds may still fetch missing base images.
+ * @param compatibility Enables legacy Compose compatibility behavior when supported by an operation.
+ */
 public record ComposeProjectContext(
         String projectName,
         Path workingDirectory,
