@@ -140,6 +140,7 @@ public final class ComposeFileLoader {
             for (Object item : files) {
                 String path;
                 boolean required = true;
+                boolean rawFormat = false;
                 if (item instanceof Map<?, ?> mapping) {
                     Object rawPath = mapping.get("path");
                     if (!(rawPath instanceof String value) || value.isBlank())
@@ -148,13 +149,19 @@ public final class ComposeFileLoader {
                     Object rawRequired = mapping.get("required");
                     if (Boolean.FALSE.equals(rawRequired) || "false".equalsIgnoreCase(String.valueOf(rawRequired)))
                         required = false;
+                    Object format = mapping.get("format");
+                    if (format != null) {
+                        if (!(format instanceof String formatName) || !"raw".equals(formatName))
+                            throw new IOException("Unsupported env_file format: " + format);
+                        rawFormat = true;
+                    }
                 } else path = String.valueOf(item);
                 Path envPath = base.resolve(path).normalize();
                 if (!Files.isRegularFile(envPath)) {
                     if (!required) continue;
                     throw new IOException("env_file not found: " + envPath);
                 }
-                resolved.putAll(parseEnvFile(envPath));
+                resolved.putAll(parseEnvFile(envPath, rawFormat));
             }
         } catch (IOException exception) {
             throw new ComposeValidationException(source, "services." + name + ".env_file", name, exception.getMessage(), null, null, exception);
@@ -169,9 +176,22 @@ public final class ComposeFileLoader {
     }
 
     private static Map<String, String> parseEnvFile(Path path) throws IOException {
+        return parseEnvFile(path, false);
+    }
+
+    private static Map<String, String> parseEnvFile(Path path, boolean rawFormat) throws IOException {
         Map<String, String> result = new LinkedHashMap<>();
         if (!Files.isRegularFile(path)) return result;
         for (String line : Files.readAllLines(path)) {
+            if (rawFormat) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
+                int equals = line.indexOf('=');
+                if (equals <= 0) continue;
+                String key = line.substring(0, equals).trim();
+                if (!key.isEmpty()) result.put(key, line.substring(equals + 1));
+                continue;
+            }
             String trimmed = line.trim();
             if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
             if (trimmed.startsWith("export ")) trimmed = trimmed.substring(7).trim();
