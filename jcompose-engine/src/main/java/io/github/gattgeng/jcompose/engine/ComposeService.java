@@ -185,7 +185,11 @@ public final class ComposeService implements IComposeService {
     public CompletableFuture<Void> downAsync(ComposeProjectContext context, ComposeDownOptions options) {
         int timeout = positiveTimeout(options == null ? null : options.timeoutSeconds());
         return execute(context, client -> {
+            String removeImages = options == null ? null : options.removeImages();
+            if (removeImages != null && !removeImages.equals("all") && !removeImages.equals("local"))
+                throw new IllegalArgumentException("Invalid image removal policy '" + removeImages + "'; expected 'local' or 'all'.");
             ExistingServiceSelection selection = selectExistingServices(context, options == null ? null : options.services());
+            List<String> imagesToRemove = removeImages == null ? List.of() : downImageReferences(client, context, selection, removeImages);
             for (Container container : projectContainers(client, context.projectName(), selection.serviceNames())) {
                 try {
                     client.stopContainerCmd(container.getId()).withTimeout(timeout).exec();
@@ -202,7 +206,36 @@ public final class ComposeService implements IComposeService {
                 removeProjectNetworks(client, context.projectName());
                 if (options != null && options.removeVolumes()) removeProjectVolumes(client, context.projectName());
             }
+            for (String image : imagesToRemove) {
+                try { client.removeImageCmd(image).exec(); }
+                catch (NotFoundException ignored) { /* The image may have been removed concurrently. */ }
+            }
         });
+    }
+
+    private List<String> downImageReferences(DockerClient client, ComposeProjectContext context, ExistingServiceSelection selection, String policy) {
+        java.util.Set<String> images = new java.util.LinkedHashSet<>();
+        if (loader.hasComposeFile(context.workingDirectory(), context.composeFileName())) {
+            ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
+            for (String serviceName : selection.serviceNames()) {
+                ServiceDefinition service = project.services().get(serviceName);
+                if (service == null) continue;
+                String image = service.image();
+                boolean hasBuild = service.build() != null;
+                if (policy.equals("local") && (!hasBuild || (image != null && !image.isBlank()))) continue;
+                if ((image == null || image.isBlank()) && !hasBuild) continue;
+                images.add(image == null || image.isBlank() ? context.projectName() + "-" + serviceName : image);
+            }
+        } else {
+            for (Container container : projectContainers(client, context.projectName(), selection.serviceNames())) {
+                String service = label(container, ComposeConstants.SERVICE_LABEL);
+                String image = container.getImage();
+                if (image == null || image.isBlank()) continue;
+                if (policy.equals("local") && (service == null || !image.equals(context.projectName() + "-" + service))) continue;
+                images.add(image);
+            }
+        }
+        return List.copyOf(images);
     }
 
     @Override
