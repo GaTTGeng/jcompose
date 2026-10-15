@@ -25,6 +25,20 @@ class VariableInterpolatorTest {
     }
 
     @Test
+    void expandsNestedDefaultsAndReplacementExpressions() {
+        Map<String, String> environment = Map.of("SET", "value");
+        String value = VariableInterpolator.expand(
+                "${MISSING:-${ALSO_MISSING:-${SET}}}|${SET:+${MISSING:-replacement}}",
+                Map.of(), environment);
+        assertEquals("value|replacement", value);
+    }
+
+    @Test
+    void escapedNestedVariableDoesNotCloseItsOuterExpression() {
+        assertEquals("${SET}", VariableInterpolator.expand("${MISSING:-$${SET}}", Map.of(), Map.of()));
+    }
+
+    @Test
     void requiredOperatorsFailOnlyWhenTheirUnsetConditionMatches() {
         assertEquals("value", VariableInterpolator.expand("${SET:?required}", Map.of(), Map.of("SET", "value")));
         var exception = assertThrows(IllegalArgumentException.class,
