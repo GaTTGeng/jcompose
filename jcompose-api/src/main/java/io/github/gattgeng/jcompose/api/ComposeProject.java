@@ -11,12 +11,22 @@ public record ComposeProject(Path sourceFile, Map<String, ServiceDefinition> ser
                              List<String> volumes, List<String> networks,
                              List<String> secrets, List<String> configs,
                              Map<String, Object> volumeDefinitions, Map<String, Object> networkDefinitions,
+                             Map<String, Object> secretDefinitions, Map<String, Object> configDefinitions,
                              Map<String, Object> extensions) {
     public ComposeProject(Path sourceFile, Map<String, ServiceDefinition> services,
                           List<String> volumes, List<String> networks,
                           List<String> secrets, List<String> configs,
+                          Map<String, Object> volumeDefinitions, Map<String, Object> networkDefinitions,
                           Map<String, Object> extensions) {
-        this(sourceFile, services, volumes, networks, secrets, configs, Map.of(), Map.of(), extensions);
+        this(sourceFile, services, volumes, networks, secrets, configs, volumeDefinitions, networkDefinitions,
+                Map.of(), Map.of(), extensions);
+    }
+
+    public ComposeProject(Path sourceFile, Map<String, ServiceDefinition> services,
+                          List<String> volumes, List<String> networks,
+                          List<String> secrets, List<String> configs,
+                          Map<String, Object> extensions) {
+        this(sourceFile, services, volumes, networks, secrets, configs, Map.of(), Map.of(), Map.of(), Map.of(), extensions);
     }
 
     public ComposeProject {
@@ -27,6 +37,8 @@ public record ComposeProject(Path sourceFile, Map<String, ServiceDefinition> ser
         configs = List.copyOf(configs);
         volumeDefinitions = freezeMap(volumeDefinitions);
         networkDefinitions = freezeMap(networkDefinitions);
+        secretDefinitions = freezeMap(secretDefinitions);
+        configDefinitions = freezeMap(configDefinitions);
         extensions = Collections.unmodifiableMap(new LinkedHashMap<>(extensions));
     }
 

@@ -19,6 +19,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Expanded the documentation set to match ComposeSharp's project-documentation categories, rewritten for jcompose's JDK API and actual implementation status.
 - Applied multiple project-network attachments, network aliases and endpoint addresses, DNS settings, and additional CPU, memory, OOM, and UTS options to service and one-off containers.
 - Preserved top-level network and volume definitions through loading and configuration rendering; applied supported custom names, external-resource lookup, drivers, network flags, IPAM ranges, and driver options.
+- Preserved top-level secret and config definitions through loading and configuration rendering; mounted granted file-backed resources read-only for service and one-off containers, with explicit errors for unsupported source types and mount attributes.
 
 ### Changed
 

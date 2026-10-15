@@ -120,7 +120,8 @@ public final class ComposeFileLoader {
         }
         return new ComposeProject(file, services, names(root.get("volumes")), names(root.get("networks")),
                 names(root.get("secrets")), names(root.get("configs")), definitions(root.get("volumes")),
-                definitions(root.get("networks")), extensions(root));
+                definitions(root.get("networks")), definitions(root.get("secrets")),
+                definitions(root.get("configs")), extensions(root));
     }
 
     private static Map<String, Object> definitions(Object value) {

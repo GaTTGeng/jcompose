@@ -1264,9 +1264,8 @@ public final class ComposeService implements IComposeService {
 
     private static List<com.github.dockerjava.api.model.Bind> serviceBinds(ComposeProject project, String projectName, ServiceDefinition service) {
         Object raw = service.configuration().get("volumes");
-        if (!(raw instanceof List<?> volumes)) return List.of();
         List<com.github.dockerjava.api.model.Bind> binds = new ArrayList<>();
-        for (Object volume : volumes) {
+        if (raw instanceof List<?> volumes) for (Object volume : volumes) {
             if (volume instanceof Map<?, ?> map) {
                 Object target = map.get("target"), source = map.get("source");
                 if (target == null) continue;
@@ -1291,7 +1290,49 @@ public final class ComposeService implements IComposeService {
                         readOnly ? com.github.dockerjava.api.model.AccessMode.ro : com.github.dockerjava.api.model.AccessMode.rw));
             }
         }
+        addFileResourceBinds(project, service, "secrets", project.secretDefinitions(), binds);
+        addFileResourceBinds(project, service, "configs", project.configDefinitions(), binds);
         return binds;
+    }
+
+    private static void addFileResourceBinds(ComposeProject project, ServiceDefinition service, String field,
+                                             Map<String, Object> definitions,
+                                             List<com.github.dockerjava.api.model.Bind> binds) {
+        Object raw = service.configuration().get(field);
+        if (!(raw instanceof List<?> resources)) return;
+        for (Object resource : resources) {
+            Map<?, ?> grant = resource instanceof Map<?, ?> map ? map : Map.of("source", resource);
+            String sourceName = stringValue(grant.get("source"), null);
+            if (sourceName == null || sourceName.isBlank())
+                throw new IllegalArgumentException("services." + service.name() + "." + field + " entries must name a source.");
+            Object rawDefinition = definitions.get(sourceName);
+            if (!(rawDefinition instanceof Map<?, ?> definition))
+                throw new IllegalArgumentException("services." + service.name() + "." + field + " references undefined resource '" + sourceName + "'.");
+            if (Boolean.TRUE.equals(definition.get("external")) || definition.get("external") instanceof Map<?, ?>)
+                throw new IllegalArgumentException("External Compose " + field + " are not supported by the Docker Engine bind-mount backend: " + sourceName);
+            if (definition.get("environment") != null || definition.get("content") != null)
+                throw new IllegalArgumentException("Compose " + field + " using environment or content sources are not supported by the Docker Engine bind-mount backend: " + sourceName);
+            Object file = definition.get("file");
+            if (file == null)
+                throw new IllegalArgumentException("Compose " + field + " '" + sourceName + "' must define a file source for the Docker Engine bind-mount backend.");
+            for (String option : List.of("uid", "gid", "mode")) {
+                if (grant.get(option) != null)
+                    throw new IllegalArgumentException("services." + service.name() + "." + field + "." + option
+                            + " cannot be applied to a host file bind mount.");
+            }
+            Path source = project.sourceFile().getParent().resolve(String.valueOf(file)).normalize().toAbsolutePath();
+            if (!java.nio.file.Files.isRegularFile(source))
+                throw new IllegalArgumentException("Compose " + field + " file for '" + sourceName + "' does not exist or is not a regular file: " + source);
+            String target = stringValue(grant.get("target"), null);
+            if (target == null || target.isBlank()) target = defaultResourceTarget(sourceName, service);
+            binds.add(new com.github.dockerjava.api.model.Bind(source.toString(),
+                    new com.github.dockerjava.api.model.Volume(target), com.github.dockerjava.api.model.AccessMode.ro));
+        }
+    }
+
+    private static String defaultResourceTarget(String sourceName, ServiceDefinition service) {
+        String platform = stringValue(service.configuration().get("platform"), "linux");
+        return platform.toLowerCase(java.util.Locale.ROOT).contains("windows") ? "C:\\" + sourceName : "/" + sourceName;
     }
 
     private static Map<String, String> parseKeyValueOptions(List<String> values, String optionName) {

@@ -31,8 +31,8 @@ final class ComposeConfigRenderer {
 
         addResources(root, "networks", project.networks(), project.networkDefinitions());
         addResources(root, "volumes", project.volumes(), project.volumeDefinitions());
-        addNames(root, "secrets", project.secrets());
-        addNames(root, "configs", project.configs());
+        addResources(root, "secrets", project.secrets(), project.secretDefinitions());
+        addResources(root, "configs", project.configs(), project.configDefinitions());
         new TreeMap<>(project.extensions()).forEach(root::put);
 
         DumperOptions options = new DumperOptions();
