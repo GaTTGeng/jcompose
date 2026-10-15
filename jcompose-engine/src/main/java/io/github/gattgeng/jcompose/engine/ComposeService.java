@@ -3208,8 +3208,7 @@ public final class ComposeService implements IComposeService {
             java.util.Objects.requireNonNull(context, "context");
             java.util.Objects.requireNonNull(options, "options");
             if (options.service().isBlank()) throw new IllegalArgumentException("Service must not be blank.");
-            if (options.changes() != null && !options.changes().isEmpty())
-                throw new UnsupportedOperationException("Docker commit changes are not supported by the configured docker-java API.");
+            List<String> changes = ImageCommitParametersFactory.toDockerfileChanges(options.changes());
             String reference = options.reference() == null || options.reference().isBlank()
                     ? context.projectName() + "-" + options.service() + ":latest" : options.reference();
             int slash = reference.lastIndexOf('/');
@@ -3217,7 +3216,7 @@ public final class ComposeService implements IComposeService {
             String repository = colon > slash ? reference.substring(0, colon) : reference;
             String tag = colon > slash ? reference.substring(colon + 1) : "latest";
             if (repository.isBlank() || tag.isBlank()) throw new IllegalArgumentException("Image reference must contain a repository and a non-empty tag.");
-            try (DockerClient client = createDockerClient(context)) {
+            try (DockerClient client = DockerClientFactory.create(context, changes)) {
                 Container container = selectServiceContainer(client, context.projectName(), options.service(), options.index());
                 var command = client.commitCmd(container.getId())
                         .withRepository(repository)

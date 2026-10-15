@@ -9,6 +9,10 @@ import com.github.dockerjava.transport.DockerHttpClient;
 import io.github.gattgeng.jcompose.api.ComposeProjectContext;
 
 import java.nio.file.Path;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.io.IOException;
+import java.util.List;
 import java.time.Duration;
 
 /** Creates Docker Engine clients from per-project daemon and registry settings. */
@@ -16,6 +20,10 @@ public final class DockerClientFactory {
     private DockerClientFactory() { }
 
     public static DockerClient create(ComposeProjectContext context) {
+        return create(context, List.of());
+    }
+
+    static DockerClient create(ComposeProjectContext context, List<String> commitChanges) {
         var builder = DefaultDockerClientConfig.createDefaultConfigBuilder();
         String endpoint = normalizeEndpoint(context == null ? null : context.socketPath());
         if (endpoint != null) builder.withDockerHost(endpoint);
@@ -34,7 +42,36 @@ public final class DockerClientFactory {
                 .connectionTimeout(Duration.ofSeconds(30))
                 .responseTimeout(Duration.ofSeconds(45))
                 .build();
+        if (commitChanges != null && !commitChanges.isEmpty())
+            transport = new CommitChangesHttpClient(transport, commitChanges);
         return DockerClientImpl.getInstance(config, transport);
+    }
+
+    static String appendCommitChanges(String path, List<String> changes) {
+        if (changes == null || changes.isEmpty() || !path.contains("/commit?")) return path;
+        StringBuilder result = new StringBuilder(path);
+        for (String change : changes) {
+            result.append('&').append("changes=")
+                    .append(URLEncoder.encode(change, StandardCharsets.UTF_8).replace("+", "%20"));
+        }
+        return result.toString();
+    }
+
+    private static final class CommitChangesHttpClient implements DockerHttpClient {
+        private final DockerHttpClient delegate;
+        private final List<String> changes;
+
+        private CommitChangesHttpClient(DockerHttpClient delegate, List<String> changes) {
+            this.delegate = delegate;
+            this.changes = List.copyOf(changes);
+        }
+
+        @Override public Response execute(Request request) {
+            String path = appendCommitChanges(request.path(), changes);
+            return delegate.execute(Request.builder().from(request).path(path).build());
+        }
+
+        @Override public void close() throws IOException { delegate.close(); }
     }
 
     private static String normalizeEndpoint(String value) {
