@@ -25,6 +25,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Applied `ps` status filtering through the `status` option and Docker Compose's supported `filter=status=...` expression.
 - Implemented `down.removeImages` for `all` and `local` image removal policies.
 - Implemented `down.removeOrphans` for project containers whose services are absent from the Compose file.
+- Applied `ps.quiet` by returning container IDs without summary fields.
 - Applied `images` quiet mode by returning image IDs without summary fields.
 - Filtered listed project volumes by the mounts used by explicitly selected running services.
 - Established the Maven multi-module repository for the API, loader, Docker Engine integration, and Spring Boot starter.

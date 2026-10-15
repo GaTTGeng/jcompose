@@ -345,7 +345,8 @@ public final class ComposeService implements IComposeService {
                 List<Container> containers = projectContainers(client, context.projectName(), selectedServices, showAll);
                 return containers.stream()
                         .filter(container -> statuses.isEmpty() || statuses.stream().anyMatch(status -> status.equalsIgnoreCase(container.getState())))
-                        .map(container -> containerResult(container, context.projectName())).toList();
+                        .map(container -> options != null && options.quiet()
+                                ? containerIdResult(container.getId()) : containerResult(container, context.projectName())).toList();
             } catch (java.io.IOException exception) {
                 throw new java.io.UncheckedIOException("Could not close Docker Engine client.", exception);
             }
@@ -852,6 +853,11 @@ public final class ComposeService implements IComposeService {
         return new ContainerSummary(container.getId(), name, names, container.getImage(), container.getCommand(),
                 project == null ? "" : project, service == null ? "" : service, created, container.getState(),
                 container.getStatus(), null, exitCode, ports, labels, networks, List.of(), 0, 0, 0);
+    }
+
+    private static ContainerSummary containerIdResult(String id) {
+        return new ContainerSummary(id, null, List.of(), null, null, null, null, 0, null, null, null,
+                0, List.of(), Map.of(), List.of(), List.of(), 0, 0, 0);
     }
 
     private static String stackStatus(List<String> states) {
