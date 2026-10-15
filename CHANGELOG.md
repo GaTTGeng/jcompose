@@ -27,6 +27,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Implemented `down.removeOrphans` for project containers whose services are absent from the Compose file.
 - Applied `ps.quiet` by returning container IDs without summary fields.
 - Applied `up.alwaysRecreateDeps` to dependency services and rejected incompatible recreate options.
+- Reused explicitly configured anonymous volumes by replica during `up` recreation; `renewAnonVolumes` now creates new volumes.
 - Applied `images` quiet mode by returning image IDs without summary fields.
 - Filtered listed project volumes by the mounts used by explicitly selected running services.
 - Established the Maven multi-module repository for the API, loader, Docker Engine integration, and Spring Boot starter.

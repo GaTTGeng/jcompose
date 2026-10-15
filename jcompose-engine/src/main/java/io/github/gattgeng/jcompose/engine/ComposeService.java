@@ -1039,7 +1039,8 @@ public final class ComposeService implements IComposeService {
 
     private static void ensureServiceContainers(DockerClient client, ComposeProjectContext context, ComposeProject project,
                                                 ServiceDefinition service, int replicas, boolean forceRecreate,
-                                                boolean noRecreate, boolean start, int stopTimeoutSeconds, ILogConsumer logConsumer) {
+                                                boolean noRecreate, boolean renewAnonVolumes, boolean start,
+                                                int stopTimeoutSeconds, ILogConsumer logConsumer) {
         if (replicas < 0) throw new IllegalArgumentException("Replica count must not be negative for service '" + service.name() + "'.");
         int effectiveStopTimeout = service.configuration().get("stop_grace_period") == null ? stopTimeoutSeconds
                 : parseDurationSeconds(String.valueOf(service.configuration().get("stop_grace_period")));
@@ -1050,7 +1051,24 @@ public final class ComposeService implements IComposeService {
         boolean configurationChanged = existing.stream()
                 .anyMatch(container -> !hash.equals(label(container, ComposeConstants.CONFIG_HASH_LABEL)));
         boolean recreate = forceRecreate || configurationChanged && !noRecreate;
+        Map<Integer, Map<String, String>> anonymousVolumes = new LinkedHashMap<>();
         if (recreate) {
+            if (!renewAnonVolumes) {
+                java.util.Set<String> anonymousTargets = serviceBinds(project, context.projectName(), service).stream()
+                        .filter(bind -> bind.getPath() == null || bind.getPath().isBlank())
+                        .map(bind -> bind.getVolume().getPath())
+                        .collect(java.util.stream.Collectors.toSet());
+                for (Container container : existing) {
+                    if (container.getMounts() == null) continue;
+                    Map<String, String> volumes = new LinkedHashMap<>();
+                    for (var mount : container.getMounts()) {
+                        if (mount.getDestination() != null && mount.getName() != null
+                                && anonymousTargets.contains(mount.getDestination()))
+                            volumes.put(mount.getDestination(), mount.getName());
+                    }
+                    if (!volumes.isEmpty()) anonymousVolumes.put(replicaNumber(container), volumes);
+                }
+            }
             for (Container container : existing) {
                 if (isRunning(container)) client.stopContainerCmd(container.getId()).withTimeout(effectiveStopTimeout).exec();
                 client.removeContainerCmd(container.getId()).withForce(false).withRemoveVolumes(false).exec();
@@ -1084,7 +1102,8 @@ public final class ComposeService implements IComposeService {
             labels.put(ComposeConstants.CONFIG_FILES_LABEL, project.sourceFile().toString());
             labels.putAll(stringMap(service.configuration().get("labels")));
 
-            com.github.dockerjava.api.model.HostConfig host = serviceHostConfig(client, project, context.projectName(), service);
+            com.github.dockerjava.api.model.HostConfig host = serviceHostConfig(client, project, context.projectName(), service,
+                    anonymousVolumes.getOrDefault(index, Map.of()));
             var command = client.createContainerCmd(image).withName(containerName(context.projectName(), service, replicas, index))
                     .withLabels(labels).withHostConfig(host);
             com.github.dockerjava.api.model.HealthCheck healthcheck = serviceHealthcheck(service);
@@ -1257,11 +1276,29 @@ public final class ComposeService implements IComposeService {
     }
 
     private static com.github.dockerjava.api.model.HostConfig serviceHostConfig(DockerClient client, ComposeProject project, String projectName,
-                                                                                ServiceDefinition service) {
+                                                                                ServiceDefinition service, Map<String, String> anonymousVolumes) {
         Map<String, Object> config = service.configuration();
         var host = com.github.dockerjava.api.model.HostConfig.newHostConfig();
         host.withNetworkMode(stringValue(config.get("network_mode"), primaryNetwork(projectName, project, service)));
         List<com.github.dockerjava.api.model.Bind> binds = serviceBinds(project, projectName, service);
+        if (!anonymousVolumes.isEmpty()) {
+            List<com.github.dockerjava.api.model.Bind> configuredBinds = new ArrayList<>(binds);
+            java.util.Set<String> reusedTargets = anonymousVolumes.keySet();
+            binds.removeIf(bind -> (bind.getPath() == null || bind.getPath().isBlank())
+                    && reusedTargets.contains(bind.getVolume().getPath()));
+            List<com.github.dockerjava.api.model.Mount> mounts = anonymousVolumes.entrySet().stream()
+                    .map(entry -> {
+                        boolean readOnly = configuredBinds.stream()
+                                .anyMatch(bind -> (bind.getPath() == null || bind.getPath().isBlank())
+                                        && entry.getKey().equals(bind.getVolume().getPath())
+                                        && bind.getAccessMode() == com.github.dockerjava.api.model.AccessMode.ro);
+                        return new com.github.dockerjava.api.model.Mount()
+                                .withType(com.github.dockerjava.api.model.MountType.VOLUME)
+                                .withSource(entry.getValue()).withTarget(entry.getKey()).withReadOnly(readOnly);
+                    })
+                    .toList();
+            host.withMounts(mounts);
+        }
         if (!binds.isEmpty()) host.withBinds(binds);
         applyVolumesFrom(client, project, projectName, service, host);
         com.github.dockerjava.api.model.RestartPolicy restart = effectiveRestartPolicy(config);
@@ -2725,7 +2762,7 @@ public final class ComposeService implements IComposeService {
                     boolean forceRecreate = effective.forceRecreate()
                             || effective.alwaysRecreateDeps() && dependencies.contains(service.name());
                     ensureServiceContainers(client, context, project, service, replicas,
-                            forceRecreate, effective.noRecreate(), !effective.noStart(),
+                            forceRecreate, effective.noRecreate(), effective.renewAnonVolumes(), !effective.noStart(),
                             positiveTimeout(effective.timeoutSeconds()), effective.logConsumer());
                 }
                 if (effective.waitForCompletion() && !effective.noStart()) {
@@ -2766,7 +2803,7 @@ public final class ComposeService implements IComposeService {
                     int replicas = effective.scale() != null && effective.scale().containsKey(service.name())
                             ? effective.scale().get(service.name()) : 1;
                     ensureServiceContainers(client, context, project, service, replicas,
-                            effective.forceRecreate(), effective.noRecreate(), false,
+                            effective.forceRecreate(), effective.noRecreate(), false, false,
                             positiveTimeout(effective.timeoutSeconds()), null);
                 }
             } catch (java.io.IOException exception) {
@@ -2794,7 +2831,7 @@ public final class ComposeService implements IComposeService {
                         if (!context.offline() && shouldPullImage(client, image, pullPolicy))
                             pullImage(client, context.registryAuth(), image, stringValue(dependency.configuration().get("platform"), null));
                         ensureServiceContainers(client, context, project, dependency, replicaCount(dependency), false, false,
-                                true, DEFAULT_STOP_TIMEOUT_SECONDS, null);
+                                false, true, DEFAULT_STOP_TIMEOUT_SECONDS, null);
                         awaitDependencies(client, project, context.projectName(), dependency, null);
                     }
                     awaitDependencies(client, project, context.projectName(), service, null);
@@ -3041,7 +3078,7 @@ public final class ComposeService implements IComposeService {
                     int desired = entry.getValue();
                     if (desired < 0) throw new IllegalArgumentException("Replica count must not be negative for service '" + serviceName + "'.");
                     ensureServiceContainers(client, context, project, definitions.get(serviceName), desired,
-                            false, false, true, positiveTimeout(options.timeoutSeconds()), null);
+                            false, false, false, true, positiveTimeout(options.timeoutSeconds()), null);
                     List<Container> containers = projectContainers(client, context.projectName(), List.of(serviceName), true);
                     long running = containers.stream()
                             .filter(container -> !"true".equalsIgnoreCase(label(container, ComposeConstants.ONE_OFF_LABEL)))
