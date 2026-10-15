@@ -465,15 +465,18 @@ public final class ComposeService implements IComposeService {
                     options == null ? null : options.services());
             if (options != null && options.includeDeps()) selected = dependencyClosure(project, selected);
             try (DockerClient client = createDockerClient(context)) {
+                java.util.Set<String> pulledImages = new java.util.HashSet<>();
                 for (ServiceDefinition service : selected) {
                     String image = service.image();
                     if (image == null || image.isBlank()) continue;
                     if (!shouldPullForExplicitPull(client, image, service)) continue;
+                    if (pulledImages.contains(image)) continue;
                     try {
                         String platform = options == null ? null : options.platform();
                         if (platform == null || platform.isBlank())
                             platform = stringValue(service.configuration().get("platform"), null);
                         pullImage(client, context.registryAuth(), image, platform);
+                        pulledImages.add(image);
                     } catch (RuntimeException failure) {
                         if (failure instanceof java.util.concurrent.CancellationException) throw failure;
                         if (options == null || !options.ignoreFailures()) throw failure;

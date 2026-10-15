@@ -13,6 +13,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Parsed fractional Compose byte sizes such as `1.5gb` for memory and block I/O settings.
 - Matched Docker Compose image pull behavior for the `if_not_present` alias, cached `latest` tags, and explicit `pull` policy handling (`always`, `missing`, `never`, `build`, and refresh windows).
 - Applied service-level `platform` as the fallback platform for explicit image pulls.
+- Deduplicated successful pulls when multiple selected services share the same image reference.
 - Established the Maven multi-module repository for the API, loader, Docker Engine integration, and Spring Boot starter.
 - Added Compose loading, interpolation, environment-file handling, and an incremental multi-file merge implementation.
 - Added the initial Docker Engine project-label-scoped container lifecycle implementation.
