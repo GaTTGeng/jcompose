@@ -98,7 +98,7 @@ The loader supports `$NAME`, `${NAME}`, `$$`, and the `:-`, `-`, `:?`, `?`, `:+`
 
 See [loader compatibility](docs/loader-compatibility.md) for precedence, operator behavior, and current limits. For multi-file input, see [merge semantics](docs/merge-semantics.md). These rules are documented as jcompose behavior and must be checked against Docker Compose; they are not inherited as compatible merely because ComposeSharp implements similar logic.
 
-Service `extends` supports same-file and external-file references, recursive inheritance, and Compose-specific merge behavior. External inherited build, env-file, and bind paths are rebased to the project file. Dependencies and top-level resources still need to be declared by the project; see [loader compatibility](docs/loader-compatibility.md) for the current boundary.
+Service `extends` supports same-file and external-file references, recursive inheritance, and Compose-specific merge behavior, including the `healthcheck.disable` inheritance constraint. External inherited build, env-file, and bind paths are rebased to the project file. Dependencies and top-level resources still need to be declared by the project; see [loader compatibility](docs/loader-compatibility.md) for the current boundary.
 
 ## What the engine does today
 
