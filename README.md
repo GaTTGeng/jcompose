@@ -38,7 +38,7 @@ Project ownership is label-based. The project context carries the project name, 
 
 The public Java API uses `CompletableFuture` for finite operations and `Flow.Publisher` for streaming events and watch notifications. It targets JDK 21 or newer.
 
-The Maven compiler targets Java 21 bytecode. The current local compile check uses JDK 21.0.12 and Maven 3.9.9; a minimum Maven version and a supported Docker Engine version have not yet been established through a compatibility matrix.
+The Maven compiler targets Java 21 bytecode. The current local verification uses JDK 21.0.12 and Maven 3.9.16; a minimum Maven version and a supported Docker Engine version have not yet been established through a compatibility matrix.
 
 ## Start here
 
@@ -95,6 +95,8 @@ The loader reads Compose YAML, `.env`, and service `env_file` inputs, performs v
 ### Variable interpolation and environment files
 
 The loader supports `$NAME`, `${NAME}`, `$$`, and the `:-`, `-`, `:?`, `?`, `:+`, and `+` interpolation operators. The process environment takes precedence over project `.env` values. Service `env_file` values contribute to that service's container environment; they are not an interpolation source. Inline environment values take precedence over values from those files.
+
+`ComposeFileMerger.mergeWithEnv` applies explicit environment overrides to that merge only, ahead of process environment and `.env` values. It does not modify process-wide environment variables, so concurrent merges remain isolated.
 
 See [loader compatibility](docs/loader-compatibility.md) for precedence, operator behavior, and current limits. For multi-file input, see [merge semantics](docs/merge-semantics.md). These rules are documented as jcompose behavior and must be checked against Docker Compose; they are not inherited as compatible merely because ComposeSharp implements similar logic.
 

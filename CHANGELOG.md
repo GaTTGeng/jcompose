@@ -8,6 +8,13 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 
 ### Added
 
+- Added per-call environment overrides for multi-file merges without changing process-wide environment variables.
+- Passed the primary build image and all distinct `build.tags` values to Docker Engine in one build request.
+- Skipped `top` results when a container exits or is removed between project listing and process inspection; other Docker errors remain visible.
+- Matched ComposeSharp's Docker event mapping by preserving missing actor attributes as `null` and ensuring event action and ID fields fall back to empty strings.
+- Mapped both list and mapping forms of Compose build `extra_hosts` to Docker Engine.
+- Preserved Unix FIFOs in build-context archives, skipped Unix sockets, and rejected Unix device nodes to match ComposeSharp's archive behavior.
+- Aligned Docker ignore parsing and glob matching with ComposeSharp for indented `#` patterns, escaped character-class members, Unicode scalar `?`/ranges, and descending ranges.
 - Applied Compose `blkio_config`, GPU and deploy device reservations to service and one-off containers, and deploy restart policies to service containers.
 - Parsed fractional and composite Compose duration values such as `1.5s` and `1m30s`.
 - Parsed fractional Compose byte sizes such as `1.5gb` for memory and block I/O settings.
@@ -45,6 +52,17 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Preserved top-level network and volume definitions through loading and configuration rendering; applied supported custom names, external-resource lookup, drivers, network flags, IPAM ranges, and driver options.
 - Preserved top-level secret and config definitions through loading and configuration rendering; mounted granted file-backed resources read-only for service and one-off containers, with explicit errors for unsupported source types and mount attributes.
 - Reported the optional conventional override file in generated project configuration metadata when it contributes to the loaded project.
+
+### Fixed
+
+- Matched Docker Compose's profile handling by loading inactive services without `image` or `build` and rejecting them with a clear diagnostic when a runtime operation selects them.
+- Validated service `profiles` as an array of strings, matching Docker Compose's loader behavior for malformed profile declarations.
+- Validated `depends_on` short and long forms, including dependency names, supported conditions, and boolean `restart`/`required` options against Docker Compose CLI behavior.
+- Applied profile activation to explicitly selected services and dependency resolution; inactive required dependencies fail clearly, while inactive optional dependencies are skipped for create/up/start and `pull --include-deps`.
+- Rejected `volumes_from` service references whose profiles are inactive, matching Docker Compose's invalid-profile dependency behavior.
+- Matched multi-file port entries by Docker Compose's unique key when an unbracketed IPv6 short entry overlays a long-form port.
+- Resolved key-only and null `environment` entries from host values so they override same-named `env_file` values as Docker Compose does.
+- Matched Docker Compose `env_file` behavior for bare keys by passing through a host value when set and omitting the key when unset.
 
 ### Changed
 

@@ -38,7 +38,7 @@ compose.yml + .env + env_file
 
 公开 Java API 使用 `CompletableFuture` 表示有限操作，使用 `Flow.Publisher` 表示事件和 watch 流。项目目标为 JDK 21 或更新版本。
 
-Maven 编译目标为 Java 21 字节码。当前本地编译核验使用 JDK 21.0.12 和 Maven 3.9.9；最低 Maven 版本和受支持的 Docker Engine 版本尚未通过兼容性矩阵确认。
+Maven 编译目标为 Java 21 字节码。当前本地核验使用 JDK 21.0.12 和 Maven 3.9.16；最低 Maven 版本和受支持的 Docker Engine 版本尚未通过兼容性矩阵确认。
 
 ## 开始使用
 
@@ -95,6 +95,8 @@ Loader 会读取 Compose YAML、`.env` 和服务的 `env_file` 输入，执行�
 ### 变量插值和环境文件
 
 Loader 支持 `$NAME`、`${NAME}`、`$$` 以及 `:-`、`-`、`:?`、`?`、`:+`、`+` 插值操作符；插值只处理 YAML 标量值，不处理键、注释、单引号值和块标量。项目 `.env` 支持 `=`/`:` 分隔符、单双引号、单引号多行值、常用双引号转义和变量引用；进程环境变量优先于 `.env`。服务的 `env_file` 值会进入该服务的容器环境，但不会作为 Compose YAML 的插值来源。内联 `environment` 值优先于这些文件中的值。
+
+`ComposeFileMerger.mergeWithEnv` 仅在本次合并中使用显式环境变量覆盖，优先级高于进程环境和 `.env`；它不会修改进程环境，因此并发合并互不影响。
 
 详细优先级、操作符行为和当前限制见 [Loader 兼容性](docs/loader-compatibility.md)。多文件输入见[合并规则](docs/merge-semantics.md)。这里记录的是 jcompose 当前行为；每项语义都应对照 Docker Compose 验证，不能仅因 ComposeSharp 也有类似逻辑就视为兼容。
 

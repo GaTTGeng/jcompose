@@ -31,4 +31,15 @@ class ComposeLabelValidationTest {
         assertDoesNotThrow(() -> ComposeService.validateContainerNameScaling(
                 new ServiceDefinition("app", Map.of()), 2));
     }
+
+    @Test
+    void rejectsSelectedServicesWithoutImageOrBuild() {
+        ServiceDefinition profileService = new ServiceDefinition("helper", Map.of("profiles", java.util.List.of("tools")));
+
+        assertThrows(IllegalArgumentException.class, () -> ComposeService.validateRunnableService(profileService));
+        assertDoesNotThrow(() -> ComposeService.validateRunnableService(
+                new ServiceDefinition("app", Map.of("image", "alpine"))));
+        assertDoesNotThrow(() -> ComposeService.validateRunnableService(
+                new ServiceDefinition("builder", Map.of("build", Map.of("context", ".")))));
+    }
 }

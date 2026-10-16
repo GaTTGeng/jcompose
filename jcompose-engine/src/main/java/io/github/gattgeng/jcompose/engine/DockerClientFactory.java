@@ -7,6 +7,7 @@ import com.github.dockerjava.core.DockerClientImpl;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import com.github.dockerjava.transport.DockerHttpClient;
 import io.github.gattgeng.jcompose.api.ComposeProjectContext;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import java.nio.file.Path;
 import java.net.URLEncoder;
@@ -14,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.io.IOException;
 import java.util.List;
 import java.time.Duration;
+import java.time.Instant;
 
 /** Creates Docker Engine clients from per-project daemon and registry settings. */
 public final class DockerClientFactory {
@@ -45,6 +47,23 @@ public final class DockerClientFactory {
         if (commitChanges != null && !commitChanges.isEmpty())
             transport = new CommitChangesHttpClient(transport, commitChanges);
         return DockerClientImpl.getInstance(config, transport);
+    }
+
+    static Instant imageLastTagTime(DockerClient client, String imageReference) {
+        if (!(client instanceof DockerClientImpl dockerClient))
+            throw new IllegalArgumentException("Docker client does not expose Docker Engine image metadata.");
+        var request = DockerHttpClient.Request.builder().method("GET")
+                .path("/v1.44/images/" + imageReference + "/json").build();
+        try (var response = dockerClient.getHttpClient().execute(request)) {
+            if (response.getStatusCode() < 200 || response.getStatusCode() >= 300)
+                throw new IllegalStateException("Could not read Docker image metadata (HTTP " + response.getStatusCode() + ").");
+            JsonNode image = DockerClientConfig.getDefaultObjectMapper().readTree(response.getBody());
+            String lastTagTime = image.path("Metadata").path("LastTagTime").asText();
+            if (lastTagTime.isBlank() || lastTagTime.startsWith("0001-01-01")) return null;
+            return Instant.parse(lastTagTime);
+        } catch (java.io.IOException exception) {
+            throw new java.io.UncheckedIOException("Could not read Docker image metadata.", exception);
+        }
     }
 
     static String appendCommitChanges(String path, List<String> changes) {

@@ -225,12 +225,15 @@ public final class ComposeFileLoader {
         for (var entry : resolvedServices.entrySet()) {
             String name = entry.getKey();
             Map<String, Object> service = entry.getValue();
-            if (!service.containsKey("image") && !service.containsKey("build"))
-                throw new ComposeValidationException(file, "services." + name, name, "service must define either image or build.", null, null, null);
+            validateServiceProfiles(file, name, service);
+            if (service.containsKey("attach") && !(service.get("attach") instanceof Boolean))
+                throw new ComposeValidationException(file, "services." + name + ".attach", name,
+                        "attach must be a boolean.", null, null, null);
             if (service.containsKey("network_mode") && service.containsKey("networks"))
                 throw new ComposeValidationException(file, "services." + name + ".networks", name,
                         "service cannot combine network_mode with networks.", null, null, null);
-            validateServiceDependencies(file, name, service.get("depends_on"), serviceMap);
+            if (service.containsKey("depends_on"))
+                validateServiceDependencies(file, name, service.get("depends_on"), serviceMap);
             validateServiceNetworks(file, name, service.get("networks"), root.get("networks"));
             validateServiceResources(file, name, serviceVolumeReferences(service.get("volumes")),
                     root.get("volumes"), "volumes");
@@ -428,12 +431,71 @@ public final class ComposeFileLoader {
         }
     }
 
+    private static void validateServiceProfiles(Path file, String service, Map<String, Object> configuration) {
+        if (!configuration.containsKey("profiles")) return;
+        Object configured = configuration.get("profiles");
+        if (!(configured instanceof List<?> profiles))
+            throw new ComposeValidationException(file, "services." + service + ".profiles", service,
+                    "profiles must be an array of strings.", null, null, null);
+        for (int index = 0; index < profiles.size(); index++) {
+            if (!(profiles.get(index) instanceof String))
+                throw new ComposeValidationException(file, "services." + service + ".profiles." + index, service,
+                        "profile names must be strings.", null, null, null);
+        }
+    }
+
     private static void validateServiceDependencies(Path file, String service, Object configured,
                                                     Map<?, ?> services) {
         List<String> references;
-        if (configured instanceof Map<?, ?> map) references = map.keySet().stream().map(String::valueOf).toList();
-        else if (configured instanceof List<?> list) references = list.stream().map(String::valueOf).toList();
-        else return;
+        if (configured instanceof Map<?, ?> map) {
+            references = new ArrayList<>();
+            for (var entry : map.entrySet()) {
+                if (!(entry.getKey() instanceof String dependency))
+                    throw new ComposeValidationException(file, "services." + service + ".depends_on", service,
+                            "dependency names must be strings.", null, null, null);
+                if (!(entry.getValue() instanceof Map<?, ?> options))
+                    throw new ComposeValidationException(file, "services." + service + ".depends_on." + dependency, service,
+                            "dependency configuration must be a mapping.", null, null, null);
+                Map<String, Object> configuration = new LinkedHashMap<>();
+                for (var option : options.entrySet()) {
+                    if (!(option.getKey() instanceof String key))
+                        throw new ComposeValidationException(file, "services." + service + ".depends_on." + dependency, service,
+                                "dependency option names must be strings.", null, null, null);
+                    configuration.put(key, option.getValue());
+                }
+                for (String key : configuration.keySet()) {
+                    if (!Set.of("condition", "restart", "required").contains(key))
+                        throw new ComposeValidationException(file, "services." + service + ".depends_on." + dependency + "." + key, service,
+                                "unsupported dependency option '" + key + "'.", null, null, null);
+                }
+                Object condition = configuration.get("condition");
+                if (condition == null)
+                    throw new ComposeValidationException(file, "services." + service + ".depends_on." + dependency, service,
+                            "dependency configuration is missing property 'condition'.", null, null, null);
+                if (!(condition instanceof String value) || !Set.of("service_started", "service_healthy",
+                        "service_completed_successfully").contains(value))
+                    throw new ComposeValidationException(file, "services." + service + ".depends_on." + dependency + ".condition", service,
+                            "condition must be 'service_started', 'service_healthy', or 'service_completed_successfully'.", null, null, null);
+                for (String booleanOption : List.of("restart", "required")) {
+                    if (configuration.containsKey(booleanOption)
+                            && !(configuration.get(booleanOption) instanceof Boolean))
+                        throw new ComposeValidationException(file, "services." + service + ".depends_on." + dependency + "." + booleanOption, service,
+                                booleanOption + " must be a boolean.", null, null, null);
+                }
+                references.add(dependency);
+            }
+        } else if (configured instanceof List<?> list) {
+            references = new ArrayList<>();
+            for (int index = 0; index < list.size(); index++) {
+                if (!(list.get(index) instanceof String dependency))
+                    throw new ComposeValidationException(file, "services." + service + ".depends_on." + index, service,
+                            "dependency names must be strings.", null, null, null);
+                references.add(dependency);
+            }
+        } else {
+            throw new ComposeValidationException(file, "services." + service + ".depends_on", service,
+                    "depends_on must be an array or mapping.", null, null, null);
+        }
         for (String dependency : references) {
             if (!services.containsKey(dependency))
                 throw new ComposeValidationException(file, "services." + service + ".depends_on." + dependency,
@@ -484,8 +546,8 @@ public final class ComposeFileLoader {
         if (envFile == null) return;
         List<?> files = envFile instanceof List<?> list ? list : List.of(envFile);
         Map<String, String> resolved = new LinkedHashMap<>();
+        Map<String, String> process = environmentWithOverrides(environmentOverrides);
         try {
-            Map<String, String> process = environmentWithOverrides(environmentOverrides);
             Map<String, String> dotenv = parseEnvFile(base.resolve(".env"), process);
             for (Object item : files) {
                 String path;
@@ -518,10 +580,14 @@ public final class ComposeFileLoader {
             throw new ComposeValidationException(source, "services." + name + ".env_file", name, exception.getMessage(), null, null, exception);
         }
         Object existing = service.get("environment");
-        if (existing instanceof Map<?, ?> map) map.forEach((k, v) -> resolved.put(String.valueOf(k), v == null ? null : String.valueOf(v)));
+        if (existing instanceof Map<?, ?> map) map.forEach((k, v) -> {
+            String key = String.valueOf(k);
+            resolved.put(key, v == null ? process.get(key) : String.valueOf(v));
+        });
         else if (existing instanceof List<?> list) for (Object pair : list) {
             String value = String.valueOf(pair); int split = value.indexOf('=');
-            resolved.put(split < 0 ? value : value.substring(0, split), split < 0 ? null : value.substring(split + 1));
+            String key = split < 0 ? value : value.substring(0, split);
+            resolved.put(key, split < 0 ? process.get(key) : value.substring(split + 1));
         }
         if (!resolved.isEmpty()) service.put("environment", Collections.unmodifiableMap(resolved));
     }
@@ -601,7 +667,7 @@ public final class ComposeFileLoader {
             int colon = line.indexOf(':');
             int separator = equals < 0 ? colon : colon < 0 ? equals : Math.min(equals, colon);
             if (separator < 0) {
-                if (!line.isEmpty()) result.put(line, "");
+                if (!line.isEmpty() && process.containsKey(line)) result.put(line, process.get(line));
                 continue;
             }
             String key = line.substring(0, separator).trim();
@@ -830,6 +896,14 @@ public final class ComposeFileLoader {
                 else { ip = segments.get(0); published = segments.get(1); target = segments.get(2); }
                 if (ip.startsWith("[") && ip.endsWith("]")) ip = ip.substring(1, ip.length() - 1);
                 return String.join("\u0000", "port", ip, target, published, protocol);
+            }
+            if (segments.size() > 3) {
+                String ip = String.join(":", segments.subList(0, segments.size() - 2));
+                if (ip.contains(":")) {
+                    String published = segments.get(segments.size() - 2);
+                    String target = segments.getLast();
+                    return String.join("\u0000", "port", ip, target, published, protocol);
+                }
             }
         }
         return "value\u0000" + String.valueOf(value);

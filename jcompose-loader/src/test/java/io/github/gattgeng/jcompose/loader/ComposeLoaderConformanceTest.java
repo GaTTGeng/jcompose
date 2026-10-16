@@ -71,6 +71,34 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
+    void validatesDependencySyntaxAndLongForm() throws IOException {
+        Path file = temporaryDirectory.resolve("compose.yaml");
+        ComposeFileLoader loader = new ComposeFileLoader();
+        for (String dependency : List.of(" db", " null", " [1]", "\n      db: true",
+                "\n      db:\n        condition: unsupported", "\n      db:\n        restart: true",
+                "\n      db:\n        condition: service_started\n        mystery: true")) {
+            Files.writeString(file, "services:\n  app:\n    image: busybox\n    depends_on:"
+                    + dependency + "\n  db:\n    image: busybox\n");
+            assertThrows(ComposeValidationException.class,
+                    () -> loader.load(temporaryDirectory, "compose.yaml"), dependency);
+        }
+
+        Files.writeString(file, """
+                services:
+                  app:
+                    image: busybox
+                    depends_on:
+                      db:
+                        condition: service_healthy
+                        restart: true
+                        required: false
+                  db:
+                    image: busybox
+                """);
+        assertTrue(loader.load(temporaryDirectory, "compose.yaml").services().containsKey("app"));
+    }
+
+    @Test
     void rejectsUndefinedNamedServiceVolume() throws IOException {
         Path file = temporaryDirectory.resolve("compose.yaml");
         Files.writeString(file, """

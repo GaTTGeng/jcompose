@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ComposeFileLoaderTest {
@@ -36,6 +37,65 @@ class ComposeFileLoaderTest {
                 "JC_TEST_UNUSED", "unused"), project.environment().entrySet().stream()
                 .filter(entry -> entry.getKey().startsWith("JC_TEST_"))
                 .collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)));
+    }
+
+    @Test
+    void loadsProfileServiceWithoutImageOrBuildUntilRuntimeSelection() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  helper:
+                    profiles: [tools]
+                    command: ["true"]
+                  app:
+                    image: alpine
+                """);
+
+        var project = new ComposeFileLoader().load(directory, null);
+
+        assertEquals(List.of("tools"), project.services().get("helper").profiles());
+        assertEquals("true", ((List<?>) project.services().get("helper").configuration().get("command")).getFirst());
+        assertNull(project.services().get("helper").image());
+        assertNull(project.services().get("helper").build());
+    }
+
+    @Test
+    void rejectsProfilesThatAreNotStringArrays() throws Exception {
+        Path composeFile = directory.resolve("compose.yaml");
+        Files.writeString(composeFile, """
+                services:
+                  app:
+                    image: alpine
+                    profiles: debug
+                """);
+        ComposeValidationException scalar = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, null));
+        assertEquals("services.app.profiles", scalar.propertyPath());
+
+        Files.writeString(composeFile, """
+                services:
+                  app:
+                    image: alpine
+                    profiles: [1]
+                """);
+        ComposeValidationException nonString = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, null));
+        assertEquals("services.app.profiles.0", nonString.propertyPath());
+    }
+
+    @Test
+    void rejectsNonBooleanAttachValue() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    attach: falsey
+                """);
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, null));
+
+        assertEquals("services.app.attach", exception.propertyPath());
+        assertEquals("app", exception.serviceName());
     }
 
     @Test
@@ -144,6 +204,66 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void envFileBareEntryPassesThroughProcessValueOrIsOmittedWhenUnset() throws Exception {
+        String variable = "JC_ENV_FILE_BARE_" + java.util.UUID.randomUUID().toString().replace("-", "");
+        Files.writeString(directory.resolve("app.env"), variable + "\n");
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: example/app
+                    env_file: app.env
+                """);
+
+        Map<?, ?> passedThrough = (Map<?, ?>) new ComposeFileLoader().load(directory, null,
+                Map.of(variable, "from-process")).services().get("app").configuration().get("environment");
+        Map<?, ?> unset = (Map<?, ?>) new ComposeFileLoader().load(directory, null)
+                .services().get("app").configuration().get("environment");
+
+        assertEquals("from-process", passedThrough.get(variable));
+        org.junit.jupiter.api.Assertions.assertTrue(unset == null || !unset.containsKey(variable));
+    }
+
+    @Test
+    void keyOnlyEnvironmentPassesThroughProcessValueAndOverridesEnvFile() throws Exception {
+        String suffix = java.util.UUID.randomUUID().toString().replace("-", "");
+        String keyOnly = "JC_ENV_FILE_KEY_ONLY_" + suffix;
+        String nullValue = "JC_ENV_FILE_NULL_" + suffix;
+        Files.writeString(directory.resolve("app.env"), """
+                %s=from-file
+                %s=from-file
+                """.formatted(keyOnly, nullValue));
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  map-form:
+                    image: example/app
+                    env_file: app.env
+                    environment:
+                      %s:
+                      %s: null
+                  list-form:
+                    image: example/app
+                    env_file: app.env
+                    environment:
+                      - %s
+                """.formatted(keyOnly, nullValue, keyOnly));
+
+        var loader = new ComposeFileLoader();
+        Map<?, ?> mapped = (Map<?, ?>) loader.load(directory, null, Map.of(
+                keyOnly, "from-host", nullValue, "host-null-value"))
+                .services().get("map-form").configuration().get("environment");
+        Map<?, ?> listed = (Map<?, ?>) loader.load(directory, null,
+                Map.of(keyOnly, "from-host"))
+                .services().get("list-form").configuration().get("environment");
+        Map<?, ?> unresolved = (Map<?, ?>) loader.load(directory, null)
+                .services().get("map-form").configuration().get("environment");
+
+        assertEquals("from-host", mapped.get(keyOnly));
+        assertEquals("host-null-value", mapped.get(nullValue));
+        assertEquals("from-host", listed.get(keyOnly));
+        org.junit.jupiter.api.Assertions.assertNull(unresolved.get(keyOnly));
+    }
+
+    @Test
     void interpolationAppliesToYamlValuesButNotKeysCommentsOrSingleQuotedScalars() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 # ${MISSING:?comments must not be interpolated}
@@ -245,6 +365,60 @@ class ComposeFileLoaderTest {
         assertEquals(List.of("8080:80", "9000:90", "9443:443"), app.get("ports"));
         assertEquals(List.of("MODE=override", "KEEP=yes", "NEW=yes"), app.get("environment"));
         assertEquals(List.of("./new:/data", "./logs:/logs"), app.get("volumes"));
+    }
+
+    @Test
+    void portsMergeAcrossShortAndLongSyntaxByComposeUniqueKey() throws Exception {
+        Files.writeString(directory.resolve("base.yaml"), """
+                services:
+                  app:
+                    image: example/app
+                    ports: ["8080:80", "8081:80"]
+                """);
+        Files.writeString(directory.resolve("override.yaml"), """
+                services:
+                  app:
+                    ports:
+                      - target: 80
+                        published: "8080"
+                        protocol: tcp
+                      - target: 80
+                        published: "8082"
+                        protocol: tcp
+                """);
+
+        var project = new ComposeFileLoader().loadMerged(directory, List.of("base.yaml", "override.yaml"));
+        Map<?, ?> app = project.services().get("app").configuration();
+
+        assertEquals(List.of(
+                Map.of("target", 80, "published", "8080", "protocol", "tcp"),
+                "8081:80",
+                Map.of("target", 80, "published", "8082", "protocol", "tcp")), app.get("ports"));
+    }
+
+    @Test
+    void unbracketedIpv6ShortPortsMergeWithLongSyntaxByComposeUniqueKey() throws Exception {
+        Files.writeString(directory.resolve("base.yaml"), """
+                services:
+                  app:
+                    image: example/app
+                    ports: ["::1:6000:6000"]
+                """);
+        Files.writeString(directory.resolve("override.yaml"), """
+                services:
+                  app:
+                    ports:
+                      - target: 6000
+                        published: "6000"
+                        host_ip: "::1"
+                        protocol: tcp
+                """);
+
+        var project = new ComposeFileLoader().loadMerged(directory, List.of("base.yaml", "override.yaml"));
+        Map<?, ?> app = project.services().get("app").configuration();
+
+        assertEquals(List.of(Map.of("target", 6000, "published", "6000", "host_ip", "::1", "protocol", "tcp")),
+                app.get("ports"));
     }
 
     @Test

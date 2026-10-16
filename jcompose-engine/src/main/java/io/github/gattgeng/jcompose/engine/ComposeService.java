@@ -52,12 +52,14 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.math.BigDecimal;
 import java.util.regex.Pattern;
+import java.util.logging.Logger;
 
 /**
  * Docker Engine backed implementation of the project-scoped lifecycle operations.
  * Container discovery always includes the Compose project label before applying service filters.
  */
 public final class ComposeService implements IComposeService {
+    private static final Logger LOGGER = Logger.getLogger(ComposeService.class.getName());
     private static final int DEFAULT_STOP_TIMEOUT_SECONDS = 10;
     private static final ExecutorService OPERATION_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
     private static final ThreadLocal<OperationFuture<?>> CURRENT_OPERATION = new ThreadLocal<>();
@@ -96,9 +98,11 @@ public final class ComposeService implements IComposeService {
                         + context.workingDirectory());
             }
 
+            List<ServiceDefinition> requested = project == null ? List.of()
+                    : selectConfigurationServices(project, context.profiles(), options == null ? null : options.services());
+            List<String> effectiveProfiles = effectiveProfiles(requested, context.profiles());
             List<ServiceDefinition> ordered = project == null ? List.of()
-                    : dependencyOrderedServices(project, selectConfigurationServices(project, context.profiles(),
-                    options == null ? null : options.services()));
+                    : dependencyOrderedServices(project, requested, effectiveProfiles);
             try (DockerClient client = createDockerClient(context)) {
                 if (project == null) {
                     startExistingContainers(client, context.projectName(), options == null ? null : options.services());
@@ -106,7 +110,7 @@ public final class ComposeService implements IComposeService {
                 }
                 Integer dependencyTimeout = options == null ? null : options.dependencyWaitTimeoutSeconds();
                 for (ServiceDefinition service : ordered) {
-                    awaitDependencies(client, project, context.projectName(), service, dependencyTimeout);
+                    awaitDependencies(client, project, context.projectName(), service, dependencyTimeout, effectiveProfiles);
                     startExistingContainers(client, context.projectName(), List.of(service.name()));
                     if (options != null && options.waitForCompletion()) {
                         awaitServiceRunning(client, context.projectName(), service, options.waitTimeoutSeconds());
@@ -122,7 +126,13 @@ public final class ComposeService implements IComposeService {
     private static void startExistingContainers(DockerClient client, String projectName, List<String> selectedServices) {
         for (Container container : projectContainers(client, projectName, selectedServices, true)) {
             if ("true".equalsIgnoreCase(label(container, ComposeConstants.ONE_OFF_LABEL))) continue;
-            if (!isRunning(container)) client.startContainerCmd(container.getId()).exec();
+            if (!isRunning(container)) {
+                try {
+                    client.startContainerCmd(container.getId()).exec();
+                } catch (DockerException exception) {
+                    if (!isAlreadyStartedResponse(exception)) throw exception;
+                }
+            }
         }
     }
 
@@ -148,13 +158,78 @@ public final class ComposeService implements IComposeService {
     public CompletableFuture<Void> restartAsync(ComposeProjectContext context, ComposeRestartOptions options) {
         Integer timeout = options == null ? null : options.timeoutSeconds();
         return execute(context, client -> {
-            List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
-            for (Container container : projectContainers(client, context.projectName(), selectedServices)) {
-                var restart = client.restartContainerCmd(container.getId());
-                if (timeout != null) restart.withTimeout(timeout);
-                restart.exec();
+            List<String> requestedServices = options == null ? null : options.services();
+            List<String> selectedServices = selectExistingServices(context, requestedServices).serviceNames();
+            if ((options == null || !options.noDeps()) && loader.hasComposeFile(context.workingDirectory(), context.composeFileName())) {
+                ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
+                java.util.LinkedHashSet<String> restartServices = new java.util.LinkedHashSet<>(selectedServices);
+                Set<String> enabledProfiles = Set.copyOf(effectiveProfiles(selectedServices.stream()
+                        .map(project.services()::get).filter(java.util.Objects::nonNull).toList(), context.profiles()));
+                boolean changed;
+                do {
+                    changed = false;
+                    for (ServiceDefinition service : project.services().values()) {
+                        if (restartServices.contains(service.name())) continue;
+                        if (!service.profiles().isEmpty()
+                                && service.profiles().stream().noneMatch(enabledProfiles::contains)) continue;
+                        if (restartDependencyNames(service).stream().anyMatch(restartServices::contains))
+                            changed |= restartServices.add(service.name());
+                    }
+                } while (changed);
+                selectedServices = restartOrder(project, restartServices);
+            }
+            if (selectedServices == null) {
+                restartContainers(client, projectContainers(client, context.projectName(), null), timeout);
+                return;
+            }
+            for (String service : selectedServices) {
+                restartContainers(client, projectContainers(client, context.projectName(), List.of(service)), timeout);
             }
         });
+    }
+
+    private static void restartContainers(DockerClient client, List<Container> containers, Integer timeout) {
+        for (Container container : containers) {
+            var restart = client.restartContainerCmd(container.getId());
+            if (timeout != null) restart.withTimeout(timeout);
+            restart.exec();
+        }
+    }
+
+    private static List<String> restartDependencyNames(ServiceDefinition service) {
+        Object dependencies = service.configuration().get("depends_on");
+        if (!(dependencies instanceof Map<?, ?> mapping)) return List.of();
+        return mapping.entrySet().stream()
+                .filter(entry -> entry.getValue() instanceof Map<?, ?> options
+                        && Boolean.TRUE.equals(options.get("restart")))
+                .map(Map.Entry::getKey).filter(String.class::isInstance).map(String.class::cast).toList();
+    }
+
+    private static List<String> serviceContainerIds(DockerClient client, String projectName, String serviceName) {
+        return projectContainers(client, projectName, List.of(serviceName), true).stream()
+                .filter(container -> !"true".equalsIgnoreCase(label(container, ComposeConstants.ONE_OFF_LABEL)))
+                .map(Container::getId).sorted().toList();
+    }
+
+    private static List<String> restartOrder(ComposeProject project, Set<String> selectedServices) {
+        java.util.LinkedHashSet<String> remaining = new java.util.LinkedHashSet<>(selectedServices);
+        java.util.LinkedHashSet<String> ordered = new java.util.LinkedHashSet<>();
+        List<String> result = new ArrayList<>(remaining.size());
+        while (!remaining.isEmpty()) {
+            List<ServiceDefinition> ready = project.services().values().stream()
+                    .filter(service -> remaining.contains(service.name()))
+                    .filter(service -> dependencyNames(service.configuration().get("depends_on")).stream()
+                            .filter(selectedServices::contains).allMatch(ordered::contains))
+                    .toList();
+            if (ready.isEmpty()) throw new IllegalArgumentException("Circular service dependency among: "
+                    + String.join(", ", remaining) + ".");
+            for (ServiceDefinition service : ready) {
+                result.add(service.name());
+                ordered.add(service.name());
+                remaining.remove(service.name());
+            }
+        }
+        return List.copyOf(result);
     }
 
     @Override
@@ -402,7 +477,13 @@ public final class ComposeService implements IComposeService {
                         .filter(ComposeService::isRunning)
                         .sorted(containerOrder())
                         .map(container -> {
-                            var response = client.topContainerCmd(container.getId()).exec();
+                            com.github.dockerjava.api.command.TopContainerResponse response;
+                            try {
+                                response = client.topContainerCmd(container.getId()).exec();
+                            } catch (DockerException exception) {
+                                if (isTopListingRace(exception)) return null;
+                                throw exception;
+                            }
                             List<String> titles = response.getTitles() == null
                                     ? List.of() : List.of(response.getTitles());
                             List<List<String>> processes = response.getProcesses() == null ? List.of()
@@ -414,11 +495,19 @@ public final class ComposeService implements IComposeService {
                             return new ContainerProcSummary(container.getId(), names.isEmpty() ? container.getId() : names.getFirst(),
                                     service == null ? "" : service, label(container, ComposeConstants.CONTAINER_NUMBER_LABEL),
                                     titles, processes);
-                        }).toList();
+                        }).filter(java.util.Objects::nonNull).toList();
             } catch (java.io.IOException exception) {
                 throw new java.io.UncheckedIOException("Could not close Docker Engine client.", exception);
             }
         });
+    }
+
+    static boolean isTopListingRace(DockerException exception) {
+        return exception.getHttpStatus() == 404 || exception.getHttpStatus() == 409;
+    }
+
+    static boolean isAlreadyStartedResponse(DockerException exception) {
+        return exception.getHttpStatus() == 304;
     }
 
     @Override
@@ -598,7 +687,8 @@ public final class ComposeService implements IComposeService {
             ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
             List<ServiceDefinition> selected = selectConfigurationServices(project, context.profiles(),
                     options == null ? null : options.services());
-            if (options != null && options.includeDeps()) selected = dependencyClosure(project, selected);
+            if (options != null && options.includeDeps())
+                selected = dependencyClosure(project, selected, effectiveProfiles(selected, context.profiles()));
             try (DockerClient client = createDockerClient(context)) {
                 java.util.Set<String> pulledImages = new java.util.HashSet<>();
                 for (ServiceDefinition service : selected) {
@@ -650,8 +740,10 @@ public final class ComposeService implements IComposeService {
         });
     }
 
-    private static List<ServiceDefinition> dependencyClosure(ComposeProject project, List<ServiceDefinition> selected) {
+    private static List<ServiceDefinition> dependencyClosure(ComposeProject project, List<ServiceDefinition> selected,
+                                                            List<String> activeProfiles) {
         Map<String, ServiceDefinition> servicesByName = project.services();
+        Set<String> enabledProfiles = activeProfiles == null ? Set.of() : Set.copyOf(activeProfiles);
         java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<>();
         java.util.ArrayDeque<String> pending = new java.util.ArrayDeque<>();
         selected.forEach(service -> pending.add(service.name()));
@@ -662,6 +754,14 @@ public final class ComposeService implements IComposeService {
             for (String dependency : dependencyNames(service.configuration().get("depends_on"))) {
                 if (!servicesByName.containsKey(dependency)) {
                     throw new IllegalArgumentException("Service '" + name + "' depends on unknown service '" + dependency + "'.");
+                }
+                ServiceDefinition definition = servicesByName.get(dependency);
+                if (!definition.profiles().isEmpty()
+                        && definition.profiles().stream().noneMatch(enabledProfiles::contains)) {
+                    if (dependencyRequired(service, dependency))
+                        throw new IllegalArgumentException("Service '" + name + "' depends on service '"
+                                + dependency + "', but none of its profiles are active.");
+                    continue;
                 }
                 pending.addLast(dependency);
             }
@@ -934,8 +1034,17 @@ public final class ComposeService implements IComposeService {
 
     private record ExistingServiceSelection(List<String> serviceNames, boolean includesAllDefinedServices) { }
 
-    private static List<ServiceDefinition> dependencyOrderedServices(ComposeProject project, List<ServiceDefinition> selected) {
+    static List<String> effectiveProfiles(List<ServiceDefinition> selected, List<String> activeProfiles) {
+        java.util.LinkedHashSet<String> profiles = new java.util.LinkedHashSet<>();
+        if (activeProfiles != null) profiles.addAll(activeProfiles);
+        selected.forEach(service -> profiles.addAll(service.profiles()));
+        return List.copyOf(profiles);
+    }
+
+    static List<ServiceDefinition> dependencyOrderedServices(ComposeProject project, List<ServiceDefinition> selected,
+                                                              List<String> activeProfiles) {
         Map<String, ServiceDefinition> byName = project.services();
+        Set<String> enabledProfiles = activeProfiles == null ? Set.of() : Set.copyOf(activeProfiles);
         java.util.Set<String> selectedNames = new java.util.LinkedHashSet<>();
         selected.forEach(service -> selectedNames.add(service.name()));
         List<ServiceDefinition> pending = new ArrayList<>(selected);
@@ -943,10 +1052,29 @@ public final class ComposeService implements IComposeService {
         // Include only the transitive dependency closure of the selected services.
         for (int index = 0; index < pending.size(); index++) {
             ServiceDefinition service = pending.get(index);
-            for (String name : serviceDependencyNames(service)) {
+            for (String name : dependencyNames(service.configuration().get("depends_on"))) {
                 ServiceDefinition dependency = byName.get(name);
                 if (dependency == null) throw new IllegalArgumentException("Service '" + service.name()
                         + "' depends on unknown service '" + name + "'.");
+                if (!dependency.profiles().isEmpty()
+                        && dependency.profiles().stream().noneMatch(enabledProfiles::contains)) {
+                    if (dependencyRequired(service, name))
+                        throw new IllegalArgumentException("Service '" + service.name() + "' depends on service '"
+                                + name + "', but none of its profiles are active.");
+                    continue;
+                }
+                if (selectedNames.add(name)) pending.add(dependency);
+            }
+            for (VolumeFromReference reference : volumeFromReferences(service.configuration().get("volumes_from"))) {
+                if (reference.externalContainer()) continue;
+                String name = reference.source();
+                ServiceDefinition dependency = byName.get(name);
+                if (dependency == null) throw new IllegalArgumentException("Service '" + service.name()
+                        + "' depends on unknown service '" + name + "'.");
+                if (!dependency.profiles().isEmpty()
+                        && dependency.profiles().stream().noneMatch(enabledProfiles::contains))
+                    throw new IllegalArgumentException("Service '" + service.name() + "' uses volumes_from service '"
+                            + name + "', but none of its profiles are active.");
                 if (selectedNames.add(name)) pending.add(dependency);
             }
         }
@@ -957,7 +1085,7 @@ public final class ComposeService implements IComposeService {
         while (!remainingNames.isEmpty()) {
             List<ServiceDefinition> ready = project.services().values().stream()
                     .filter(service -> remainingNames.contains(service.name()))
-                    .filter(service -> serviceDependencyNames(service).stream()
+                    .filter(service -> selectedDependencyNames(project, service, enabledProfiles).stream()
                             .allMatch(orderedNames::contains))
                     .toList();
             if (ready.isEmpty()) throw new IllegalArgumentException("Circular service dependency among: "
@@ -969,6 +1097,30 @@ public final class ComposeService implements IComposeService {
             }
         }
         return List.copyOf(ordered);
+    }
+
+    private static List<String> selectedDependencyNames(ComposeProject project, ServiceDefinition service,
+                                                        Set<String> enabledProfiles) {
+        java.util.LinkedHashSet<String> dependencies = new java.util.LinkedHashSet<>();
+        for (String name : dependencyNames(service.configuration().get("depends_on"))) {
+            ServiceDefinition dependency = project.services().get(name);
+            if (!dependencyRequired(service, name) && dependency != null
+                    && !dependency.profiles().isEmpty()
+                    && dependency.profiles().stream().noneMatch(enabledProfiles::contains)) continue;
+            dependencies.add(name);
+        }
+        volumeFromReferences(service.configuration().get("volumes_from")).stream()
+                .filter(reference -> !reference.externalContainer())
+                .map(VolumeFromReference::source)
+                .forEach(dependencies::add);
+        return List.copyOf(dependencies);
+    }
+
+    private static boolean dependencyRequired(ServiceDefinition service, String dependency) {
+        Object configured = service.configuration().get("depends_on");
+        if (configured instanceof Map<?, ?> mapping && mapping.get(dependency) instanceof Map<?, ?> options)
+            return !Boolean.FALSE.equals(options.get("required"));
+        return true;
     }
 
     private static void ensureProjectResources(DockerClient client, String projectName, ComposeProject project) {
@@ -1040,19 +1192,34 @@ public final class ComposeService implements IComposeService {
                     + "' cannot be scaled beyond one container when container_name is set.");
     }
 
+    static void validateRunnableService(ServiceDefinition service) {
+        if ((service.image() == null || service.image().isBlank()) && service.build() == null)
+            throw new IllegalArgumentException("Service '" + service.name()
+                    + "' has neither an image nor a build context specified.");
+    }
+
     private static String effectivePullPolicy(ServiceDefinition service, String requested) {
         String policy = requested == null || requested.isBlank() || "policy".equalsIgnoreCase(requested)
                 ? stringValue(service.configuration().get("pull_policy"), "missing") : requested;
         policy = policy.toLowerCase(java.util.Locale.ROOT);
-        return switch (policy) {
-            case "always", "missing", "never", "build" -> policy;
-            case "if_not_present" -> "missing";
-            default -> throw new IllegalArgumentException("Unsupported pull policy for service '" + service.name() + "': " + policy);
-        };
+        if (policy.equals("if_not_present")) return "missing";
+        if (policy.equals("always") || policy.equals("missing") || policy.equals("never") || policy.equals("build")
+                || policy.equals("daily") || policy.equals("weekly") || policy.equals("refresh")
+                || policy.matches("every_(?:[0-9]+[wdhms])+")) return policy;
+        throw new IllegalArgumentException("Unsupported pull policy for service '" + service.name() + "': " + policy);
     }
 
     private static boolean shouldPullImage(DockerClient client, String image, String policy) {
+        return shouldPullImage(client, image, policy, null);
+    }
+
+    private static boolean shouldPullImage(DockerClient client, String image, String policy, Object pullRefreshAfter) {
         if ("always".equals(policy)) return true;
+        if (isTimeBasedPullPolicy(policy)) {
+            if (!imageExists(client, image)) return true;
+            Instant lastTagTime = DockerClientFactory.imageLastTagTime(client, image);
+            return lastTagTime == null || !Instant.now().isBefore(lastTagTime.plus(pullRefreshDuration(policy, pullRefreshAfter)));
+        }
         if (!"missing".equals(policy)) return false;
         if (!imageExists(client, image)) return true;
         if (image.contains("@")) return false;
@@ -1070,10 +1237,51 @@ public final class ComposeService implements IComposeService {
             case "missing", "if_not_present" -> shouldPullImage(client, image, "missing");
             case "never", "build" -> false;
             default -> {
-                if (policy.matches("every_([0-9]+[wdhms])+")) yield true;
+                if (policy.matches("every_(?:[0-9]+[wdhms])+")) yield true;
                 throw new IllegalArgumentException("Unsupported pull policy for service '" + service.name() + "': " + policy);
             }
         };
+    }
+
+    static boolean isTimeBasedPullPolicy(String policy) {
+        return "daily".equals(policy) || "weekly".equals(policy) || "refresh".equals(policy)
+                || policy != null && policy.matches("every_(?:[0-9]+[wdhms])+" );
+    }
+
+    static java.time.Duration pullRefreshDuration(String policy, Object configuredRefreshAfter) {
+        if ("refresh".equals(policy) && configuredRefreshAfter != null && !String.valueOf(configuredRefreshAfter).isBlank())
+            return parsePullRefreshDuration(String.valueOf(configuredRefreshAfter));
+        if ("daily".equals(policy)) return java.time.Duration.ofDays(1);
+        if ("weekly".equals(policy)) return java.time.Duration.ofDays(7);
+        if ("refresh".equals(policy)) return java.time.Duration.ZERO;
+        if (policy != null && policy.startsWith("every_")) return parsePullRefreshDuration(policy.substring(6));
+        throw new IllegalArgumentException("Unsupported pull policy: " + policy);
+    }
+
+    private static java.time.Duration parsePullRefreshDuration(String value) {
+        java.util.regex.Matcher matcher = Pattern.compile("(?i)(\\d+(?:\\.\\d+)?)(w|d|h|m|s)").matcher(value);
+        BigDecimal seconds = BigDecimal.ZERO;
+        int cursor = 0;
+        while (matcher.find()) {
+            if (matcher.start() != cursor) throw new IllegalArgumentException("Invalid pull refresh duration: " + value);
+            BigDecimal multiplier = switch (matcher.group(2).toLowerCase(java.util.Locale.ROOT)) {
+                case "w" -> BigDecimal.valueOf(604_800);
+                case "d" -> BigDecimal.valueOf(86_400);
+                case "h" -> BigDecimal.valueOf(3_600);
+                case "m" -> BigDecimal.valueOf(60);
+                default -> BigDecimal.ONE;
+            };
+            seconds = seconds.add(new BigDecimal(matcher.group(1)).multiply(multiplier));
+            cursor = matcher.end();
+        }
+        if (cursor == 0 || cursor != value.length())
+            throw new IllegalArgumentException("Invalid pull refresh duration: " + value);
+        try {
+            BigDecimal nanos = seconds.multiply(BigDecimal.valueOf(1_000_000_000L));
+            return java.time.Duration.ofNanos(nanos.toBigIntegerExact().longValueExact());
+        } catch (ArithmeticException exception) {
+            throw new IllegalArgumentException("Pull refresh duration is outside the supported range: " + value, exception);
+        }
     }
 
     private static boolean imageExists(DockerClient client, String image) {
@@ -1085,6 +1293,7 @@ public final class ComposeService implements IComposeService {
                                                 ServiceDefinition service, int replicas, boolean forceRecreate,
                                                 boolean noRecreate, boolean renewAnonVolumes, boolean start,
                                                 int stopTimeoutSeconds, ILogConsumer logConsumer) {
+        validateRunnableService(service);
         validateContainerNameScaling(service, replicas);
         validateComposeLabels(stringMap(service.configuration().get("labels")));
         if (replicas < 0) throw new IllegalArgumentException("Replica count must not be negative for service '" + service.name() + "'.");
@@ -1179,7 +1388,6 @@ public final class ComposeService implements IComposeService {
                 command.withStopTimeout(parseDurationSeconds(String.valueOf(service.configuration().get("stop_grace_period"))));
             if (service.configuration().get("tty") instanceof Boolean tty) command.withTty(tty);
             if (service.configuration().get("stdin_open") instanceof Boolean stdin) command.withStdinOpen(stdin);
-            if (service.configuration().get("init") instanceof Boolean init) host.withInit(init);
             String primaryNetwork = serviceNetworks(service).getFirst();
             List<String> primaryAliases = networkAliases(service, primaryNetwork, true);
             if (!primaryAliases.isEmpty()) command.withAliases(primaryAliases);
@@ -1377,6 +1585,7 @@ public final class ComposeService implements IComposeService {
         }
         if (!binds.isEmpty()) host.withBinds(binds);
         applyVolumesFrom(client, project, projectName, service, host);
+        if (config.get("init") instanceof Boolean value) host.withInit(value);
         com.github.dockerjava.api.model.RestartPolicy restart = effectiveRestartPolicy(config);
         if (restart != null) host.withRestartPolicy(restart);
         if (config.get("privileged") instanceof Boolean value) host.withPrivileged(value);
@@ -1830,7 +2039,8 @@ public final class ComposeService implements IComposeService {
     }
 
     private static void awaitDependencies(DockerClient client, ComposeProject project, String projectName,
-                                         ServiceDefinition service, Integer timeoutSeconds) {
+                                         ServiceDefinition service, Integer timeoutSeconds,
+                                         List<String> activeProfiles) {
         Object rawDependencies = service.configuration().get("depends_on");
         if (rawDependencies == null) return;
         Map<String, ServiceDefinition> definitions = project.services();
@@ -1838,10 +2048,19 @@ public final class ComposeService implements IComposeService {
             ServiceDefinition dependency = definitions.get(dependencyName);
             if (dependency == null) throw new IllegalArgumentException("Service '" + service.name()
                     + "' depends on unknown service '" + dependencyName + "'.");
+            if (!dependencyRequired(service, dependencyName)
+                    && !dependency.profiles().isEmpty()
+                    && dependency.profiles().stream().noneMatch(activeProfiles::contains)) continue;
+            boolean required = dependencyRequired(service, dependencyName);
             String condition = dependencyCondition(rawDependencies, dependencyName);
             List<Container> containers = projectContainers(client, projectName, List.of(dependencyName), true).stream()
                     .filter(container -> !"true".equalsIgnoreCase(label(container, ComposeConstants.ONE_OFF_LABEL)))
                     .toList();
+            if (containers.isEmpty() && !required) {
+                LOGGER.warning("Optional dependency '" + dependencyName + "' of service '" + service.name()
+                        + "' has no containers; continuing.");
+                continue;
+            }
             if (containers.isEmpty()) throw new IllegalStateException("Service '" + service.name() + "' depends on '"
                     + dependencyName + "', but that service has no containers.");
             long deadline = timeoutSeconds == null ? Long.MAX_VALUE
@@ -1861,19 +2080,41 @@ public final class ComposeService implements IComposeService {
                                 && !Boolean.TRUE.equals(state.getPaused()) && !Boolean.TRUE.equals(state.getRestarting());
                     };
                     if (!ready) {
+                        if ("service_healthy".equals(condition) && state != null && isRunning(state)
+                                && state.getHealth() == null) {
+                            String message = "Dependency '" + dependencyName + "' has no healthcheck configured.";
+                            if (required) throw new IllegalStateException(message);
+                            LOGGER.warning("Optional " + message + " Continuing service '" + service.name() + "'.");
+                            pending.clear();
+                            break;
+                        }
                         if ("service_completed_successfully".equals(condition) && state != null
                                 && !Boolean.TRUE.equals(state.getRunning()) && state.getExitCode() != null
-                                && state.getExitCode() != 0)
-                            throw new IllegalStateException("Dependency '" + dependencyName + "' exited with code " + state.getExitCode() + ".");
+                                && state.getExitCode() != 0) {
+                            String message = "Dependency '" + dependencyName + "' exited with code " + state.getExitCode() + ".";
+                            if (required) throw new IllegalStateException(message);
+                            LOGGER.warning("Optional " + message + " Continuing service '" + service.name() + "'.");
+                            pending.clear();
+                            break;
+                        }
                         if ("exited".equalsIgnoreCase(status) || "dead".equalsIgnoreCase(status) || "unhealthy".equalsIgnoreCase(
-                                state == null || state.getHealth() == null ? null : state.getHealth().getStatus()))
-                            throw new IllegalStateException("Dependency '" + dependencyName + "' entered state '" + status + "' before becoming ready.");
+                                state == null || state.getHealth() == null ? null : state.getHealth().getStatus())) {
+                            String message = "Dependency '" + dependencyName + "' entered state '" + status + "' before becoming ready.";
+                            if (required) throw new IllegalStateException(message);
+                            LOGGER.warning("Optional " + message + " Continuing service '" + service.name() + "'.");
+                            pending.clear();
+                            break;
+                        }
                         pending.add(container.getId());
                     }
                 }
                 if (pending.isEmpty()) break;
-                if (System.nanoTime() >= deadline) throw new java.util.concurrent.CompletionException(
-                        new java.util.concurrent.TimeoutException("Timed out waiting for dependency '" + dependencyName + "' to satisfy " + condition + "."));
+                if (System.nanoTime() >= deadline) {
+                    String message = "Timed out waiting for dependency '" + dependencyName + "' to satisfy " + condition + ".";
+                    if (required) throw new java.util.concurrent.CompletionException(new java.util.concurrent.TimeoutException(message));
+                    LOGGER.warning("Optional " + message + " Continuing service '" + service.name() + "'.");
+                    break;
+                }
                 try { Thread.sleep(200); }
                 catch (InterruptedException exception) {
                     Thread.currentThread().interrupt();
@@ -2625,7 +2866,7 @@ public final class ComposeService implements IComposeService {
                         event = events.poll();
                         if (demand != Long.MAX_VALUE) demand--;
                     }
-                    subscriber.onNext(toComposeEvent(event));
+                    subscriber.onNext(ComposeService.toComposeEvent(event));
                 }
                 if (failure == null) subscriber.onComplete(); else subscriber.onError(failure);
             } catch (InterruptedException exception) {
@@ -2666,23 +2907,6 @@ public final class ComposeService implements IComposeService {
                 return name != null && resources.volumes().contains(name);
             }
             return false;
-        }
-
-        private ComposeEvent toComposeEvent(Event event) {
-            Map<String, String> attributes = event.getActor() == null || event.getActor().getAttributes() == null
-                    ? Map.of() : Map.copyOf(event.getActor().getAttributes());
-            String type = event.getType() == null ? "" : event.getType().getValue();
-            String id = event.getActor() != null && event.getActor().getId() != null
-                    ? event.getActor().getId() : event.getId();
-            String service = attributes.get("com.docker.compose.service");
-            String action = event.getAction() == null ? event.getStatus() : event.getAction();
-            long epochNanos = event.getTimeNano() == null ? 0 : event.getTimeNano();
-            Instant timestamp = epochNanos == 0 && event.getTime() != null
-                    ? Instant.ofEpochSecond(event.getTime())
-                    : Instant.ofEpochSecond(Math.floorDiv(epochNanos, 1_000_000_000L),
-                    Math.floorMod(epochNanos, 1_000_000_000L));
-            return new ComposeEvent(timestamp, type, action, id, service,
-                    "container".equalsIgnoreCase(type) ? id : null, attributes);
         }
 
         private ProjectResources projectResources(DockerClient activeClient, ComposeProjectContext context) {
@@ -2727,6 +2951,35 @@ public final class ComposeService implements IComposeService {
         }
     }
 
+    static ComposeEvent toComposeEvent(Event event) {
+        Map<String, String> attributes = event.getActor() == null || event.getActor().getAttributes() == null
+                ? null : Map.copyOf(event.getActor().getAttributes());
+        String type = event.getType() == null ? "" : event.getType().getValue();
+        String id = event.getActor() != null && event.getActor().getId() != null
+                ? event.getActor().getId() : event.getId() == null ? "" : event.getId();
+        String service = attributes == null ? null : attributes.get("com.docker.compose.service");
+        String action = event.getAction() != null ? event.getAction()
+                : event.getStatus() == null ? "" : event.getStatus();
+        long epochNanos = event.getTimeNano() == null ? 0 : event.getTimeNano();
+        Instant timestamp = epochNanos > 0
+                ? Instant.ofEpochSecond(Math.floorDiv(epochNanos, 1_000_000_000L),
+                Math.floorMod(epochNanos, 1_000_000_000L))
+                : Instant.ofEpochSecond(event.getTime() == null ? 0 : event.getTime());
+        return new ComposeEvent(timestamp, type, action, id, service,
+                "container".equalsIgnoreCase(type) ? id : null, attributes);
+    }
+
+    static java.util.Set<String> buildExtraHosts(Object configured) {
+        java.util.Set<String> hosts = new java.util.LinkedHashSet<>();
+        if (configured instanceof Map<?, ?> mapping) {
+            mapping.forEach((host, address) -> hosts.add(String.valueOf(host) + ":"
+                    + (address == null ? "" : address)));
+        } else if (configured instanceof List<?> list) {
+            list.stream().map(String::valueOf).forEach(hosts::add);
+        }
+        return hosts;
+    }
+
     private record ProjectResources(java.util.Set<String> networks, java.util.Set<String> volumes,
                                     java.util.Set<String> services) { }
 
@@ -2764,7 +3017,7 @@ public final class ComposeService implements IComposeService {
                         var command = client.buildImageCmd()
                                 .withTarInputStream(archive.stream())
                                 .withDockerfilePath(archive.dockerfilePath())
-                                .withTag(image)
+                                .withTags(buildTags(image, build.get("tags")))
                                 .withNoCache(options != null && options.noCache() || Boolean.TRUE.equals(build.get("no_cache")))
                                 .withPull(!context.offline() && (options != null && options.pull() || Boolean.TRUE.equals(build.get("pull"))))
                                 .withQuiet(options != null && options.quiet())
@@ -2784,12 +3037,10 @@ public final class ComposeService implements IComposeService {
                         String memory = options != null && options.memory() != null ? options.memory() : stringValue(build.get("memory"), null);
                         if (memory != null) command.withMemory(parseByteSize(memory));
                         if (build.get("shm_size") != null) command.withShmsize(parseByteSize(String.valueOf(build.get("shm_size"))));
-                        if (build.get("extra_hosts") instanceof List<?> extraHosts && !extraHosts.isEmpty())
-                            command.withExtraHosts(extraHosts.stream().map(String::valueOf).collect(java.util.stream.Collectors.toSet()));
+                        java.util.Set<String> extraHosts = buildExtraHosts(build.get("extra_hosts"));
+                        if (!extraHosts.isEmpty()) command.withExtraHosts(extraHosts);
                         if (build.get("cache_from") instanceof List<?> cacheFrom && !cacheFrom.isEmpty())
                             command.withCacheFrom(cacheFrom.stream().map(String::valueOf).collect(java.util.stream.Collectors.toSet()));
-                        if (build.get("tags") instanceof List<?> tags)
-                            tags.stream().map(String::valueOf).forEach(command::withTag);
                         if (context.registryAuth() != null) {
                             AuthConfigurations authConfigurations = new AuthConfigurations();
                             authConfigurations.addConfig(registryAuth(context.registryAuth()));
@@ -2828,6 +3079,13 @@ public final class ComposeService implements IComposeService {
         return stringValue(build.get("platform"), stringValue(service.configuration().get("platform"), null));
     }
 
+    static java.util.Set<String> buildTags(String image, Object configuredTags) {
+        java.util.LinkedHashSet<String> tags = new java.util.LinkedHashSet<>();
+        tags.add(image);
+        tags.addAll(asStringList(configuredTags));
+        return tags;
+    }
+
     @Override
     public CompletableFuture<Void> upAsync(ComposeProjectContext context, ComposeUpOptions options) {
         ComposeUpOptions effective = options == null ? ComposeUpOptions.builder().build() : options;
@@ -2839,9 +3097,11 @@ public final class ComposeService implements IComposeService {
                 throw new IllegalArgumentException("alwaysRecreateDeps cannot be enabled with noRecreate.");
             ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
             List<ServiceDefinition> requested = selectConfigurationServices(project, context.profiles(), effective.services());
-            List<ServiceDefinition> selected = dependencyOrderedServices(project, requested);
+            List<String> effectiveProfiles = effectiveProfiles(requested, context.profiles());
+            List<ServiceDefinition> selected = dependencyOrderedServices(project, requested, effectiveProfiles);
             selected.forEach(ComposeService::validateServiceLabelConfiguration);
             for (ServiceDefinition service : selected) {
+                validateRunnableService(service);
                 int replicas = effective.scale() != null && effective.scale().containsKey(service.name())
                         ? effective.scale().get(service.name()) : replicaCount(service);
                 validateContainerNameScaling(service, replicas);
@@ -2858,15 +3118,18 @@ public final class ComposeService implements IComposeService {
             try (DockerClient client = createDockerClient(context)) {
                 ensureProjectResources(client, context.projectName(), project);
                 if (effective.removeOrphans()) removeOrphanContainers(client, context.projectName(), project);
+                Set<String> updatedServices = new java.util.LinkedHashSet<>();
                 for (ServiceDefinition service : selected) {
                     if (!effective.noStart()) awaitDependencies(client, project, context.projectName(), service,
-                            effective.dependencyWaitTimeoutSeconds());
+                            effective.dependencyWaitTimeoutSeconds(), effectiveProfiles);
+                    List<String> previousContainerIds = serviceContainerIds(client, context.projectName(), service.name());
                     String image = service.image() == null || service.image().isBlank()
                             ? context.projectName() + "-" + service.name() : service.image();
                     String pullPolicy = effectivePullPolicy(service, effective.pull());
                     if ("build".equals(pullPolicy) && effective.noBuild() && !imageExists(client, image))
                         throw new IllegalStateException("Service '" + service.name() + "' requires a build, but noBuild is enabled and its image is missing.");
-                    if (!context.offline() && shouldPullImage(client, image, pullPolicy)) {
+                    if (!context.offline() && shouldPullImage(client, image, pullPolicy,
+                            service.configuration().get("pull_refresh_after"))) {
                         pullImage(client, context.registryAuth(), image, stringValue(service.configuration().get("platform"), null));
                     }
                     int replicas = effective.scale() != null && effective.scale().containsKey(service.name())
@@ -2876,6 +3139,19 @@ public final class ComposeService implements IComposeService {
                     ensureServiceContainers(client, context, project, service, replicas,
                             forceRecreate, effective.noRecreate(), effective.renewAnonVolumes(), !effective.noStart(),
                             positiveTimeout(effective.timeoutSeconds()), effective.logConsumer());
+                    List<String> currentContainerIds = serviceContainerIds(client, context.projectName(), service.name());
+                    if (!effective.noStart() && !previousContainerIds.isEmpty()) {
+                        boolean recreated = !previousContainerIds.equals(currentContainerIds);
+                        boolean dependencyUpdated = restartDependencyNames(service).stream().anyMatch(updatedServices::contains);
+                        if (dependencyUpdated && !recreated) {
+                            restartContainers(client, projectContainers(client, context.projectName(), List.of(service.name()), true).stream()
+                                    .filter(container -> !"true".equalsIgnoreCase(label(container, ComposeConstants.ONE_OFF_LABEL)))
+                                    .toList(), service.configuration().get("stop_grace_period") == null
+                                    ? DEFAULT_STOP_TIMEOUT_SECONDS
+                                    : parseDurationSeconds(String.valueOf(service.configuration().get("stop_grace_period"))));
+                        }
+                        if (recreated || dependencyUpdated) updatedServices.add(service.name());
+                    }
                 }
                 if (effective.waitForCompletion() && !effective.noStart()) {
                     for (ServiceDefinition service : selected) awaitServiceRunning(client, context.projectName(), service,
@@ -2890,9 +3166,14 @@ public final class ComposeService implements IComposeService {
                     @Override public void onLogComplete(String serviceName) { }
                     @Override public void onStatus(String serviceName, String message) { }
                 } : effective.logConsumer();
-                await(logsAsync(context, ComposeLogsOptions.builder()
-                        .services(selected.stream().map(ServiceDefinition::name).toList())
-                        .follow(true).build(), consumer));
+                List<String> attachedServices = selected.stream()
+                        .filter(service -> !Boolean.FALSE.equals(service.configuration().get("attach")))
+                        .map(ServiceDefinition::name).toList();
+                if (!attachedServices.isEmpty()) {
+                    await(logsAsync(context, ComposeLogsOptions.builder()
+                            .services(attachedServices)
+                            .follow(true).build(), consumer));
+                }
             }
             return null;
         });
@@ -2906,10 +3187,12 @@ public final class ComposeService implements IComposeService {
             if (effective.forceRecreate() && effective.noRecreate())
                 throw new IllegalArgumentException("forceRecreate and noRecreate cannot both be enabled.");
             ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
-            List<ServiceDefinition> selected = dependencyOrderedServices(project,
-                    selectConfigurationServices(project, context.profiles(), effective.services()));
+            List<ServiceDefinition> requested = selectConfigurationServices(project, context.profiles(), effective.services());
+            List<ServiceDefinition> selected = dependencyOrderedServices(project, requested,
+                    effectiveProfiles(requested, context.profiles()));
             selected.forEach(ComposeService::validateServiceLabelConfiguration);
             for (ServiceDefinition service : selected) {
+                validateRunnableService(service);
                 int replicas = effective.scale() != null && effective.scale().containsKey(service.name())
                         ? effective.scale().get(service.name()) : 1;
                 validateContainerNameScaling(service, replicas);
@@ -2926,7 +3209,8 @@ public final class ComposeService implements IComposeService {
                     String image = service.image() == null || service.image().isBlank()
                             ? context.projectName() + "-" + service.name() : service.image();
                     String pullPolicy = effectivePullPolicy(service, effective.pull());
-                    if (!context.offline() && shouldPullImage(client, image, pullPolicy))
+                    if (!context.offline() && shouldPullImage(client, image, pullPolicy,
+                            service.configuration().get("pull_refresh_after")))
                         pullImage(client, context.registryAuth(), image, stringValue(service.configuration().get("platform"), null));
                     int replicas = effective.scale() != null && effective.scale().containsKey(service.name())
                             ? effective.scale().get(service.name()) : 1;
@@ -2948,27 +3232,31 @@ public final class ComposeService implements IComposeService {
             ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
             ServiceDefinition service = selectConfigurationServices(project, context.profiles(), List.of(serviceName))
                     .stream().findFirst().orElseThrow(() -> new IllegalArgumentException("Service '" + serviceName + "' not found."));
+            List<String> effectiveProfiles = effectiveProfiles(List.of(service), context.profiles());
+            validateRunnableService(service);
             validateServiceLabels(service);
             try (DockerClient client = createDockerClient(context)) {
                 ensureProjectResources(client, context.projectName(), project);
                 if (!effective.noDeps()) {
-                    for (ServiceDefinition dependency : dependencyOrderedServices(project, List.of(service))) {
+                    for (ServiceDefinition dependency : dependencyOrderedServices(project, List.of(service), effectiveProfiles)) {
                         if (dependency.name().equals(serviceName)) continue;
                         String image = dependency.image() == null || dependency.image().isBlank()
                                 ? context.projectName() + "-" + dependency.name() : dependency.image();
                         String pullPolicy = effectivePullPolicy(dependency, null);
-                        if (!context.offline() && shouldPullImage(client, image, pullPolicy))
+                        if (!context.offline() && shouldPullImage(client, image, pullPolicy,
+                                dependency.configuration().get("pull_refresh_after")))
                             pullImage(client, context.registryAuth(), image, stringValue(dependency.configuration().get("platform"), null));
                         ensureServiceContainers(client, context, project, dependency, replicaCount(dependency), false, false,
                                 false, true, DEFAULT_STOP_TIMEOUT_SECONDS, null);
-                        awaitDependencies(client, project, context.projectName(), dependency, null);
+                        awaitDependencies(client, project, context.projectName(), dependency, null, effectiveProfiles);
                     }
-                    awaitDependencies(client, project, context.projectName(), service, null);
+                    awaitDependencies(client, project, context.projectName(), service, null, effectiveProfiles);
                 }
                 String image = service.image() == null || service.image().isBlank()
                         ? context.projectName() + "-" + service.name() : service.image();
                 String pullPolicy = effectivePullPolicy(service, null);
-                if (!context.offline() && shouldPullImage(client, image, pullPolicy))
+                if (!context.offline() && shouldPullImage(client, image, pullPolicy,
+                        service.configuration().get("pull_refresh_after")))
                     pullImage(client, context.registryAuth(), image, stringValue(service.configuration().get("platform"), null));
 
                 int index = effective.index() == null ? 0 : effective.index();
@@ -2992,6 +3280,7 @@ public final class ComposeService implements IComposeService {
                 var host = com.github.dockerjava.api.model.HostConfig.newHostConfig();
                 host.withNetworkMode(stringValue(service.configuration().get("network_mode"),
                         primaryNetwork(context.projectName(), project, service)));
+                if (service.configuration().get("init") instanceof Boolean init) host.withInit(init);
                 applyVolumesFrom(client, project, context.projectName(), service, host);
                 applyLoggingConfig(host, service.configuration());
                 applyDnsConfig(host, service.configuration());
@@ -3205,7 +3494,10 @@ public final class ComposeService implements IComposeService {
             selected.forEach(service -> definitions.put(service.name(), service));
             for (Map.Entry<String, Integer> entry : options.services().entrySet()) {
                 ServiceDefinition service = definitions.get(entry.getKey());
-                if (service != null) validateContainerNameScaling(service, entry.getValue());
+                if (service != null) {
+                    validateRunnableService(service);
+                    validateContainerNameScaling(service, entry.getValue());
+                }
             }
             try (DockerClient client = createDockerClient(context)) {
                 ensureProjectResources(client, context.projectName(), project);

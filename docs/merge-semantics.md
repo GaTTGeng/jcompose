@@ -9,7 +9,7 @@ The current implementation is an incremental subset, not full Docker Compose mer
 | Scalars, `null`, or a change between YAML shapes | The later value replaces the earlier value. |
 | Mappings | Recursively merges keys; later values replace matching scalar leaves. |
 | Standard lists | Appends every overlay entry, preserving duplicates and order. |
-| Service `ports` lists | Replaces entries with the same parsed `ip`, `target`, `published`, and `protocol` key for short and long entries; other entries are retained. Port ranges and every short/long syntax combination are not yet verified. |
+| Service `ports` lists | Replaces entries with the same parsed `ip`, `target`, `published`, and `protocol` key for short and long entries, including Docker Compose's unbracketed IPv6 short form; other entries are retained. Port ranges and every short/long syntax combination are not yet verified. |
 | `environment` and `labels` list form | Replaces an earlier entry with the same key (the text before `=` or `:`). |
 | Service `volumes`, `secrets`, and `configs` lists | Replaces an earlier entry with the same target when the short or long form can be identified. Short volume syntax accounts for drive-letter colons in the covered Windows source and target forms; all path and syntax combinations are not verified. |
 | `command`, `entrypoint`, and `healthcheck.test` | The overlay list replaces the base list. |

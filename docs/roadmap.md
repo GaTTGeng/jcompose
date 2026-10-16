@@ -4,7 +4,7 @@ This roadmap describes work required to complete the ComposeSharp 3.0.0 release 
 
 ## Synchronization checkpoint
 
-The ComposeSharp working tree inspected for this documentation sync was `3.0.0-28-gd8d8992` (`d8d8992`). This identifies the source snapshot, not a claim that every feature in that snapshot has been ported. For each later sync, record the ComposeSharp tag/commit in the change summary and update this checkpoint when the repository intentionally moves to a new source snapshot. Keep the Docker Compose compatibility target unchanged.
+The ComposeSharp source checkpoint is `3.0.0-32-g648a430` (`648a430`). Since `3.0.0-28-gd8d8992`, the remote adds four test-dependency update commits and no loader or engine changes. jcompose has verified the per-call merge environment override behavior from `d8d8992`; the checkpoint does not claim that every feature in the source snapshot has been ported. For each later sync, record the ComposeSharp tag/commit in the change summary and update this checkpoint when the repository intentionally moves to a new source snapshot. Keep the Docker Compose compatibility target unchanged.
 
 ## Current milestone: 3.0.0 parity foundation
 

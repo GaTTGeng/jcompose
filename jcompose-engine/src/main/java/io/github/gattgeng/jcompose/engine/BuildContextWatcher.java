@@ -22,8 +22,13 @@ final class BuildContextWatcher implements Flow.Publisher<WatchEvent> {
     record Registration(String service, Path directory) { }
 
     private final Map<Path, List<String>> contexts;
+    private final Runnable onRegistered;
 
     BuildContextWatcher(List<Registration> registrations) {
+        this(registrations, () -> { });
+    }
+
+    BuildContextWatcher(List<Registration> registrations, Runnable onRegistered) {
         Map<Path, List<String>> grouped = new LinkedHashMap<>();
         for (Registration registration : registrations) {
             if (registration.service() == null || registration.service().isBlank())
@@ -38,6 +43,7 @@ final class BuildContextWatcher implements Flow.Publisher<WatchEvent> {
         }
         grouped.values().forEach(services -> services.sort(String::compareTo));
         this.contexts = Map.copyOf(grouped);
+        this.onRegistered = java.util.Objects.requireNonNull(onRegistered, "onRegistered");
     }
 
     @Override public void subscribe(Flow.Subscriber<? super WatchEvent> subscriber) {
@@ -99,6 +105,7 @@ final class BuildContextWatcher implements Flow.Publisher<WatchEvent> {
                 watcher = activeWatcher;
                 Map<WatchKey, DirectoryRegistration> keys = new java.util.concurrent.ConcurrentHashMap<>();
                 for (Map.Entry<Path, List<String>> context : contexts.entrySet()) registerTree(activeWatcher, keys, context.getKey(), context.getValue());
+                onRegistered.run();
                 while (!isCancelled()) {
                     WatchKey key = activeWatcher.take();
                     DirectoryRegistration registration = keys.get(key);
