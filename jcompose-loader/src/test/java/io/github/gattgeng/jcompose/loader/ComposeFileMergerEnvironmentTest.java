@@ -37,7 +37,7 @@ class ComposeFileMergerEnvironmentTest {
 
     @Test
     void matchingOverrideUsesPlatformEnvironmentCaseRules() throws Exception {
-        String variable = "JCOMPOSE_CASE_OVERRIDE_" + Long.toUnsignedString(System.nanoTime());
+        String variable = "JCompose_Case_Override_" + Long.toUnsignedString(System.nanoTime());
         Files.writeString(directory.resolve("compose.yaml"), "services:\n  app:\n    image: ${" + variable + ":-fallback}\n");
         Map<String, String> overrides = Map.of(variable.toUpperCase(java.util.Locale.ROOT), "override");
 

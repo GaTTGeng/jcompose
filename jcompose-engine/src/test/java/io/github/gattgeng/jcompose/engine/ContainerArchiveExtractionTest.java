@@ -68,7 +68,7 @@ class ContainerArchiveExtractionTest {
 
         assertEquals(link, ComposeService.resolveCopySource(link, false));
         Path copySource = ComposeService.resolveCopySource(link, true);
-        assertEquals(target, copySource);
+        assertEquals(target.toRealPath(), copySource);
 
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         try (TarArchiveOutputStream tar = new TarArchiveOutputStream(bytes)) {

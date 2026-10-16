@@ -7,6 +7,7 @@ import io.github.gattgeng.jcompose.api.ComposeTopOptions;
 import io.github.gattgeng.jcompose.api.IComposeService;
 import io.github.gattgeng.jcompose.api.ILogConsumer;
 import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -25,22 +26,23 @@ class ComposeServiceDockerIntegrationTest {
     @TempDir
     Path directory;
 
+    @BeforeAll
+    static void requireDockerBridgeNetworkSupport() {
+        String projectName = "jcompose-probe-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, Path.of(".").toAbsolutePath());
+        try (var client = DockerClientFactory.create(context)) {
+            client.pingCmd().exec();
+            var network = client.createNetworkCmd().withName(projectName + "_probe").withDriver("bridge").exec();
+            client.removeNetworkCmd(network.getId()).exec();
+        } catch (java.io.IOException | RuntimeException unavailable) {
+            Assumptions.abort("Docker Engine with bridge network support is not available: " + unavailable.getMessage());
+        }
+    }
+
     @Test
     void upPsAndDownManageAComposeServiceAndItsNetwork() throws Exception {
         String projectName = "jcompose-it-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
-        try (var client = DockerClientFactory.create(context)) {
-            try {
-                client.pingCmd().exec();
-                var probeNetwork = client.createNetworkCmd()
-                        .withName(projectName + "_probe")
-                        .withDriver("bridge")
-                        .exec();
-                client.removeNetworkCmd(probeNetwork.getId()).exec();
-            } catch (RuntimeException unavailable) {
-                Assumptions.abort("Docker Engine with bridge network support is not available: " + unavailable.getMessage());
-            }
-        }
 
         Files.createDirectories(directory.resolve("data"));
         Files.writeString(directory.resolve("compose.yaml"), """
