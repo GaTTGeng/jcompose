@@ -241,9 +241,9 @@ class ComposeFileLoaderTest {
 
         for (var invalid : List.of(
                 Map.entry("target: 0", "services.app.ports[0].target"),
-                Map.entry("target: 80\n        protocol: sctp", "services.app.ports[0].protocol"),
-                Map.entry("target: 80\n        host_ip: localhost", "services.app.ports[0].host_ip"),
-                Map.entry("target: 80\n        mode: bridge", "services.app.ports[0].mode"))) {
+                Map.entry("target: 80\nprotocol: sctp", "services.app.ports[0].protocol"),
+                Map.entry("target: 80\nhost_ip: localhost", "services.app.ports[0].host_ip"),
+                Map.entry("target: 80\nmode: bridge", "services.app.ports[0].mode"))) {
             Files.writeString(overlay, "services:\n  app:\n    ports:\n      - "
                     + invalid.getKey().replace("\n", "\n        ") + "\n");
 
