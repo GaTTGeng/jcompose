@@ -169,6 +169,22 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void rejectsNonScalarImageAndKeepsDottedServiceProvenanceIsolated() throws Exception {
+        Path base = directory.resolve("compose.yaml");
+        Path overlay = directory.resolve("compose.override.yaml");
+        Files.writeString(base, "services:\n  api:\n    image: []\n");
+        Files.writeString(overlay, "services:\n  api.image:\n    image: alpine\n");
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().loadMerged(directory,
+                        List.of(base.getFileName().toString(), overlay.getFileName().toString())));
+
+        assertEquals(base.toAbsolutePath().normalize(), exception.sourceFile());
+        assertEquals("services.api.image", exception.propertyPath());
+        assertEquals("api", exception.serviceName());
+    }
+
+    @Test
     void rejectsMutuallyExclusiveNetworkModeAndNetworksWhileLoading() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:

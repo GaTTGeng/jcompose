@@ -480,6 +480,9 @@ public final class ComposeFileLoader {
 
     private static void validateServiceFields(Path file, String service, Map<String, Object> configuration) {
         String path = "services." + service;
+        Object image = configuration.get("image");
+        if (image != null && !isScalar(image))
+            throw shapeFailure(file, service, path + ".image", "a scalar", image);
         validateScalarOrMap(file, service, configuration, "build", path + ".build");
         validateListOrMap(file, service, configuration, "environment", path + ".environment");
         for (String key : List.of("deploy", "healthcheck", "logging"))
