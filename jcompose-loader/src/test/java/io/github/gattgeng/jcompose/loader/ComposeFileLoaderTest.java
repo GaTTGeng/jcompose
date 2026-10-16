@@ -397,6 +397,30 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void portRangesMergeAcrossShortAndLongSyntaxByComposeUniqueKey() throws Exception {
+        Files.writeString(directory.resolve("base.yaml"), """
+                services:
+                  app:
+                    image: example/app
+                    ports: ["8080-8081:80-81"]
+                """);
+        Files.writeString(directory.resolve("override.yaml"), """
+                services:
+                  app:
+                    ports:
+                      - target: "80-81"
+                        published: "8080-8081"
+                        protocol: tcp
+                """);
+
+        var project = new ComposeFileLoader().loadMerged(directory, List.of("base.yaml", "override.yaml"));
+        Map<?, ?> app = project.services().get("app").configuration();
+
+        assertEquals(List.of(Map.of("target", "80-81", "published", "8080-8081", "protocol", "tcp")),
+                app.get("ports"));
+    }
+
+    @Test
     void unbracketedIpv6ShortPortsMergeWithLongSyntaxByComposeUniqueKey() throws Exception {
         Files.writeString(directory.resolve("base.yaml"), """
                 services:
