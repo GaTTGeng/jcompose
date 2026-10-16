@@ -97,6 +97,54 @@ class ComposeProfileDependencyTest {
                         List.of(project.services().get("app")), List.of("debug")));
     }
 
+    @Test
+    void networkModeServiceIsSelectedAndStartedBeforeConsumer() throws IOException {
+        ComposeProject project = load("""
+                services:
+                  app:
+                    image: busybox
+                    network_mode: service:network
+                  network:
+                    image: busybox
+                """);
+
+        List<ServiceDefinition> ordered = ComposeService.dependencyOrderedServices(project,
+                List.of(project.services().get("app")), List.of());
+
+        assertEquals(List.of("network", "app"), ordered.stream().map(ServiceDefinition::name).toList());
+    }
+
+    @Test
+    void rejectsNetworkModeServiceOutsideActiveProfiles() throws IOException {
+        ComposeProject project = load("""
+                services:
+                  app:
+                    image: busybox
+                    network_mode: service:network
+                  network:
+                    image: busybox
+                    profiles: [tools]
+                """);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> ComposeService.dependencyOrderedServices(project,
+                        List.of(project.services().get("app")), List.of()));
+    }
+
+    @Test
+    void rejectsUnknownNetworkModeService() throws IOException {
+        ComposeProject project = load("""
+                services:
+                  app:
+                    image: busybox
+                    network_mode: service:missing
+                """);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> ComposeService.dependencyOrderedServices(project,
+                        List.of(project.services().get("app")), List.of()));
+    }
+
     private ComposeProject load(String yaml) throws IOException {
         Files.writeString(temporaryDirectory.resolve("compose.yaml"), yaml);
         return new ComposeFileLoader().loadProject(temporaryDirectory, "compose.yaml");
