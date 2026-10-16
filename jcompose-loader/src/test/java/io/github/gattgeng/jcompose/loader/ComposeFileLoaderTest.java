@@ -59,6 +59,72 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void includesLocalComposeResourcesAndRebasesTheirRelativePaths() throws Exception {
+        Path includedDirectory = Files.createDirectories(directory.resolve("backend"));
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  frontend:
+                    image: nginx
+                include:
+                  - path: ./backend/compose.yaml
+                """);
+        Files.writeString(includedDirectory.resolve("compose.yaml"), """
+                services:
+                  api:
+                    build: .
+                    env_file: api.env
+                    volumes:
+                      - ./data:/var/lib/app
+                    networks: [internal]
+                networks:
+                  internal: {}
+                configs:
+                  app-config:
+                    file: ./app.conf
+                """);
+
+        var project = new ComposeFileLoader().loadProject(directory, "compose.yaml");
+
+        var api = project.services().get("api").configuration();
+        assertEquals("backend", api.get("build"));
+        assertEquals("backend/api.env", api.get("env_file"));
+        assertEquals("./backend/data:/var/lib/app", ((List<?>) api.get("volumes")).getFirst());
+        assertEquals("backend/app.conf", ((Map<?, ?>) project.configDefinitions().get("app-config")).get("file"));
+        assertEquals(List.of("api", "frontend"), project.services().keySet().stream().sorted().toList());
+    }
+
+    @Test
+    void rejectsConflictingAndRemoteIncludesWithSourceContext() throws Exception {
+        Path composeFile = directory.resolve("compose.yaml");
+        Files.writeString(composeFile, """
+                services:
+                  app:
+                    image: alpine
+                include: ./included.yaml
+                """);
+        Files.writeString(directory.resolve("included.yaml"), """
+                services:
+                  app:
+                    image: nginx
+                """);
+
+        ComposeValidationException conflict = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, "compose.yaml"));
+        assertEquals(composeFile, conflict.sourceFile());
+        assertEquals("include.0.path", conflict.propertyPath());
+
+        Files.writeString(composeFile, """
+                services:
+                  app:
+                    image: alpine
+                include: https://example.invalid/compose.yaml
+                """);
+        ComposeValidationException remote = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, "compose.yaml"));
+        assertEquals("include.0.path", remote.propertyPath());
+    }
+
+    @Test
     void rejectsProfilesThatAreNotStringArrays() throws Exception {
         Path composeFile = directory.resolve("compose.yaml");
         Files.writeString(composeFile, """

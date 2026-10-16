@@ -61,7 +61,9 @@ public final class ComposeFileLoader {
                                Map<String, String> environmentOverrides) {
         Path file = resolve(workingDirectory, composeFileName);
         LoadedDocument document = read(file, environmentOverrides);
-        return toProject(file, document.root(), environmentOverrides, document.environment(), document.provenance());
+        Map<String, Object> root = expandIncludes(file, document.root(), environmentOverrides,
+                document.environment(), file.getParent(), new java.util.LinkedHashSet<>());
+        return toProject(file, root, environmentOverrides, document.environment(), document.provenance());
     }
 
     /**
@@ -84,7 +86,9 @@ public final class ComposeFileLoader {
             }
         }
         LoadedDocument document = read(file, environmentOverrides);
-        return toProject(file, document.root(), environmentOverrides, document.environment(), document.provenance());
+        Map<String, Object> root = expandIncludes(file, document.root(), environmentOverrides,
+                document.environment(), file.getParent(), new java.util.LinkedHashSet<>());
+        return toProject(file, root, environmentOverrides, document.environment(), document.provenance());
     }
 
     /** Returns whether the requested/default Compose file can be discovered from the working directory. */
@@ -123,7 +127,151 @@ public final class ComposeFileLoader {
                 provenance = mergeProvenance(baseDocument, document.root(), merged, provenance, document.provenance());
             }
         }
-        return toProject(base, merged, environmentOverrides, environment, provenance);
+        Map<String, Object> root = expandIncludes(base, merged, environmentOverrides,
+                environment, base.getParent(), new java.util.LinkedHashSet<>());
+        return toProject(base, root, environmentOverrides, environment, provenance);
+    }
+
+    private static Map<String, Object> expandIncludes(Path source, Map<String, Object> root,
+                                                       Map<String, String> environmentOverrides,
+                                                       Map<String, String> environment,
+                                                       Path baseDirectory, Set<Path> including) {
+        Object configured = root.get("include");
+        if (configured == null) return root;
+        List<?> entries = configured instanceof List<?> list ? list : List.of(configured);
+        Map<String, Object> expanded = new LinkedHashMap<>(root);
+        expanded.remove("include");
+        Path normalizedSource = source.toAbsolutePath().normalize();
+        if (!including.add(normalizedSource))
+            throw new ComposeValidationException(source, "include", "circular include detected.");
+        try {
+            for (int index = 0; index < entries.size(); index++) {
+                Object item = entries.get(index);
+                String path;
+                Path projectDirectory;
+                Map<String, String> includeEnvironment = new LinkedHashMap<>(environment);
+                String property = "include." + index;
+                if (item instanceof String simplePath) {
+                    path = simplePath;
+                    projectDirectory = source.getParent();
+                } else if (item instanceof Map<?, ?> map) {
+                    Map<String, Object> entry = stringKeyMapUnchecked(map);
+                    for (String key : entry.keySet()) {
+                        if (!Set.of("path", "project_directory", "env_file").contains(key))
+                            throw new ComposeValidationException(source, property + "." + key,
+                                    "unsupported include option '" + key + "'.");
+                    }
+                    Object rawEnvFile = entry.get("env_file");
+                    if (rawEnvFile != null) {
+                        List<?> envFiles = rawEnvFile instanceof List<?> list ? list : List.of(rawEnvFile);
+                        Map<String, String> includeEnvFile = new LinkedHashMap<>();
+                        for (Object envFile : envFiles) {
+                            if (!(envFile instanceof String envPath) || envPath.isBlank())
+                                throw new ComposeValidationException(source, property + ".env_file",
+                                        "env_file must be a path or list of paths.");
+                            includeEnvFile.putAll(parseEnvFile(source.getParent().resolve(envPath).normalize(),
+                                    environmentWithOverrides(environmentOverrides)));
+                        }
+                        includeEnvFile.putAll(environment);
+                        includeEnvironment = includeEnvFile;
+                    }
+                    Object rawPath = entry.get("path");
+                    if (rawPath instanceof String value) path = value;
+                    else if (rawPath instanceof List<?> paths && !paths.isEmpty() && paths.stream().allMatch(String.class::isInstance)) {
+                        Object rawDirectory = entry.get("project_directory");
+                        if (rawDirectory != null && (!(rawDirectory instanceof String directoryValue) || directoryValue.isBlank()))
+                            throw new ComposeValidationException(source, property + ".project_directory",
+                                    "project_directory must be a non-empty path.");
+                        Path listProjectDirectory = rawDirectory == null ? source.getParent()
+                                : source.getParent().resolve((String) rawDirectory).normalize();
+                        Map<String, Object> listOptions = new LinkedHashMap<>(entry);
+                        listOptions.put("project_directory", listProjectDirectory.toString());
+                        for (Object pathItem : paths)
+                            importIncludedFile(source, (String) pathItem, listOptions, includeEnvironment, expanded,
+                                    baseDirectory, including, property);
+                        continue;
+                    } else throw new ComposeValidationException(source, property + ".path",
+                            "include path must be a non-empty string or list of strings.");
+                    Object rawDirectory = entry.get("project_directory");
+                    if (rawDirectory != null && (!(rawDirectory instanceof String directoryValue) || directoryValue.isBlank()))
+                        throw new ComposeValidationException(source, property + ".project_directory",
+                                "project_directory must be a non-empty path.");
+                    projectDirectory = rawDirectory == null ? source.getParent()
+                            : source.getParent().resolve((String) rawDirectory).normalize();
+                } else throw new ComposeValidationException(source, property,
+                        "include entries must be paths or mappings.");
+                importIncludedFile(source, path, Map.of("project_directory", projectDirectory.toString()),
+                        includeEnvironment, expanded, baseDirectory, including, property);
+            }
+        } finally {
+            including.remove(normalizedSource);
+        }
+        return expanded;
+    }
+
+    private static void importIncludedFile(Path source, String path, Map<String, Object> options,
+                                           Map<String, String> includeEnvironment,
+                                           Map<String, Object> expanded,
+                                           Path baseDirectory, Set<Path> including, String property) {
+        if (path.isBlank()) throw new ComposeValidationException(source, property + ".path",
+                "include path must not be empty.");
+        if (path.contains("://") || path.startsWith("git@") || path.startsWith("oci://"))
+            throw new ComposeValidationException(source, property + ".path",
+                    "remote include sources are not supported; use a local Compose file path.");
+        Path includedFile = source.getParent().resolve(path).normalize().toAbsolutePath();
+        if (!Files.isRegularFile(includedFile))
+            throw new ComposeValidationException(source, property + ".path",
+                    "included Compose file not found: " + includedFile);
+        Path projectDirectory = Path.of(String.valueOf(options.getOrDefault("project_directory",
+                includedFile.getParent().toString()))).toAbsolutePath().normalize();
+        LoadedDocument document = read(includedFile, includeEnvironment);
+        Map<String, Object> child = expandIncludes(includedFile, document.root(), includeEnvironment,
+                document.environment(), projectDirectory, including);
+        rebaseIncludedPaths(child, projectDirectory, baseDirectory);
+        for (String section : List.of("services", "networks", "volumes", "secrets", "configs")) {
+            Object childValue = child.get(section);
+            if (!(childValue instanceof Map<?, ?> childMap)) continue;
+            Map<String, Object> destination = stringKeyMapUnchecked(
+                    expanded.get(section) instanceof Map<?, ?> existing ? existing : Map.of());
+            for (var entry : childMap.entrySet()) {
+                String name = String.valueOf(entry.getKey());
+                if (destination.containsKey(name))
+                    throw new ComposeValidationException(source, property + ".path",
+                            "included " + section + " resource '" + name + "' conflicts with an existing definition.");
+                destination.put(name, entry.getValue());
+            }
+            expanded.put(section, destination);
+        }
+    }
+
+    private static void rebaseIncludedPaths(Map<String, Object> root, Path sourceDirectory, Path baseDirectory) {
+        Object services = root.get("services");
+        if (services instanceof Map<?, ?> map) {
+            Map<String, Object> definitions = stringKeyMapUnchecked(map);
+            for (var entry : definitions.entrySet()) {
+                if (entry.getValue() instanceof Map<?, ?> service) {
+                    Map<String, Object> rebased = stringKeyMapUnchecked(service);
+                    rebaseServicePaths(rebased, sourceDirectory, baseDirectory);
+                    definitions.put(entry.getKey(), rebased);
+                }
+            }
+            root.put("services", definitions);
+        }
+        for (String section : List.of("configs", "secrets")) {
+            Object resources = root.get(section);
+            if (resources instanceof Map<?, ?> map) {
+                Map<String, Object> definitions = stringKeyMapUnchecked(map);
+                for (var entry : definitions.entrySet()) {
+                    if (entry.getValue() instanceof Map<?, ?> resource) {
+                        Map<String, Object> definition = stringKeyMapUnchecked(resource);
+                        if (definition.get("file") instanceof String path)
+                            definition.put("file", rebasePath(path, sourceDirectory, baseDirectory));
+                        definitions.put(entry.getKey(), definition);
+                    }
+                }
+                root.put(section, definitions);
+            }
+        }
     }
 
     private static Path resolve(Path directory, String requested) {
@@ -352,6 +500,12 @@ public final class ComposeFileLoader {
     }
 
     private static void rebaseServicePaths(Map<String, Object> service, Path sourceDirectory, Path baseDirectory) {
+        Object extendsValue = service.get("extends");
+        if (extendsValue instanceof Map<?, ?> map && map.get("file") instanceof String path) {
+            Map<String, Object> rebased = stringKeyMapUnchecked(map);
+            rebased.put("file", rebasePath(path, sourceDirectory, baseDirectory));
+            service.put("extends", rebased);
+        }
         Object build = service.get("build");
         if (build instanceof String context) service.put("build", rebasePath(context, sourceDirectory, baseDirectory));
         else if (build instanceof Map<?, ?> map) {
