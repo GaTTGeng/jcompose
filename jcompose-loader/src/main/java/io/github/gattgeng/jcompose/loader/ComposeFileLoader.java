@@ -213,6 +213,9 @@ public final class ComposeFileLoader {
             Map<String, Object> service = stringKeyMap(config, file, "services." + name);
             if (!service.containsKey("image") && !service.containsKey("build"))
                 throw new ComposeValidationException(file, "services." + name, name, "service must define either image or build.", null, null, null);
+            if (service.containsKey("network_mode") && service.containsKey("networks"))
+                throw new ComposeValidationException(file, "services." + name + ".networks", name,
+                        "service cannot combine network_mode with networks.", null, null, null);
             resolveEnvFiles(file.getParent(), service, file, name, environmentOverrides);
             services.put(name, new ServiceDefinition(name, service));
         }

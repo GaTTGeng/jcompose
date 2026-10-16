@@ -1,5 +1,6 @@
 package io.github.gattgeng.jcompose.loader;
 
+import io.github.gattgeng.jcompose.api.ComposeValidationException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -9,10 +10,28 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ComposeFileLoaderTest {
     @TempDir
     Path directory;
+
+    @Test
+    void rejectsMutuallyExclusiveNetworkModeAndNetworksWhileLoading() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    network_mode: bridge
+                    networks: [default]
+                """);
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, null));
+
+        assertEquals("services.app.networks", exception.propertyPath());
+        assertEquals("app", exception.serviceName());
+    }
 
     @Test
     void retainsReservedDockerComposeLabelsForRuntimeValidation() throws Exception {
