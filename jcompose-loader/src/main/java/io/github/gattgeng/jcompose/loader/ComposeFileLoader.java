@@ -216,6 +216,7 @@ public final class ComposeFileLoader {
             if (service.containsKey("network_mode") && service.containsKey("networks"))
                 throw new ComposeValidationException(file, "services." + name + ".networks", name,
                         "service cannot combine network_mode with networks.", null, null, null);
+            validateServiceDependencies(file, name, service.get("depends_on"), serviceMap);
             validateServiceNetworks(file, name, service.get("networks"), root.get("networks"));
             validateServiceResources(file, name, serviceVolumeReferences(service.get("volumes")),
                     root.get("volumes"), "volumes");
@@ -248,6 +249,19 @@ public final class ComposeFileLoader {
             if (!known.contains(network))
                 throw new ComposeValidationException(file, "services." + service + ".networks." + network, service,
                         "service refers to undefined network '" + network + "'.", null, null, null);
+        }
+    }
+
+    private static void validateServiceDependencies(Path file, String service, Object configured,
+                                                    Map<?, ?> services) {
+        List<String> references;
+        if (configured instanceof Map<?, ?> map) references = map.keySet().stream().map(String::valueOf).toList();
+        else if (configured instanceof List<?> list) references = list.stream().map(String::valueOf).toList();
+        else return;
+        for (String dependency : references) {
+            if (!services.containsKey(dependency))
+                throw new ComposeValidationException(file, "services." + service + ".depends_on." + dependency,
+                        service, "service depends on undefined service '" + dependency + "'.", null, null, null);
         }
     }
 

@@ -57,6 +57,20 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
+    void rejectsUndefinedServiceDependency() throws IOException {
+        Path file = temporaryDirectory.resolve("compose.yaml");
+        Files.writeString(file, """
+                services:
+                  app:
+                    image: busybox
+                    depends_on: [missing]
+                """);
+
+        assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(temporaryDirectory, "compose.yaml"));
+    }
+
+    @Test
     void rejectsUndefinedNamedServiceVolume() throws IOException {
         Path file = temporaryDirectory.resolve("compose.yaml");
         Files.writeString(file, """
