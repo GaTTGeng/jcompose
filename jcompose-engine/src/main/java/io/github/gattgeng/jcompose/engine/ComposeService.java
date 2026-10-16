@@ -66,6 +66,7 @@ public final class ComposeService implements IComposeService {
     private static final Pattern ANSI_ESCAPE = Pattern.compile("\\u001B(?:\\[[0-?]*[ -/]*[@-~]|\\][^\\u0007]*(?:\\u0007|\\u001B\\\\))");
     private static final Pattern CONTAINER_HEALTH = Pattern.compile("\\((?:health:\\s*)?(healthy|unhealthy|starting)\\)", Pattern.CASE_INSENSITIVE);
     private static final Pattern CONTAINER_EXIT_CODE = Pattern.compile("\\bExited\\s+\\((\\d+)\\)", Pattern.CASE_INSENSITIVE);
+    private static final List<String> SERVICE_NAMESPACE_FIELDS = List.of("network_mode", "ipc", "pid");
     private final ComposeFileLoader loader;
 
     public ComposeService() {
@@ -1065,16 +1066,17 @@ public final class ComposeService implements IComposeService {
                 }
                 if (selectedNames.add(name)) pending.add(dependency);
             }
-            String networkService = networkModeService(service);
-            if (networkService != null) {
-                ServiceDefinition dependency = byName.get(networkService);
+            for (String namespace : SERVICE_NAMESPACE_FIELDS) {
+                String namespaceService = serviceNamespaceReference(service, namespace);
+                if (namespaceService == null) continue;
+                ServiceDefinition dependency = byName.get(namespaceService);
                 if (dependency == null) throw new IllegalArgumentException("Service '" + service.name()
-                        + "' uses network_mode service '" + networkService + "', but that service is not defined.");
+                        + "' uses " + namespace + " service '" + namespaceService + "', but that service is not defined.");
                 if (!dependency.profiles().isEmpty()
                         && dependency.profiles().stream().noneMatch(enabledProfiles::contains))
-                    throw new IllegalArgumentException("Service '" + service.name() + "' uses network_mode service '"
-                            + networkService + "', but none of its profiles are active.");
-                if (selectedNames.add(networkService)) pending.add(dependency);
+                    throw new IllegalArgumentException("Service '" + service.name() + "' uses " + namespace + " service '"
+                            + namespaceService + "', but none of its profiles are active.");
+                if (selectedNames.add(namespaceService)) pending.add(dependency);
             }
             for (VolumeFromReference reference : volumeFromReferences(service.configuration().get("volumes_from"))) {
                 if (reference.externalContainer()) continue;
@@ -1124,30 +1126,34 @@ public final class ComposeService implements IComposeService {
                 .filter(reference -> !reference.externalContainer())
                 .map(VolumeFromReference::source)
                 .forEach(dependencies::add);
-        String networkService = networkModeService(service);
-        if (networkService != null) dependencies.add(networkService);
+        for (String namespace : SERVICE_NAMESPACE_FIELDS) {
+            String namespaceService = serviceNamespaceReference(service, namespace);
+            if (namespaceService != null) dependencies.add(namespaceService);
+        }
         return List.copyOf(dependencies);
     }
 
-    private static String networkModeService(ServiceDefinition service) {
-        String mode = stringValue(service.configuration().get("network_mode"), "").trim();
+    private static String serviceNamespaceReference(ServiceDefinition service, String namespace) {
+        String mode = stringValue(service.configuration().get(namespace), "").trim();
         if (!mode.startsWith("service:")) return null;
         String name = mode.substring("service:".length()).trim();
         if (name.isEmpty()) throw new IllegalArgumentException("Service '" + service.name()
-                + "' has an empty network_mode service reference.");
+                + "' has an empty " + namespace + " service reference.");
         return name;
     }
 
-    private static String dockerNetworkMode(DockerClient client, String projectName, ServiceDefinition service) {
-        String mode = stringValue(service.configuration().get("network_mode"), "");
-        String targetService = networkModeService(service);
+    private static String dockerNamespaceMode(DockerClient client, String projectName, ServiceDefinition service,
+                                              String namespace) {
+        String mode = stringValue(service.configuration().get(namespace), "");
+        String targetService = serviceNamespaceReference(service, namespace);
         if (targetService == null) return mode;
         Container target = projectContainers(client, projectName, List.of(targetService), true).stream()
                 .filter(container -> !"true".equalsIgnoreCase(label(container, ComposeConstants.ONE_OFF_LABEL)))
                 .sorted(containerOrder())
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("Service '" + service.name()
-                        + "' requires network_mode service '" + targetService + "', but its container was not created."));
+                        + "' requires " + namespace + " service '" + targetService
+                        + "', but its container was not created."));
         return "container:" + target.getId();
     }
 
@@ -1339,9 +1345,11 @@ public final class ComposeService implements IComposeService {
                 .sorted(containerOrder()).toList();
         String image = service.image() == null || service.image().isBlank()
                 ? context.projectName() + "-" + service.name() : service.image();
-        String networkServiceId = networkModeService(service) == null ? ""
-                : "-" + dockerNetworkMode(client, context.projectName(), service).substring("container:".length());
-        String hash = configHash(service) + networkServiceId;
+        String namespaceServiceIds = SERVICE_NAMESPACE_FIELDS.stream()
+                .filter(field -> serviceNamespaceReference(service, field) != null)
+                .map(field -> field + "=" + dockerNamespaceMode(client, context.projectName(), service, field))
+                .collect(java.util.stream.Collectors.joining(";"));
+        String hash = configHash(service) + (namespaceServiceIds.isEmpty() ? "" : "-" + namespaceServiceIds);
         boolean configurationChanged = existing.stream()
                 .anyMatch(container -> !hash.equals(label(container, ComposeConstants.CONFIG_HASH_LABEL)));
         boolean recreate = forceRecreate || configurationChanged && !noRecreate;
@@ -1425,7 +1433,7 @@ public final class ComposeService implements IComposeService {
                 command.withStopTimeout(parseDurationSeconds(String.valueOf(service.configuration().get("stop_grace_period"))));
             if (service.configuration().get("tty") instanceof Boolean tty) command.withTty(tty);
             if (service.configuration().get("stdin_open") instanceof Boolean stdin) command.withStdinOpen(stdin);
-            if (networkModeService(service) == null) {
+            if (serviceNamespaceReference(service, "network_mode") == null) {
                 String primaryNetwork = serviceNetworks(service).getFirst();
                 List<String> primaryAliases = networkAliases(service, primaryNetwork, true);
                 if (!primaryAliases.isEmpty()) command.withAliases(primaryAliases);
@@ -1604,7 +1612,7 @@ public final class ComposeService implements IComposeService {
         var host = com.github.dockerjava.api.model.HostConfig.newHostConfig();
         String configuredNetworkMode = stringValue(config.get("network_mode"), "");
         host.withNetworkMode(configuredNetworkMode.isBlank() ? primaryNetwork(projectName, project, service)
-                : dockerNetworkMode(client, projectName, service));
+                : dockerNamespaceMode(client, projectName, service, "network_mode"));
         List<com.github.dockerjava.api.model.Bind> binds = serviceBinds(project, projectName, service);
         if (!anonymousVolumes.isEmpty()) {
             List<com.github.dockerjava.api.model.Bind> configuredBinds = new ArrayList<>(binds);
@@ -1631,8 +1639,8 @@ public final class ComposeService implements IComposeService {
         if (restart != null) host.withRestartPolicy(restart);
         if (config.get("privileged") instanceof Boolean value) host.withPrivileged(value);
         if (config.get("read_only") instanceof Boolean value) host.withReadonlyRootfs(value);
-        if (config.get("ipc") != null) host.withIpcMode(String.valueOf(config.get("ipc")));
-        if (config.get("pid") != null) host.withPidMode(String.valueOf(config.get("pid")));
+        if (config.get("ipc") != null) host.withIpcMode(dockerNamespaceMode(client, projectName, service, "ipc"));
+        if (config.get("pid") != null) host.withPidMode(dockerNamespaceMode(client, projectName, service, "pid"));
         if (config.get("cgroup_parent") != null) host.withCgroupParent(String.valueOf(config.get("cgroup_parent")));
         if (config.get("shm_size") != null) host.withShmSize(parseByteSize(String.valueOf(config.get("shm_size"))));
         applyRuntimeOptions(host, config);
@@ -3321,7 +3329,11 @@ public final class ComposeService implements IComposeService {
                 var host = com.github.dockerjava.api.model.HostConfig.newHostConfig();
                 String configuredNetworkMode = stringValue(service.configuration().get("network_mode"), "");
                 host.withNetworkMode(configuredNetworkMode.isBlank() ? primaryNetwork(context.projectName(), project, service)
-                        : dockerNetworkMode(client, context.projectName(), service));
+                        : dockerNamespaceMode(client, context.projectName(), service, "network_mode"));
+                if (service.configuration().get("ipc") != null)
+                    host.withIpcMode(dockerNamespaceMode(client, context.projectName(), service, "ipc"));
+                if (service.configuration().get("pid") != null)
+                    host.withPidMode(dockerNamespaceMode(client, context.projectName(), service, "pid"));
                 if (service.configuration().get("init") instanceof Boolean init) host.withInit(init);
                 applyVolumesFrom(client, project, context.projectName(), service, host);
                 applyLoggingConfig(host, service.configuration());
@@ -3364,7 +3376,7 @@ public final class ComposeService implements IComposeService {
                 if (!exposed.isEmpty()) command.withExposedPorts(exposed);
                 List<com.github.dockerjava.api.model.PortBinding> ports = servicePorts(service);
                 if (!ports.isEmpty()) command.withPortBindings(ports);
-                if (networkModeService(service) == null) {
+                if (serviceNamespaceReference(service, "network_mode") == null) {
                     String primaryNetwork = serviceNetworks(service).getFirst();
                     List<String> primaryAliases = networkAliases(service, primaryNetwork, effective.useNetworkAliases());
                     if (!primaryAliases.isEmpty()) command.withAliases(primaryAliases);

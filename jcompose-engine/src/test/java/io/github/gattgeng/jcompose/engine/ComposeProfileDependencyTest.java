@@ -15,6 +15,7 @@ import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ComposeProfileDependencyTest {
     @TempDir
@@ -138,6 +139,60 @@ class ComposeProfileDependencyTest {
                   app:
                     image: busybox
                     network_mode: service:missing
+                """);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> ComposeService.dependencyOrderedServices(project,
+                        List.of(project.services().get("app")), List.of()));
+    }
+
+    @Test
+    void ipcAndPidServiceReferencesAreOrderedBeforeConsumer() throws IOException {
+        ComposeProject project = load("""
+                services:
+                  app:
+                    image: busybox
+                    ipc: service:ipc-owner
+                    pid: service:pid-owner
+                  ipc-owner:
+                    image: busybox
+                  pid-owner:
+                    image: busybox
+                """);
+
+        List<ServiceDefinition> ordered = ComposeService.dependencyOrderedServices(project,
+                List.of(project.services().get("app")), List.of());
+
+        List<String> orderedNames = ordered.stream().map(ServiceDefinition::name).toList();
+        assertEquals(Set.of("ipc-owner", "pid-owner", "app"), Set.copyOf(orderedNames));
+        assertTrue(orderedNames.indexOf("ipc-owner") < orderedNames.indexOf("app"));
+        assertTrue(orderedNames.indexOf("pid-owner") < orderedNames.indexOf("app"));
+    }
+
+    @Test
+    void rejectsNamespaceServiceOutsideActiveProfiles() throws IOException {
+        ComposeProject project = load("""
+                services:
+                  app:
+                    image: busybox
+                    ipc: service:ipc-owner
+                  ipc-owner:
+                    image: busybox
+                    profiles: [tools]
+                """);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> ComposeService.dependencyOrderedServices(project,
+                        List.of(project.services().get("app")), List.of()));
+    }
+
+    @Test
+    void rejectsUnknownNamespaceService() throws IOException {
+        ComposeProject project = load("""
+                services:
+                  app:
+                    image: busybox
+                    pid: service:missing
                 """);
 
         assertThrows(IllegalArgumentException.class,
