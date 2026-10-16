@@ -169,8 +169,13 @@ public final class ComposeFileLoader {
                             if (!(envFile instanceof String envPath) || envPath.isBlank())
                                 throw new ComposeValidationException(source, property + ".env_file",
                                         "env_file must be a path or list of paths.");
-                            includeEnvFile.putAll(parseEnvFile(source.getParent().resolve(envPath).normalize(),
-                                    environmentWithOverrides(environmentOverrides)));
+                            try {
+                                includeEnvFile.putAll(parseEnvFile(source.getParent().resolve(envPath).normalize(),
+                                        environmentWithOverrides(environmentOverrides)));
+                            } catch (IOException exception) {
+                                throw new ComposeValidationException(source, property + ".env_file",
+                                        "could not load include environment file '" + envPath + "': " + exception.getMessage());
+                            }
                         }
                         includeEnvFile.putAll(environment);
                         includeEnvironment = includeEnvFile;
