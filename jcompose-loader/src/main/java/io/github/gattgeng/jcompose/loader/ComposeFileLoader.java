@@ -59,7 +59,7 @@ public final class ComposeFileLoader {
                                Map<String, String> environmentOverrides) {
         Path file = resolve(workingDirectory, composeFileName);
         LoadedDocument document = read(file, environmentOverrides);
-        return toProject(file, document.root(), environmentOverrides, document.environment());
+        return toProject(file, document.root(), environmentOverrides, document.environment(), document.provenance());
     }
 
     /**
@@ -82,7 +82,7 @@ public final class ComposeFileLoader {
             }
         }
         LoadedDocument document = read(file, environmentOverrides);
-        return toProject(file, document.root(), environmentOverrides, document.environment());
+        return toProject(file, document.root(), environmentOverrides, document.environment(), document.provenance());
     }
 
     /** Returns whether the requested/default Compose file can be discovered from the working directory. */
@@ -105,16 +105,23 @@ public final class ComposeFileLoader {
         if (composeFiles == null || composeFiles.isEmpty()) throw new IllegalArgumentException("At least one Compose file is required.");
         Map<String, Object> merged = null;
         Map<String, String> environment = Map.of();
+        Map<String, Path> provenance = null;
         Path base = null;
         for (String name : composeFiles) {
             Path file = resolve(workingDirectory, name);
             if (base == null) base = file;
             LoadedDocument document = read(file, environmentOverrides, base.getParent().resolve(".env"));
             environment = document.environment();
-            if (merged == null) merged = unwrapMergeTags(document.root());
-            else merged = merge(merged, document.root(), "");
+            if (merged == null) {
+                merged = unwrapMergeTags(document.root());
+                provenance = document.provenance();
+            } else {
+                Map<String, Object> baseDocument = merged;
+                merged = merge(merged, document.root(), "");
+                provenance = mergeProvenance(baseDocument, document.root(), merged, provenance, document.provenance());
+            }
         }
-        return toProject(base, merged, environmentOverrides, environment);
+        return toProject(base, merged, environmentOverrides, environment, provenance);
     }
 
     private static Path resolve(Path directory, String requested) {
@@ -177,7 +184,8 @@ public final class ComposeFileLoader {
             Map<String, String> environment = new LinkedHashMap<>(envFile);
             environment.putAll(process);
             environment.values().removeIf(java.util.Objects::isNull);
-            return new LoadedDocument(stringKeyMap(raw, file, "$"), environment);
+            Map<String, Object> root = stringKeyMap(raw, file, "$");
+            return new LoadedDocument(root, environment, buildProvenance(root, file));
         } catch (ComposeValidationException exception) {
             throw exception;
         } catch (IOException | RuntimeException exception) {
@@ -210,7 +218,29 @@ public final class ComposeFileLoader {
 
     private static ComposeProject toProject(Path file, Map<String, Object> root,
                                             Map<String, String> environmentOverrides,
-                                            Map<String, String> environment) {
+                                            Map<String, String> environment,
+                                            Map<String, Path> provenance) {
+        try {
+            return toProjectValidated(file, root, environmentOverrides, environment);
+        } catch (ComposeValidationException exception) {
+            if (!file.equals(exception.sourceFile())) throw exception;
+            Path source = sourceFor(file, exception.propertyPath(), exception.serviceName(), provenance);
+            if (source.equals(exception.sourceFile())) throw exception;
+            String prefix = "Invalid Compose input in '" + exception.sourceFile() + "'"
+                    + (exception.propertyPath() == null ? "" : " at '" + exception.propertyPath() + "'")
+                    + (exception.serviceName() == null ? "" : ", service '" + exception.serviceName() + "'")
+                    + (exception.line() == null ? "" : " (" + exception.line() + ":" + exception.column() + ")")
+                    + ": ";
+            String message = exception.getMessage();
+            String detail = message.startsWith(prefix) ? message.substring(prefix.length()) : message;
+            throw new ComposeValidationException(source, exception.propertyPath(), exception.serviceName(),
+                    detail, exception.line(), exception.column(), exception.getCause());
+        }
+    }
+
+    private static ComposeProject toProjectValidated(Path file, Map<String, Object> root,
+                                                       Map<String, String> environmentOverrides,
+                                                       Map<String, String> environment) {
         root = unwrapMergeTags(root);
         Object rawServices = root.get("services");
         if (!(rawServices instanceof Map<?, ?> serviceMap) || serviceMap.isEmpty())
@@ -411,7 +441,8 @@ public final class ComposeFileLoader {
         return String.valueOf(value);
     }
 
-    private record LoadedDocument(Map<String, Object> root, Map<String, String> environment) { }
+    private record LoadedDocument(Map<String, Object> root, Map<String, String> environment,
+                                  Map<String, Path> provenance) { }
 
     private static Map<String, Object> definitions(Object value) {
         if (!(value instanceof Map<?, ?> map)) return Map.of();
@@ -641,6 +672,132 @@ public final class ComposeFileLoader {
     private static ComposeValidationException conversionFailure(Path file, String service, String path, Object value,
                                                                 String expected, RuntimeException cause) {
         return new ComposeValidationException(file, path, service, "'" + value + "' is not " + expected + ".", null, null, cause);
+    }
+
+    private static Map<String, Path> buildProvenance(Object node, Path source) {
+        Map<String, Path> result = new LinkedHashMap<>();
+        addProvenance(node, "", source, result);
+        return result;
+    }
+
+    private static void addProvenance(Object node, String path, Path source, Map<String, Path> result) {
+        if (node instanceof Map<?, ?> map) {
+            for (var entry : map.entrySet()) {
+                String child = appendPathSegment(path, String.valueOf(entry.getKey()));
+                result.put(child, source);
+                addProvenance(entry.getValue(), child, source, result);
+            }
+        } else if (node instanceof List<?> list) {
+            for (int index = 0; index < list.size(); index++) {
+                String child = path + "[" + index + "]";
+                result.put(child, source);
+                addProvenance(list.get(index), child, source, result);
+            }
+        }
+    }
+
+    private static Map<String, Path> mergeProvenance(Map<String, Object> base, Map<String, Object> overlay,
+                                                      Map<String, Object> merged, Map<String, Path> baseProvenance,
+                                                      Map<String, Path> overlayProvenance) {
+        Map<String, Path> result = new LinkedHashMap<>(baseProvenance);
+        applyOverlayProvenance(base, overlay, merged, "", result, overlayProvenance);
+        return result;
+    }
+
+    private static void applyOverlayProvenance(Map<String, Object> base, Map<String, Object> overlay,
+                                               Map<String, Object> merged, String path,
+                                               Map<String, Path> result, Map<String, Path> overlayProvenance) {
+        for (var entry : overlay.entrySet()) {
+            String key = entry.getKey();
+            String child = appendPathSegment(path, key);
+            Object before = base.get(key);
+            Object after = entry.getValue();
+            Object effective = merged.get(key);
+            if (!base.containsKey(key)) {
+                replaceProvenance(result, overlayProvenance, child, child);
+            } else if (before instanceof Map<?, ?> baseMap && after instanceof Map<?, ?> overlayMap
+                    && effective instanceof Map<?, ?> mergedMap) {
+                applyOverlayProvenance(stringKeyMapUnchecked(baseMap), stringKeyMapUnchecked(overlayMap),
+                        stringKeyMapUnchecked(mergedMap), child, result, overlayProvenance);
+            } else if (before instanceof List<?> baseList && after instanceof List<?> overlayList
+                    && effective instanceof List<?> mergedList) {
+                if (REPLACE_FIELDS.contains(key)) {
+                    replaceProvenance(result, overlayProvenance, child, child);
+                    continue;
+                }
+                for (int index = 0; index < overlayList.size(); index++) {
+                    int mergedIndex = mergedListIndex(key, baseList, overlayList, mergedList, index);
+                    if (mergedIndex < 0) continue;
+                    String sourcePath = child + "[" + index + "]";
+                    String targetPath = child + "[" + mergedIndex + "]";
+                    replaceProvenance(result, overlayProvenance, sourcePath, targetPath);
+                }
+            } else {
+                replaceProvenance(result, overlayProvenance, child, child);
+            }
+        }
+    }
+
+    private static void replaceProvenance(Map<String, Path> target, Map<String, Path> source,
+                                          String sourcePrefix, String targetPrefix) {
+        target.keySet().removeIf(path -> isPathAtOrBelow(path, targetPrefix));
+        for (var entry : source.entrySet()) {
+            if (isPathAtOrBelow(entry.getKey(), sourcePrefix))
+                target.put(targetPrefix + entry.getKey().substring(sourcePrefix.length()), entry.getValue());
+        }
+    }
+
+    private static boolean isPathAtOrBelow(String path, String prefix) {
+        return path.equals(prefix) || path.startsWith(prefix + ".") || path.startsWith(prefix + "[");
+    }
+
+    private static int mergedListIndex(String field, List<?> base, List<?> overlay, List<?> merged, int overlayIndex) {
+        Object overlayValue = overlay.get(overlayIndex);
+        if (REPLACE_FIELDS.contains(field)) return overlayIndex;
+        if (KEYED_LIST_FIELDS.contains(field) || TARGETED_LIST_FIELDS.contains(field) || "ports".equals(field)) {
+            String key = listMergeKey(field, overlayValue);
+            for (int index = 0; index < merged.size(); index++)
+                if (key.equals(listMergeKey(field, merged.get(index)))) return index;
+            return -1;
+        }
+        return base.size() + overlayIndex < merged.size() ? base.size() + overlayIndex : -1;
+    }
+
+    private static String listMergeKey(String field, Object value) {
+        if (KEYED_LIST_FIELDS.contains(field)) return listEntryKey(value);
+        if (TARGETED_LIST_FIELDS.contains(field)) return targetKey(value);
+        if ("ports".equals(field)) return portKey(value);
+        return String.valueOf(value);
+    }
+
+    private static String appendPathSegment(String path, String segment) {
+        if (!segment.isEmpty() && segment.chars().allMatch(character -> Character.isLetterOrDigit(character)
+                || character == '_' || character == '-')) return path.isEmpty() ? segment : path + "." + segment;
+        String escaped = segment.replace("\\", "\\\\").replace("\"", "\\\"");
+        return path + "[\"" + escaped + "\"]";
+    }
+
+    private static Path sourceFor(Path fallback, String propertyPath, String service, Map<String, Path> provenance) {
+        if (propertyPath == null) return fallback;
+        String candidate = propertyPath;
+        if (service != null) {
+            String displayPrefix = "services." + service;
+            if (candidate.equals(displayPrefix) || candidate.startsWith(displayPrefix + ".")
+                    || candidate.startsWith(displayPrefix + "[")) {
+                String escapedPrefix = appendPathSegment("services", service);
+                candidate = escapedPrefix + candidate.substring(displayPrefix.length());
+            }
+            candidate = candidate.replaceAll("\\.(\\d+)(?=\\.|$)", "[$1]");
+        }
+        while (!candidate.isEmpty()) {
+            Path source = provenance.get(candidate);
+            if (source != null) return source;
+            int list = candidate.lastIndexOf('[');
+            int member = candidate.lastIndexOf('.');
+            candidate = list > member ? candidate.substring(0, list)
+                    : member >= 0 ? candidate.substring(0, member) : "";
+        }
+        return fallback;
     }
 
     private static void validateServiceDependencies(Path file, String service, Object configured,

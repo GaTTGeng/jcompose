@@ -138,6 +138,37 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void reportsOverlaySourceForInvalidServiceField() throws Exception {
+        Path base = directory.resolve("compose.yaml");
+        Path overlay = directory.resolve("compose.override.yaml");
+        Files.writeString(base, "services:\n  app:\n    image: alpine\n");
+        Files.writeString(overlay, "services:\n  app:\n    build: []\n");
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().loadMerged(directory,
+                        List.of(base.getFileName().toString(), overlay.getFileName().toString())));
+
+        assertEquals(overlay.toAbsolutePath().normalize(), exception.sourceFile());
+        assertEquals("services.app.build", exception.propertyPath());
+        assertEquals("app", exception.serviceName());
+    }
+
+    @Test
+    void reportsOverlaySourceForInvalidNestedScalar() throws Exception {
+        Path base = directory.resolve("compose.yaml");
+        Path overlay = directory.resolve("compose.override.yaml");
+        Files.writeString(base, "services:\n  app:\n    image: alpine\n    healthcheck:\n      interval: 30s\n");
+        Files.writeString(overlay, "services:\n  app:\n    healthcheck:\n      interval: invalid\n");
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().loadMerged(directory,
+                        List.of(base.getFileName().toString(), overlay.getFileName().toString())));
+
+        assertEquals(overlay.toAbsolutePath().normalize(), exception.sourceFile());
+        assertEquals("services.app.healthcheck.interval", exception.propertyPath());
+    }
+
+    @Test
     void rejectsMutuallyExclusiveNetworkModeAndNetworksWhileLoading() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:

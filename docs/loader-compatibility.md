@@ -49,6 +49,8 @@ When present, `depends_on` must be an array of service names or a long-form mapp
 
 `loadProject` applies the matching optional conventional override file. `loadMerged` accepts an explicit ordered list of Compose files, interpolates each file as it is read, then applies the incremental mapping/list merge described in [multi-file merge semantics](merge-semantics.md). These paths are not full Docker Compose merge compatibility. The `!reset` and `!override` overlay tags are recognized: `!reset` clears to the inherited value's empty collection shape or `null`, and `!override` replaces the inherited value. Other custom YAML tags and unsupported constructs are not treated as Compose directives. Service `extends` uses its own resolution and merge rules, described above; it is not an overlay operation.
 
+For validation errors after a multi-file load, `sourceFile` points to the Compose file that contributed the invalid value, including values nested in maps and merged list items. When a later file replaces a value, its source takes ownership of that value; untouched base-file values retain their original source.
+
 ## Compatibility changes
 
 When changing loader behavior, record the exact ComposeSharp version/commit synchronized, check the behavior against Docker Compose documentation and observable behavior, and update this page, the [field matrix](compose-field-matrix.md), relevant merge documentation, and conformance evidence together. The ComposeSharp source is a convenient feature port reference, not the oracle for Docker Compose semantics.
