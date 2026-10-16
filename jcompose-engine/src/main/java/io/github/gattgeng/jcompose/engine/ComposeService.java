@@ -62,6 +62,8 @@ public final class ComposeService implements IComposeService {
     private static final ExecutorService OPERATION_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
     private static final ThreadLocal<OperationFuture<?>> CURRENT_OPERATION = new ThreadLocal<>();
     private static final Pattern ANSI_ESCAPE = Pattern.compile("\\u001B(?:\\[[0-?]*[ -/]*[@-~]|\\][^\\u0007]*(?:\\u0007|\\u001B\\\\))");
+    private static final Pattern CONTAINER_HEALTH = Pattern.compile("\\((?:health:\\s*)?(healthy|unhealthy|starting)\\)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern CONTAINER_EXIT_CODE = Pattern.compile("\\bExited\\s+\\((\\d+)\\)", Pattern.CASE_INSENSITIVE);
     private final ComposeFileLoader loader;
 
     public ComposeService() {
@@ -348,7 +350,7 @@ public final class ComposeService implements IComposeService {
                 statuses.add(filter.substring("status=".length()).trim());
             }
             try (DockerClient client = createDockerClient(context)) {
-                List<Container> containers = projectContainers(client, context.projectName(), selectedServices, showAll);
+                List<Container> containers = projectContainers(client, context.projectName(), selectedServices, showAll, true);
                 return containers.stream()
                         .filter(container -> statuses.isEmpty() || statuses.stream().anyMatch(status -> status.equalsIgnoreCase(container.getState())))
                         .map(container -> options != null && options.quiet()
@@ -831,9 +833,15 @@ public final class ComposeService implements IComposeService {
     }
 
     private static List<Container> projectContainers(DockerClient client, String project, List<String> services, boolean all) {
+        return projectContainers(client, project, services, all, false);
+    }
+
+    private static List<Container> projectContainers(DockerClient client, String project, List<String> services,
+                                                     boolean all, boolean showSize) {
         if (services != null && services.isEmpty()) return List.of();
         ListContainersCmd command = client.listContainersCmd()
-                .withShowAll(all);
+                .withShowAll(all)
+                .withShowSize(showSize);
         if (project != null) command.withLabelFilter(Map.of(ComposeConstants.PROJECT_LABEL, project));
         return command.exec().stream()
                 .filter(container -> services == null || services.contains(label(container, ComposeConstants.SERVICE_LABEL)))
@@ -854,11 +862,34 @@ public final class ComposeService implements IComposeService {
         Map<String, String> labels = container.getLabels() == null ? Map.of() : Map.copyOf(container.getLabels());
         List<String> networks = container.getNetworkSettings() == null || container.getNetworkSettings().getNetworks() == null
                 ? List.of() : List.copyOf(container.getNetworkSettings().getNetworks().keySet());
+        List<MountInfo> mounts = container.getMounts() == null ? List.of() : container.getMounts().stream()
+                .map(mount -> new MountInfo(mount.getName() == null ? null : "volume", mount.getSource(),
+                        mount.getDestination(), mount.getMode(), mount.getRw())).toList();
         String name = names.isEmpty() ? container.getId().substring(0, Math.min(12, container.getId().length())) : names.getFirst();
-        int exitCode = container.getStatus() != null && container.getStatus().contains("Exit") ? 1 : 0;
+        int exitCode = containerExitCode(container.getStatus());
         return new ContainerSummary(container.getId(), name, names, container.getImage(), container.getCommand(),
                 project == null ? "" : project, service == null ? "" : service, created, container.getState(),
-                container.getStatus(), null, exitCode, ports, labels, networks, List.of(), 0, 0, 0);
+                container.getStatus(), containerHealth(container.getStatus()), exitCode, ports, labels, networks,
+                mounts, (int) mounts.stream().filter(mount -> "volume".equals(mount.type())).count(),
+                container.getSizeRw() == null ? 0 : container.getSizeRw(),
+                container.getSizeRootFs() == null ? 0 : container.getSizeRootFs());
+    }
+
+    static String containerHealth(String status) {
+        if (status == null) return null;
+        var matcher = CONTAINER_HEALTH.matcher(status);
+        return matcher.find() ? matcher.group(1).toLowerCase(java.util.Locale.ROOT) : null;
+    }
+
+    static int containerExitCode(String status) {
+        if (status == null) return 0;
+        var matcher = CONTAINER_EXIT_CODE.matcher(status);
+        if (!matcher.find()) return 0;
+        try {
+            return Integer.parseInt(matcher.group(1));
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
     }
 
     private static ContainerSummary containerIdResult(String id) {

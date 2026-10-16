@@ -36,12 +36,14 @@ class ComposeServiceDockerIntegrationTest {
             }
         }
 
+        Files.createDirectories(directory.resolve("data"));
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:
                   app:
                     image: busybox:1.36
                     command: ["sh", "-c", "sleep 60"]
                     networks: [frontend]
+                    volumes: ["./data:/data:ro"]
                 networks:
                   frontend: {}
                 """);
@@ -54,6 +56,8 @@ class ComposeServiceDockerIntegrationTest {
             assertEquals(1, containers.size());
             assertEquals("app", containers.getFirst().service());
             assertTrue(containers.getFirst().networks().contains(projectName + "_frontend"));
+            assertTrue(containers.getFirst().mounts().stream().anyMatch(mount -> "/data".equals(mount.destination())
+                    && "ro".equals(mount.mode()) && !mount.readWrite()));
         } finally {
             service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
         }
