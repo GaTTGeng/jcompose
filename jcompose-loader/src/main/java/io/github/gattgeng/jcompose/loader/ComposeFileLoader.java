@@ -558,13 +558,60 @@ public final class ComposeFileLoader {
         for (int index = 0; index < ports.size(); index++) {
             Object port = ports.get(index);
             String itemPath = path + "[" + index + "]";
-            if (port instanceof Map<?, ?>) continue;
+            if (port instanceof Map<?, ?> mapping) {
+                validateLongPortMapping(file, service, mapping, itemPath);
+                continue;
+            }
             if (!isScalar(port))
                 throw shapeFailure(file, service, itemPath, "a scalar or YAML mapping", port);
             String text = String.valueOf(port);
             if (!isValidPortMapping(text))
                 throw conversionFailure(file, service, itemPath, port, "a supported short port mapping");
         }
+    }
+
+    private static void validateLongPortMapping(Path file, String service, Map<?, ?> mapping, String path) {
+        Object target = mapping.get("target");
+        String targetPath = path + ".target";
+        if (target == null)
+            throw new ComposeValidationException(file, targetPath, service,
+                    "a container port or port range is required.", null, null, null);
+        if (!isScalar(target) || !isPortRange(String.valueOf(target), false))
+            throw conversionFailure(file, service, targetPath, target, "a container port or port range");
+
+        Object published = mapping.get("published");
+        String publishedPath = path + ".published";
+        if (published != null && (!isScalar(published)
+                || !String.valueOf(published).isBlank() && !isPortRange(String.valueOf(published), true)))
+            throw conversionFailure(file, service, publishedPath, published, "a published port or port range");
+
+        Object hostIp = mapping.get("host_ip");
+        String hostIpPath = path + ".host_ip";
+        if (hostIp != null && (!isScalar(hostIp) || !isIpAddress(String.valueOf(hostIp))))
+            throw conversionFailure(file, service, hostIpPath, hostIp, "an IPv4 or IPv6 address");
+
+        Object protocol = mapping.get("protocol");
+        String protocolPath = path + ".protocol";
+        if (protocol != null && (!isScalar(protocol)
+                || !("tcp".equals(protocol) || "udp".equals(protocol))))
+            throw conversionFailure(file, service, protocolPath, protocol, "tcp or udp");
+
+        Object mode = mapping.get("mode");
+        String modePath = path + ".mode";
+        if (mode != null && (!isScalar(mode)
+                || !("host".equals(mode) || "ingress".equals(mode))))
+            throw conversionFailure(file, service, modePath, mode, "host or ingress");
+
+        for (String field : List.of("name", "app_protocol")) {
+            Object value = mapping.get(field);
+            if (value != null && !isScalar(value))
+                throw shapeFailure(file, service, path + "." + field, "a scalar", value);
+        }
+    }
+
+    private static boolean isIpAddress(String value) {
+        String host = value.trim();
+        return isIpv4Address(host) || isIpv6Address(host);
     }
 
     private static boolean isValidPortMapping(String value) {

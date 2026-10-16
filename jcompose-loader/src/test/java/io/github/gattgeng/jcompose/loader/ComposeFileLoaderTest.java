@@ -234,6 +234,29 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void validatesLongPortMappingsAndReportsTheOverlayFieldSource() throws Exception {
+        Path base = directory.resolve("compose.yaml");
+        Path overlay = directory.resolve("compose.override.yaml");
+        Files.writeString(base, "services:\n  app:\n    image: alpine\n");
+
+        for (var invalid : List.of(
+                Map.entry("target: 0", "services.app.ports[0].target"),
+                Map.entry("target: 80\n        protocol: sctp", "services.app.ports[0].protocol"),
+                Map.entry("target: 80\n        host_ip: localhost", "services.app.ports[0].host_ip"),
+                Map.entry("target: 80\n        mode: bridge", "services.app.ports[0].mode"))) {
+            Files.writeString(overlay, "services:\n  app:\n    ports:\n      - "
+                    + invalid.getKey().replace("\n", "\n        ") + "\n");
+
+            ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                    () -> new ComposeFileLoader().loadMerged(directory,
+                            List.of(base.getFileName().toString(), overlay.getFileName().toString())));
+
+            assertEquals(overlay.toAbsolutePath().normalize(), exception.sourceFile());
+            assertEquals(invalid.getValue(), exception.propertyPath());
+        }
+    }
+
+    @Test
     void rejectsMutuallyExclusiveNetworkModeAndNetworksWhileLoading() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:
