@@ -31,6 +31,10 @@ Process environment values take precedence over values in the project `.env` fil
 
 The parser is intentionally smaller than the full Compose interpolation and dotenv grammars. The `.env` reader does not implement all quoting, escape, multiline, or format variants. Unsupported shell expressions are not evaluated. An unset variable without an operator becomes empty text, without Docker Compose's warning.
 
+## Service `extends`
+
+Services can extend another service in the same Compose file or in a separate file. The loader resolves nested references, merges maps recursively, appends ordinary sequences, merges `volumes` and `devices` by container target, and merges block-I/O device limits by device path. Values declared by the extending service override inherited mapping entries. Missing references and circular inheritance fail with service/property context. The external file path is resolved relative to the main Compose file; inherited build contexts, `env_file` paths, and relative bind sources are rebased so they continue to point to their original locations. Referenced services' dependencies and top-level resources are not imported automatically and must be declared by the project using the extended service. `include` remains unsupported.
+
 ## `.env` and service `env_file`
 
 The project `.env` is read from the first Compose file's directory in a multi-file load and is used for YAML interpolation only. The reader accepts `=` or `:` delimiters, optional leading `export`, blank lines, full-line comments, unquoted and double-quoted interpolation, literal single-quoted values (including multiline values), escaped quotes, common double-quoted escapes, and inline comments following Docker Compose rules. Unquoted and double-quoted `.env` values can reference other `.env` values; process values take precedence. The parser does not implement every Docker Compose dotenv rule.
@@ -41,7 +45,7 @@ Service `env_file` values are container environment input and are interpolated s
 
 The loader retains service profile values; operation-level selection is handled by the engine. A null service selection uses the active profiles in `ComposeProjectContext`; explicit selection and profile semantics are documented per operation as those operations are implemented.
 
-`loadProject` applies the matching optional conventional override file. `loadMerged` accepts an explicit ordered list of Compose files, interpolates each file as it is read, then applies the incremental mapping/list merge described in [multi-file merge semantics](merge-semantics.md). These paths are not full Docker Compose merge compatibility. The `!reset` and `!override` overlay tags are recognized: `!reset` clears to the inherited value's empty collection shape or `null`, and `!override` replaces the inherited value. Other custom YAML tags and unsupported constructs are not treated as Compose directives.
+`loadProject` applies the matching optional conventional override file. `loadMerged` accepts an explicit ordered list of Compose files, interpolates each file as it is read, then applies the incremental mapping/list merge described in [multi-file merge semantics](merge-semantics.md). These paths are not full Docker Compose merge compatibility. The `!reset` and `!override` overlay tags are recognized: `!reset` clears to the inherited value's empty collection shape or `null`, and `!override` replaces the inherited value. Other custom YAML tags and unsupported constructs are not treated as Compose directives. Service `extends` uses its own resolution and merge rules, described above; it is not an overlay operation.
 
 ## Compatibility changes
 

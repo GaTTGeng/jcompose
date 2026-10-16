@@ -212,12 +212,18 @@ public final class ComposeFileLoader {
         Object rawServices = root.get("services");
         if (!(rawServices instanceof Map<?, ?> serviceMap) || serviceMap.isEmpty())
             throw new ComposeValidationException(file, "services", "the document must define at least one service.");
-        Map<String, ServiceDefinition> services = new LinkedHashMap<>();
+        Map<String, Map<String, Object>> resolvedServices = new LinkedHashMap<>();
         for (var entry : serviceMap.entrySet()) {
             String name = String.valueOf(entry.getKey());
             if (!(entry.getValue() instanceof Map<?, ?> config))
                 throw new ComposeValidationException(file, "services." + name, name, "service configuration must be a mapping.", null, null, null);
-            Map<String, Object> service = stringKeyMap(config, file, "services." + name);
+            resolvedServices.put(name, resolveExtendedService(file, name, stringKeyMap(config, file, "services." + name),
+                    root, environmentOverrides, file.getParent(), new java.util.LinkedHashSet<>()));
+        }
+        Map<String, ServiceDefinition> services = new LinkedHashMap<>();
+        for (var entry : resolvedServices.entrySet()) {
+            String name = entry.getKey();
+            Map<String, Object> service = entry.getValue();
             if (!service.containsKey("image") && !service.containsKey("build"))
                 throw new ComposeValidationException(file, "services." + name, name, "service must define either image or build.", null, null, null);
             if (service.containsKey("network_mode") && service.containsKey("networks"))
@@ -236,6 +242,151 @@ public final class ComposeFileLoader {
                 names(root.get("secrets")), names(root.get("configs")), definitions(root.get("volumes")),
                 definitions(root.get("networks")), definitions(root.get("secrets")),
                 definitions(root.get("configs")), extensions(root), environment);
+    }
+
+    private static Map<String, Object> resolveExtendedService(Path source, String name, Map<String, Object> service,
+                                                               Map<String, Object> root,
+                                                               Map<String, String> environmentOverrides,
+                                                               Path baseDirectory, Set<String> resolving) {
+        Object extendsValue = service.get("extends");
+        if (extendsValue == null) {
+            Map<String, Object> resolved = new LinkedHashMap<>(service);
+            if (!source.toAbsolutePath().normalize().getParent().equals(baseDirectory.toAbsolutePath().normalize()))
+                rebaseServicePaths(resolved, source.getParent(), baseDirectory);
+            return resolved;
+        }
+        if (!(extendsValue instanceof Map<?, ?> extendsMap))
+            throw new ComposeValidationException(source, "services." + name + ".extends", name,
+                    "extends must be a mapping with a service name and an optional file.", null, null, null);
+        Object serviceValue = extendsMap.get("service");
+        if (!(serviceValue instanceof String baseName) || baseName.isBlank())
+            throw new ComposeValidationException(source, "services." + name + ".extends.service", name,
+                    "extends must define a non-empty service name.", null, null, null);
+        Object fileValue = extendsMap.get("file");
+        if (fileValue != null && (!(fileValue instanceof String path) || path.isBlank()))
+            throw new ComposeValidationException(source, "services." + name + ".extends.file", name,
+                    "extends file must be a non-empty path.", null, null, null);
+
+        String key = source.toAbsolutePath().normalize() + "#" + name;
+        if (!resolving.add(key))
+            throw new ComposeValidationException(source, "services." + name + ".extends", name,
+                    "circular service extends reference detected.", null, null, null);
+        try {
+            Path referencedFile = fileValue == null ? source
+                    : baseDirectory.resolve((String) fileValue).normalize().toAbsolutePath();
+            Map<String, Object> referencedRoot = root;
+            if (!referencedFile.equals(source.toAbsolutePath().normalize())) {
+                if (!Files.isRegularFile(referencedFile))
+                    throw new ComposeValidationException(source, "services." + name + ".extends.file", name,
+                            "referenced Compose file not found: " + referencedFile, null, null, null);
+                referencedRoot = unwrapMergeTags(read(referencedFile, environmentOverrides).root());
+            }
+            Object referencedServices = referencedRoot.get("services");
+            if (!(referencedServices instanceof Map<?, ?> services)
+                    || !(services.get(baseName) instanceof Map<?, ?> referencedService))
+                throw new ComposeValidationException(source, "services." + name + ".extends.service", name,
+                        "referenced service '" + baseName + "' was not found in '" + referencedFile + "'.", null, null, null);
+            Map<String, Object> inherited = resolveExtendedService(referencedFile, baseName,
+                    stringKeyMap(referencedService, referencedFile, "services." + baseName), referencedRoot,
+                    environmentOverrides, baseDirectory, resolving);
+            Map<String, Object> overrides = new LinkedHashMap<>(service);
+            overrides.remove("extends");
+            if (!source.toAbsolutePath().normalize().getParent().equals(baseDirectory.toAbsolutePath().normalize()))
+                rebaseServicePaths(overrides, source.getParent(), baseDirectory);
+            return mergeExtended(inherited, overrides);
+        } finally {
+            resolving.remove(key);
+        }
+    }
+
+    private static void rebaseServicePaths(Map<String, Object> service, Path sourceDirectory, Path baseDirectory) {
+        Object build = service.get("build");
+        if (build instanceof String context) service.put("build", rebasePath(context, sourceDirectory, baseDirectory));
+        else if (build instanceof Map<?, ?> map) {
+            Map<String, Object> rebased = stringKeyMapUnchecked(map);
+            if (rebased.get("context") instanceof String context)
+                rebased.put("context", rebasePath(context, sourceDirectory, baseDirectory));
+            service.put("build", rebased);
+        }
+        Object envFile = service.get("env_file");
+        if (envFile instanceof String path) service.put("env_file", rebasePath(path, sourceDirectory, baseDirectory));
+        else if (envFile instanceof List<?> paths) {
+            List<Object> rebased = new ArrayList<>();
+            for (Object item : paths) {
+                if (item instanceof String path) rebased.add(rebasePath(path, sourceDirectory, baseDirectory));
+                else if (item instanceof Map<?, ?> map) {
+                    Map<String, Object> entry = stringKeyMapUnchecked(map);
+                    if (entry.get("path") instanceof String path)
+                        entry.put("path", rebasePath(path, sourceDirectory, baseDirectory));
+                    rebased.add(entry);
+                } else rebased.add(item);
+            }
+            service.put("env_file", rebased);
+        }
+        Object volumes = service.get("volumes");
+        if (volumes instanceof List<?> list) {
+            List<Object> rebased = new ArrayList<>();
+            for (Object item : list) {
+                if (item instanceof String value) rebased.add(rebaseVolumePath(value, sourceDirectory, baseDirectory));
+                else if (item instanceof Map<?, ?> map) {
+                    Map<String, Object> entry = stringKeyMapUnchecked(map);
+                    if ("bind".equals(entry.get("type")) && entry.get("source") instanceof String path)
+                        entry.put("source", rebasePath(path, sourceDirectory, baseDirectory));
+                    rebased.add(entry);
+                } else rebased.add(item);
+            }
+            service.put("volumes", rebased);
+        }
+    }
+
+    private static String rebasePath(String path, Path sourceDirectory, Path baseDirectory) {
+        Path value = Path.of(path);
+        if (value.isAbsolute() || path.startsWith("~") || path.startsWith("git@")
+                || path.contains("://") || path.startsWith("-")) return path;
+        Path absolute = sourceDirectory.resolve(value).normalize();
+        try { return baseDirectory.relativize(absolute).toString().replace('\\', '/'); }
+        catch (IllegalArgumentException exception) { return absolute.toString(); }
+    }
+
+    private static String rebaseVolumePath(String volume, Path sourceDirectory, Path baseDirectory) {
+        String[] parts = volume.split(":", 3);
+        if (parts.length < 2 || !(parts[0].startsWith(".") || parts[0].startsWith("/")
+                || parts[0].startsWith("~") || parts[0].matches("^[A-Za-z]:[\\\\/].*"))) return volume;
+        String source = rebasePath(parts[0], sourceDirectory, baseDirectory);
+        if (!source.startsWith("./") && !source.startsWith("../") && !Path.of(source).isAbsolute())
+            source = "./" + source;
+        return source + ":" + parts[1]
+                + (parts.length == 3 ? ":" + parts[2] : "");
+    }
+
+    private static Map<String, Object> mergeExtended(Map<String, Object> base, Map<String, Object> overrides) {
+        Map<String, Object> result = new LinkedHashMap<>(base);
+        for (var entry : overrides.entrySet()) {
+            Object before = result.get(entry.getKey()), after = entry.getValue();
+            if (before instanceof Map<?, ?> left && after instanceof Map<?, ?> right)
+                result.put(entry.getKey(), mergeExtended(stringKeyMapUnchecked(left), stringKeyMapUnchecked(right)));
+            else if (before instanceof List<?> left && after instanceof List<?> right) {
+                String key = entry.getKey();
+                if ("volumes".equals(key) || "devices".equals(key))
+                    result.put(entry.getKey(), mergeTargetedList(left, right));
+                else if (key.startsWith("device_") && (key.endsWith("_bps") || key.endsWith("_iops")))
+                    result.put(entry.getKey(), mergePathList(left, right));
+                else result.put(entry.getKey(), appendAll(left, right));
+            } else result.put(entry.getKey(), after);
+        }
+        return result;
+    }
+
+    private static List<Object> mergePathList(List<?> base, List<?> overrides) {
+        Map<String, Object> entries = new LinkedHashMap<>();
+        for (Object value : base) entries.put(pathKey(value), value);
+        for (Object value : overrides) entries.put(pathKey(value), value);
+        return List.copyOf(entries.values());
+    }
+
+    private static String pathKey(Object value) {
+        if (value instanceof Map<?, ?> map && map.get("path") != null) return String.valueOf(map.get("path"));
+        return String.valueOf(value);
     }
 
     private record LoadedDocument(Map<String, Object> root, Map<String, String> environment) { }

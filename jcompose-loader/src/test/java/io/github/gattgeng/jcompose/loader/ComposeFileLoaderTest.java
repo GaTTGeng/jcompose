@@ -246,4 +246,85 @@ class ComposeFileLoaderTest {
         assertEquals(List.of("MODE=override", "KEEP=yes", "NEW=yes"), app.get("environment"));
         assertEquals(List.of("./new:/data", "./logs:/logs"), app.get("volumes"));
     }
+
+    @Test
+    void extendsServiceInSameFileAndMergesOverridesByComposeRules() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  base:
+                    image: example/base
+                    command: ["base"]
+                    environment:
+                      MODE: base
+                      KEEP: "yes"
+                    volumes: ["base-data:/data", "base-log:/logs"]
+                  app:
+                    extends:
+                      service: base
+                    command: ["app"]
+                    environment:
+                      MODE: app
+                    volumes: ["app-data:/data"]
+                volumes:
+                  base-data: {}
+                  base-log: {}
+                  app-data: {}
+                """);
+
+        Map<?, ?> app = new ComposeFileLoader().load(directory, null).services().get("app").configuration();
+
+        assertEquals("example/base", app.get("image"));
+        assertEquals(List.of("base", "app"), app.get("command"));
+        assertEquals(Map.of("MODE", "app", "KEEP", "yes"), app.get("environment"));
+        assertEquals(List.of("app-data:/data", "base-log:/logs"), app.get("volumes"));
+        org.junit.jupiter.api.Assertions.assertFalse(app.containsKey("extends"));
+    }
+
+    @Test
+    void extendsExternalServiceAndRebasesItsRelativePathsToProjectFile() throws Exception {
+        Path common = Files.createDirectories(directory.resolve("common"));
+        Files.writeString(common.resolve("app.env"), "FROM_EXTENDS=yes\n");
+        Files.writeString(common.resolve("compose.yaml"), """
+                services:
+                  base:
+                    image: example/base
+                    build:
+                      context: ./context
+                    env_file: app.env
+                    volumes: ["./data:/data:ro"]
+                """);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    extends:
+                      file: common/compose.yaml
+                      service: base
+                    command: ["start"]
+                """);
+
+        Map<?, ?> app = new ComposeFileLoader().load(directory, null).services().get("app").configuration();
+
+        assertEquals(Map.of("context", "common/context"), app.get("build"));
+        assertEquals("common/app.env", app.get("env_file"));
+        assertEquals(List.of("./common/data:/data:ro"), app.get("volumes"));
+        assertEquals(Map.of("FROM_EXTENDS", "yes"), app.get("environment"));
+    }
+
+    @Test
+    void rejectsCircularExtendsReferences() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  first:
+                    extends:
+                      service: second
+                  second:
+                    extends:
+                      service: first
+                """);
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, null));
+
+        assertEquals("services.first.extends", exception.propertyPath());
+    }
 }
