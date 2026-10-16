@@ -8,6 +8,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 
 ### Added
 
+- Retained and validated Docker Compose `develop.watch` rule configuration, including supported actions, source paths, sync targets, filters, initial sync, and `sync+exec` options; action execution is not implemented.
 - Added per-call environment overrides for multi-file merges without changing process-wide environment variables.
 - Passed the primary build image and all distinct `build.tags` values to Docker Engine in one build request.
 - Skipped `top` results when a container exits or is removed between project listing and process inspection; other Docker errors remain visible.
