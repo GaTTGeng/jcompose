@@ -2433,7 +2433,7 @@ public final class ComposeService implements IComposeService {
         }
     }
 
-    private static List<com.github.dockerjava.api.model.PortBinding> servicePorts(ServiceDefinition service) {
+    static List<com.github.dockerjava.api.model.PortBinding> servicePorts(ServiceDefinition service) {
         Object raw = service.configuration().get("ports");
         if (!(raw instanceof List<?> ports)) return List.of();
         List<com.github.dockerjava.api.model.PortBinding> result = new ArrayList<>();
@@ -2442,23 +2442,25 @@ public final class ComposeService implements IComposeService {
                 if (port instanceof Map<?, ?> map) {
                     Object target = map.get("target"), published = map.get("published"), protocol = map.get("protocol"), hostIp = map.get("host_ip");
                     if (target == null) continue;
-                    String exposedPort = String.valueOf(target) + (protocol == null ? "/tcp" : "/" + protocol);
-                    if (published == null || String.valueOf(published).isBlank()) {
-                        Ports.Binding binding = hostIp == null || String.valueOf(hostIp).isBlank()
-                                ? Ports.Binding.empty() : Ports.Binding.bindIp(String.valueOf(hostIp));
-                        result.add(new com.github.dockerjava.api.model.PortBinding(binding,
-                                com.github.dockerjava.api.model.ExposedPort.parse(exposedPort)));
-                        continue;
-                    }
-                    String binding = (hostIp == null ? "" : hostIp + ":") + published + ":" + target
-                            + (protocol == null ? "" : "/" + protocol);
-                    result.add(com.github.dockerjava.api.model.PortBinding.parse(binding));
+                    addPortBindings(result, hostIp == null ? null : String.valueOf(hostIp),
+                            String.valueOf(target), published == null ? null : String.valueOf(published),
+                            protocol == null ? "tcp" : String.valueOf(protocol));
                 } else {
                     String value = String.valueOf(port);
-                    if (value.indexOf(':') < 0) {
-                        result.add(new com.github.dockerjava.api.model.PortBinding(Ports.Binding.empty(),
-                                com.github.dockerjava.api.model.ExposedPort.parse(value)));
-                    } else result.add(com.github.dockerjava.api.model.PortBinding.parse(value));
+                    String[] protocolSplit = value.split("/", 2);
+                    List<String> segments = splitPortSegments(protocolSplit[0]);
+                    String hostIp = null, published = null, target;
+                    if (segments.size() == 1) target = segments.getFirst();
+                    else if (segments.size() == 2) {
+                        published = segments.get(0);
+                        target = segments.get(1);
+                    } else {
+                        hostIp = String.join(":", segments.subList(0, segments.size() - 2));
+                        published = segments.get(segments.size() - 2);
+                        target = segments.getLast();
+                    }
+                    addPortBindings(result, hostIp, target, published,
+                            protocolSplit.length == 2 ? protocolSplit[1] : "tcp");
                 }
             } catch (IllegalArgumentException exception) {
                 throw new IllegalArgumentException("Unsupported ports entry for service '" + service.name() + "': " + port, exception);
@@ -2467,14 +2469,83 @@ public final class ComposeService implements IComposeService {
         return result;
     }
 
-    private static List<com.github.dockerjava.api.model.ExposedPort> serviceExposedPorts(ServiceDefinition service) {
+    private static void addPortBindings(List<com.github.dockerjava.api.model.PortBinding> result, String hostIp,
+                                        String targetValue, String publishedValue, String protocol) {
+        PortRange target = parsePortRange(targetValue);
+        PortRange published = publishedValue == null || publishedValue.isBlank() ? null : parsePortRange(publishedValue);
+        int targetCount = target.end() - target.start() + 1;
+        if (published != null && targetCount > 1 && published.count() != targetCount)
+            throw new IllegalArgumentException("Published and target port ranges must have the same number of ports.");
+        String normalizedHostIp = normalizeHostIp(hostIp);
+        for (int offset = 0; offset < targetCount; offset++) {
+            String exposedPort = (target.start() + offset) + "/" + protocol;
+            Ports.Binding binding;
+            if (published == null) {
+                binding = normalizedHostIp == null ? Ports.Binding.empty() : Ports.Binding.bindIp(normalizedHostIp);
+            } else if (published.count() > 1 && targetCount == 1) {
+                binding = new Ports.Binding(normalizedHostIp, published.start() + "-" + published.end());
+            } else {
+                binding = new Ports.Binding(normalizedHostIp, Integer.toString(published.start() + offset));
+            }
+            result.add(new com.github.dockerjava.api.model.PortBinding(binding,
+                    com.github.dockerjava.api.model.ExposedPort.parse(exposedPort)));
+        }
+    }
+
+    private static String normalizeHostIp(String hostIp) {
+        if (hostIp == null || hostIp.isBlank()) return null;
+        return hostIp.length() >= 2 && hostIp.startsWith("[") && hostIp.endsWith("]")
+                ? hostIp.substring(1, hostIp.length() - 1) : hostIp;
+    }
+
+    private static PortRange parsePortRange(String value) {
+        String[] range = value.split("-", -1);
+        if (range.length < 1 || range.length > 2 || range[0].isBlank()
+                || range.length == 2 && range[1].isBlank())
+            throw new IllegalArgumentException("Invalid port or port range: " + value);
+        int start, end;
+        try {
+            start = Integer.parseInt(range[0]);
+            end = range.length == 2 ? Integer.parseInt(range[1]) : start;
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException("Invalid port or port range: " + value, exception);
+        }
+        if (start < 1 || end > 65535 || start > end)
+            throw new IllegalArgumentException("Port range must be between 1 and 65535 and in ascending order: " + value);
+        return new PortRange(start, end);
+    }
+
+    private record PortRange(int start, int end) {
+        int count() { return end - start + 1; }
+    }
+
+    private static List<String> splitPortSegments(String value) {
+        List<String> segments = new ArrayList<>();
+        StringBuilder segment = new StringBuilder();
+        int brackets = 0;
+        for (int index = 0; index < value.length(); index++) {
+            char current = value.charAt(index);
+            if (current == '[') brackets++;
+            else if (current == ']') brackets--;
+            if (current == ':' && brackets == 0) {
+                segments.add(segment.toString());
+                segment.setLength(0);
+            } else segment.append(current);
+        }
+        segments.add(segment.toString());
+        return segments;
+    }
+
+    static List<com.github.dockerjava.api.model.ExposedPort> serviceExposedPorts(ServiceDefinition service) {
         java.util.LinkedHashSet<com.github.dockerjava.api.model.ExposedPort> result = new java.util.LinkedHashSet<>();
         for (var binding : servicePorts(service)) result.add(binding.getExposedPort());
         Object expose = service.configuration().get("expose");
         if (expose instanceof List<?> list) for (Object value : list) {
-            String port = String.valueOf(value);
-            if (port.indexOf('/') < 0) port += "/tcp";
-            result.add(com.github.dockerjava.api.model.ExposedPort.parse(port));
+            String[] protocolSplit = String.valueOf(value).split("/", 2);
+            PortRange range = parsePortRange(protocolSplit[0]);
+            String protocol = protocolSplit.length == 2 ? protocolSplit[1] : "tcp";
+            for (int port = range.start(); port <= range.end(); port++)
+                result.add(com.github.dockerjava.api.model.ExposedPort.parse(port + "/" + protocol));
         }
         return List.copyOf(result);
     }
