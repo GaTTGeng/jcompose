@@ -2035,7 +2035,7 @@ public final class ComposeService implements IComposeService {
         return List.copyOf(devices);
     }
 
-    private static com.github.dockerjava.api.model.HealthCheck serviceHealthcheck(ServiceDefinition service) {
+    static com.github.dockerjava.api.model.HealthCheck serviceHealthcheck(ServiceDefinition service) {
         if (!(service.configuration().get("healthcheck") instanceof Map<?, ?> raw)) return null;
         Map<String, Object> config = stringKeyMap(raw);
         List<String> test = asStringList(config.get("test"));
