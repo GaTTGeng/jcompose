@@ -58,6 +58,15 @@ class ComposePortProtocolTest {
     }
 
     @Test
+    void acceptsZeroAsAnEphemeralPublishedPort() {
+        ServiceDefinition service = service(Map.of("ports", List.of("0:8080", Map.of("target", 8081, "published", "0"))));
+
+        List<com.github.dockerjava.api.model.PortBinding> ports = ComposeService.servicePorts(service);
+
+        assertEquals(List.of("0", "0"), ports.stream().map(binding -> binding.getBinding().getHostPortSpec()).toList());
+    }
+
+    @Test
     void expandsExposedPortRanges() {
         ServiceDefinition service = service(Map.of("expose", List.of("8080-8082/udp")));
 

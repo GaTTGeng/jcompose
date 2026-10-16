@@ -2472,7 +2472,7 @@ public final class ComposeService implements IComposeService {
     private static void addPortBindings(List<com.github.dockerjava.api.model.PortBinding> result, String hostIp,
                                         String targetValue, String publishedValue, String protocol) {
         PortRange target = parsePortRange(targetValue);
-        PortRange published = publishedValue == null || publishedValue.isBlank() ? null : parsePortRange(publishedValue);
+        PortRange published = publishedValue == null || publishedValue.isBlank() ? null : parsePortRange(publishedValue, true);
         int targetCount = target.end() - target.start() + 1;
         if (published != null && targetCount > 1 && published.count() != targetCount)
             throw new IllegalArgumentException("Published and target port ranges must have the same number of ports.");
@@ -2499,6 +2499,10 @@ public final class ComposeService implements IComposeService {
     }
 
     private static PortRange parsePortRange(String value) {
+        return parsePortRange(value, false);
+    }
+
+    private static PortRange parsePortRange(String value, boolean allowZero) {
         String[] range = value.split("-", -1);
         if (range.length < 1 || range.length > 2 || range[0].isBlank()
                 || range.length == 2 && range[1].isBlank())
@@ -2510,8 +2514,9 @@ public final class ComposeService implements IComposeService {
         } catch (NumberFormatException exception) {
             throw new IllegalArgumentException("Invalid port or port range: " + value, exception);
         }
-        if (start < 1 || end > 65535 || start > end)
-            throw new IllegalArgumentException("Port range must be between 1 and 65535 and in ascending order: " + value);
+        if (start < (allowZero ? 0 : 1) || end > 65535 || start > end)
+            throw new IllegalArgumentException("Port range must be between " + (allowZero ? 0 : 1)
+                    + " and 65535 and in ascending order: " + value);
         return new PortRange(start, end);
     }
 
