@@ -148,7 +148,7 @@ public final class ComposeFileLoader {
             for (int index = 0; index < entries.size(); index++) {
                 Object item = entries.get(index);
                 String path;
-                Path projectDirectory;
+                Path projectDirectory = null;
                 Map<String, String> includeEnvironment = new LinkedHashMap<>(environment);
                 String property = "include." + index;
                 if (item instanceof String simplePath) {
@@ -187,10 +187,11 @@ public final class ComposeFileLoader {
                         if (rawDirectory != null && (!(rawDirectory instanceof String directoryValue) || directoryValue.isBlank()))
                             throw new ComposeValidationException(source, property + ".project_directory",
                                     "project_directory must be a non-empty path.");
-                        Path listProjectDirectory = rawDirectory == null ? source.getParent()
+                        Path listProjectDirectory = rawDirectory == null ? null
                                 : source.getParent().resolve((String) rawDirectory).normalize();
                         Map<String, Object> listOptions = new LinkedHashMap<>(entry);
-                        listOptions.put("project_directory", listProjectDirectory.toString());
+                        if (listProjectDirectory != null)
+                            listOptions.put("project_directory", listProjectDirectory.toString());
                         for (Object pathItem : paths)
                             importIncludedFile(source, (String) pathItem, listOptions, includeEnvironment, expanded,
                                     baseDirectory, including, property);
@@ -201,11 +202,13 @@ public final class ComposeFileLoader {
                     if (rawDirectory != null && (!(rawDirectory instanceof String directoryValue) || directoryValue.isBlank()))
                         throw new ComposeValidationException(source, property + ".project_directory",
                                 "project_directory must be a non-empty path.");
-                    projectDirectory = rawDirectory == null ? source.getParent()
+                    projectDirectory = rawDirectory == null ? null
                             : source.getParent().resolve((String) rawDirectory).normalize();
                 } else throw new ComposeValidationException(source, property,
                         "include entries must be paths or mappings.");
-                importIncludedFile(source, path, Map.of("project_directory", projectDirectory.toString()),
+                Map<String, Object> options = projectDirectory == null ? Map.of()
+                        : Map.of("project_directory", projectDirectory.toString());
+                importIncludedFile(source, path, options,
                         includeEnvironment, expanded, baseDirectory, including, property);
             }
         } finally {

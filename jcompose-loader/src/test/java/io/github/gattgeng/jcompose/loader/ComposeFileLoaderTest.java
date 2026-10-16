@@ -82,6 +82,7 @@ class ComposeFileLoaderTest {
                   app-config:
                     file: ./app.conf
                 """);
+        Files.writeString(includedDirectory.resolve("api.env"), "MODE=test\n");
 
         var project = new ComposeFileLoader().loadProject(directory, "compose.yaml");
 
