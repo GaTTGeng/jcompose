@@ -1,6 +1,7 @@
 package io.github.gattgeng.jcompose.engine;
 
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -53,6 +54,32 @@ class ContainerArchiveExtractionTest {
         }
 
         assertThrows(IOException.class, () -> ComposeService.ensureNoSymlinkAncestors(link.resolve("copy")));
+    }
+
+    @Test
+    void followsTopLevelSourceSymlinkWhenRequested() throws IOException {
+        Path target = Files.writeString(tempDirectory.resolve("target.txt"), "compose123");
+        Path link = tempDirectory.resolve("source.txt");
+        try {
+            Files.createSymbolicLink(link, target);
+        } catch (UnsupportedOperationException | IOException | SecurityException e) {
+            return;
+        }
+
+        assertEquals(link, ComposeService.resolveCopySource(link, false));
+        Path copySource = ComposeService.resolveCopySource(link, true);
+        assertEquals(target, copySource);
+
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (TarArchiveOutputStream tar = new TarArchiveOutputStream(bytes)) {
+            ComposeService.appendTarEntry(tar, copySource, link.getFileName().toString());
+            tar.finish();
+        }
+        try (TarArchiveInputStream tar = new TarArchiveInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+            TarArchiveEntry entry = tar.getNextTarEntry();
+            assertEquals("source.txt", entry.getName());
+            assertEquals("compose123", new String(tar.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+        }
     }
 
     private static byte[] archiveWithHardLink() throws IOException {

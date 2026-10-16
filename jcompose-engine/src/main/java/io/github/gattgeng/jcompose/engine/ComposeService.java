@@ -2049,7 +2049,11 @@ public final class ComposeService implements IComposeService {
         }
     }
 
-    private static long appendTarEntry(TarArchiveOutputStream tar, Path path, String archiveName) throws java.io.IOException {
+    static Path resolveCopySource(Path source, boolean followLink) throws java.io.IOException {
+        return followLink && Files.isSymbolicLink(source) ? source.toRealPath() : source;
+    }
+
+    static long appendTarEntry(TarArchiveOutputStream tar, Path path, String archiveName) throws java.io.IOException {
         TarArchiveEntry entry = new TarArchiveEntry(path.toFile(), archiveName + (Files.isDirectory(path) ? "/" : ""));
         tar.putArchiveEntry(entry);
         long bytes = 0;
@@ -3154,7 +3158,8 @@ public final class ComposeService implements IComposeService {
                 Path localSource = Path.of(source.path()).toAbsolutePath().normalize();
                 if (!Files.exists(localSource, java.nio.file.LinkOption.NOFOLLOW_LINKS))
                     throw new java.nio.file.NoSuchFileException(localSource.toString());
-                rejectSymlinkTree(localSource);
+                Path copySource = resolveCopySource(localSource, options.followLink());
+                rejectSymlinkTree(copySource);
                 Path tempArchive = Files.createTempFile("jcompose-copy-", ".tar");
                 long bytes = 0;
                 try {
@@ -3163,7 +3168,7 @@ public final class ComposeService implements IComposeService {
                         tar.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX);
                         String root = localSource.getFileName() == null ? null : localSource.getFileName().toString();
                         if (root == null || root.isBlank()) throw new IllegalArgumentException("The copy source must not be a filesystem root.");
-                        bytes = appendTarEntry(tar, localSource, root);
+                        bytes = appendTarEntry(tar, copySource, root);
                         tar.finish();
                     }
                     List<Container> targets = serviceArchiveContainers(client, context.projectName(), destination.service(), options.all());
@@ -3179,7 +3184,7 @@ public final class ComposeService implements IComposeService {
                                     .withCopyUIDGID(options.copyUidGid()).exec();
                         }
                     }
-                    return new CopyResult(null, Files.isDirectory(localSource), Math.multiplyExact(bytes, targets.size()), 0);
+                    return new CopyResult(null, Files.isDirectory(copySource), Math.multiplyExact(bytes, targets.size()), 0);
                 } finally {
                     Files.deleteIfExists(tempArchive);
                 }
