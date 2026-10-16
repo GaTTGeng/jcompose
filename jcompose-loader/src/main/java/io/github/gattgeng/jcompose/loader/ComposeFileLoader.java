@@ -217,6 +217,8 @@ public final class ComposeFileLoader {
                 throw new ComposeValidationException(file, "services." + name + ".networks", name,
                         "service cannot combine network_mode with networks.", null, null, null);
             validateServiceNetworks(file, name, service.get("networks"), root.get("networks"));
+            validateServiceResources(file, name, serviceVolumeReferences(service.get("volumes")),
+                    root.get("volumes"), "volumes");
             validateServiceResources(file, name, service.get("secrets"), root.get("secrets"), "secrets");
             validateServiceResources(file, name, service.get("configs"), root.get("configs"), "configs");
             resolveEnvFiles(file.getParent(), service, file, name, environmentOverrides);
@@ -262,6 +264,28 @@ public final class ComposeFileLoader {
                         service, "service refers to undefined " + resourceType.substring(0, resourceType.length() - 1)
                         + " '" + name + "'.", null, null, null);
         }
+    }
+
+    private static List<?> serviceVolumeReferences(Object configured) {
+        if (!(configured instanceof List<?> mounts)) return List.of();
+        List<String> references = new ArrayList<>();
+        for (Object mount : mounts) {
+            if (mount instanceof Map<?, ?> mapping) {
+                Object type = mapping.get("type");
+                Object source = mapping.get("source");
+                if (source instanceof String name && (type == null || "volume".equals(type)))
+                    references.add(name);
+            } else if (mount instanceof String value) {
+                if (value.matches("[A-Za-z]:[\\\\/].*")) continue;
+                int separator = value.indexOf(':');
+                if (separator <= 0) continue;
+                String source = value.substring(0, separator);
+                if (source.startsWith("/") || source.startsWith("./") || source.startsWith("../")
+                        || source.startsWith("~") || source.contains("${")) continue;
+                references.add(source);
+            }
+        }
+        return references;
     }
 
     private static void resolveEnvFiles(Path base, Map<String, Object> service, Path source, String name,

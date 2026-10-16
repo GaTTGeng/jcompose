@@ -57,6 +57,20 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
+    void rejectsUndefinedNamedServiceVolume() throws IOException {
+        Path file = temporaryDirectory.resolve("compose.yaml");
+        Files.writeString(file, """
+                services:
+                  app:
+                    image: busybox
+                    volumes: [missing:/data]
+                """);
+
+        assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(temporaryDirectory, "compose.yaml"));
+    }
+
+    @Test
     void rejectsUndefinedServiceConfig() throws IOException {
         Path file = temporaryDirectory.resolve("compose.yaml");
         Files.writeString(file, """
@@ -263,6 +277,11 @@ class ComposeLoaderConformanceTest {
         Path directory = temporaryDirectory.resolve("volume-merge");
         Files.createDirectories(directory);
         Files.writeString(directory.resolve("compose.yaml"), """
+                volumes:
+                  a: {}
+                  b: {}
+                  data: {}
+                  logs: {}
                 services:
                   app:
                     image: example/app
