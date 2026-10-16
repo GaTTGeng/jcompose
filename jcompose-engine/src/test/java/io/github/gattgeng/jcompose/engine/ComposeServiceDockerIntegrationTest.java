@@ -26,8 +26,13 @@ class ComposeServiceDockerIntegrationTest {
         try (var client = DockerClientFactory.create(context)) {
             try {
                 client.pingCmd().exec();
+                var probeNetwork = client.createNetworkCmd()
+                        .withName(projectName + "_probe")
+                        .withDriver("bridge")
+                        .exec();
+                client.removeNetworkCmd(probeNetwork.getId()).exec();
             } catch (RuntimeException unavailable) {
-                Assumptions.abort("Docker Engine is not available: " + unavailable.getMessage());
+                Assumptions.abort("Docker Engine with bridge network support is not available: " + unavailable.getMessage());
             }
         }
 
