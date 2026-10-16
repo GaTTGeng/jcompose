@@ -6,7 +6,7 @@ import java.util.Objects;
  * Options for copying files between the host and a service container.
  * @param source Copy source: a host path, or a <code>service:/container/path</code> reference.
  * @param destination Copy destination: a host path, or a <code>service:/container/path</code> reference.
- * @param followLink Follow symlinks in the source location instead of copying them as links.
+ * @param followLink When copying from host to container, follow a top-level symlink at the host source path.
  * @param copyUidGid Preserve the source UID/GID on copied files (requires sufficient privileges).
  * @param index Replica index within the service; null targets the first matching container.
  * @param all Apply the copy to every replica of the service instead of a single container.
@@ -49,8 +49,8 @@ public record ComposeCopyOptions(
         public Builder destination(String value) { this.destination = value; return this; }
 
         /**
-         * Follow symlinks in the source location instead of copying them as links.
-         * @param value Follow symlinks in the source location instead of copying them as links.
+         * When copying from host to container, follow a top-level symlink at the host source path.
+         * @param value Whether to follow a top-level host source symlink for host-to-container copies.
          * @return this builder
          */
         public Builder followLink(boolean value) { this.followLink = value; return this; }
