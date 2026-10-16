@@ -55,8 +55,8 @@ public final class ComposeFileLoader {
     public ComposeProject load(Path workingDirectory, String composeFileName,
                                Map<String, String> environmentOverrides) {
         Path file = resolve(workingDirectory, composeFileName);
-        Map<String, Object> root = read(file, environmentOverrides);
-        return toProject(file, root, environmentOverrides);
+        LoadedDocument document = read(file, environmentOverrides);
+        return toProject(file, document.root(), environmentOverrides, document.environment());
     }
 
     /**
@@ -78,7 +78,8 @@ public final class ComposeFileLoader {
                 return loadMerged(workingDirectory, List.of(file.toString(), override.toString()), environmentOverrides);
             }
         }
-        return toProject(file, read(file, environmentOverrides), environmentOverrides);
+        LoadedDocument document = read(file, environmentOverrides);
+        return toProject(file, document.root(), environmentOverrides, document.environment());
     }
 
     /** Returns whether the requested/default Compose file can be discovered from the working directory. */
@@ -100,15 +101,17 @@ public final class ComposeFileLoader {
                                      Map<String, String> environmentOverrides) {
         if (composeFiles == null || composeFiles.isEmpty()) throw new IllegalArgumentException("At least one Compose file is required.");
         Map<String, Object> merged = null;
+        Map<String, String> environment = Map.of();
         Path base = null;
         for (String name : composeFiles) {
             Path file = resolve(workingDirectory, name);
             if (base == null) base = file;
-            Map<String, Object> next = read(file, environmentOverrides, base.getParent().resolve(".env"));
-            if (merged == null) merged = unwrapMergeTags(next);
-            else merged = merge(merged, next, "");
+            LoadedDocument document = read(file, environmentOverrides, base.getParent().resolve(".env"));
+            environment = document.environment();
+            if (merged == null) merged = unwrapMergeTags(document.root());
+            else merged = merge(merged, document.root(), "");
         }
-        return toProject(base, merged, environmentOverrides);
+        return toProject(base, merged, environmentOverrides, environment);
     }
 
     private static Path resolve(Path directory, String requested) {
@@ -148,12 +151,12 @@ public final class ComposeFileLoader {
     }
 
     @SuppressWarnings("unchecked")
-    private static Map<String, Object> read(Path file, Map<String, String> environmentOverrides) {
+    private static LoadedDocument read(Path file, Map<String, String> environmentOverrides) {
         return read(file, environmentOverrides, file.getParent().resolve(".env"));
     }
 
     @SuppressWarnings("unchecked")
-    private static Map<String, Object> read(Path file, Map<String, String> environmentOverrides, Path dotenvPath) {
+    private static LoadedDocument read(Path file, Map<String, String> environmentOverrides, Path dotenvPath) {
         try {
             String text = Files.readString(file);
             Map<String, String> process = environmentWithOverrides(environmentOverrides);
@@ -168,7 +171,10 @@ public final class ComposeFileLoader {
             yaml.serialize(expanded, serialized);
             Object parsed = yaml.load(serialized.toString());
             if (!(parsed instanceof Map<?, ?> raw)) throw new ComposeValidationException(file, "$", "the document must be a YAML mapping.");
-            return stringKeyMap(raw, file, "$");
+            Map<String, String> environment = new LinkedHashMap<>(envFile);
+            environment.putAll(process);
+            environment.values().removeIf(java.util.Objects::isNull);
+            return new LoadedDocument(stringKeyMap(raw, file, "$"), environment);
         } catch (ComposeValidationException exception) {
             throw exception;
         } catch (IOException | RuntimeException exception) {
@@ -200,7 +206,8 @@ public final class ComposeFileLoader {
     }
 
     private static ComposeProject toProject(Path file, Map<String, Object> root,
-                                            Map<String, String> environmentOverrides) {
+                                            Map<String, String> environmentOverrides,
+                                            Map<String, String> environment) {
         root = unwrapMergeTags(root);
         Object rawServices = root.get("services");
         if (!(rawServices instanceof Map<?, ?> serviceMap) || serviceMap.isEmpty())
@@ -228,8 +235,10 @@ public final class ComposeFileLoader {
         return new ComposeProject(file, services, names(root.get("volumes")), names(root.get("networks")),
                 names(root.get("secrets")), names(root.get("configs")), definitions(root.get("volumes")),
                 definitions(root.get("networks")), definitions(root.get("secrets")),
-                definitions(root.get("configs")), extensions(root));
+                definitions(root.get("configs")), extensions(root), environment);
     }
+
+    private record LoadedDocument(Map<String, Object> root, Map<String, String> environment) { }
 
     private static Map<String, Object> definitions(Object value) {
         if (!(value instanceof Map<?, ?> map)) return Map.of();

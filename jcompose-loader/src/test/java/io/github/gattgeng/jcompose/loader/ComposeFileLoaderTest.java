@@ -17,6 +17,28 @@ class ComposeFileLoaderTest {
     Path directory;
 
     @Test
+    void retainsEffectiveInterpolationEnvironmentWithProcessValuesTakingPrecedence() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: "${JC_TEST_PROCESS}:${JC_TEST_DOTENV}"
+                """);
+        Files.writeString(directory.resolve(".env"), """
+                JC_TEST_PROCESS=dotenv-process
+                JC_TEST_DOTENV=from-dotenv
+                JC_TEST_UNUSED=unused
+                """);
+
+        var project = new ComposeFileLoader().load(directory, null, Map.of("JC_TEST_PROCESS", "from-process"));
+
+        assertEquals("from-process:from-dotenv", project.services().get("app").configuration().get("image"));
+        assertEquals(Map.of("JC_TEST_PROCESS", "from-process", "JC_TEST_DOTENV", "from-dotenv",
+                "JC_TEST_UNUSED", "unused"), project.environment().entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith("JC_TEST_"))
+                .collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)));
+    }
+
+    @Test
     void rejectsMutuallyExclusiveNetworkModeAndNetworksWhileLoading() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:

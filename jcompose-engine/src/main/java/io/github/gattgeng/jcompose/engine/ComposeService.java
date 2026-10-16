@@ -514,7 +514,7 @@ public final class ComposeService implements IComposeService {
                                                        String renderedYaml) {
         return new ComposeProjectConfig(projectName, project.sourceFile().getParent().toString(),
                 projectConfigFiles(project, composeFileName), services.stream().map(ServiceDefinition::name).toList(),
-                project.networks(), project.volumes(), project.secrets(), project.configs(), Map.of(), renderedYaml);
+                project.networks(), project.volumes(), project.secrets(), project.configs(), project.environment(), renderedYaml);
     }
 
     private static List<String> projectConfigFiles(ComposeProject project, String composeFileName) {

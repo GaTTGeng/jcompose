@@ -12,7 +12,17 @@ public record ComposeProject(Path sourceFile, Map<String, ServiceDefinition> ser
                              List<String> secrets, List<String> configs,
                              Map<String, Object> volumeDefinitions, Map<String, Object> networkDefinitions,
                              Map<String, Object> secretDefinitions, Map<String, Object> configDefinitions,
-                             Map<String, Object> extensions) {
+                             Map<String, Object> extensions, Map<String, String> environment) {
+    public ComposeProject(Path sourceFile, Map<String, ServiceDefinition> services,
+                          List<String> volumes, List<String> networks,
+                          List<String> secrets, List<String> configs,
+                          Map<String, Object> volumeDefinitions, Map<String, Object> networkDefinitions,
+                          Map<String, Object> secretDefinitions, Map<String, Object> configDefinitions,
+                          Map<String, Object> extensions) {
+        this(sourceFile, services, volumes, networks, secrets, configs, volumeDefinitions, networkDefinitions,
+                secretDefinitions, configDefinitions, extensions, Map.of());
+    }
+
     public ComposeProject(Path sourceFile, Map<String, ServiceDefinition> services,
                           List<String> volumes, List<String> networks,
                           List<String> secrets, List<String> configs,
@@ -40,6 +50,7 @@ public record ComposeProject(Path sourceFile, Map<String, ServiceDefinition> ser
         secretDefinitions = freezeMap(secretDefinitions);
         configDefinitions = freezeMap(configDefinitions);
         extensions = Collections.unmodifiableMap(new LinkedHashMap<>(extensions));
+        environment = Collections.unmodifiableMap(new LinkedHashMap<>(environment));
     }
 
     private static Map<String, Object> freezeMap(Map<String, Object> source) {
