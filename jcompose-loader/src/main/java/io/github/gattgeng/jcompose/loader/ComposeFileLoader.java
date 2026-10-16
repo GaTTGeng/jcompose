@@ -485,6 +485,7 @@ public final class ComposeFileLoader {
             throw shapeFailure(file, service, path + ".image", "a scalar", image);
         validateScalarOrMap(file, service, configuration, "build", path + ".build");
         validateListOrMap(file, service, configuration, "environment", path + ".environment");
+        validatePorts(file, service, configuration.get("ports"), path + ".ports");
         for (String key : List.of("deploy", "healthcheck", "logging"))
             validateOptionalMap(file, service, configuration, key, path + "." + key);
         validateScalarOrMap(file, service, configuration, "extends", path + ".extends");
@@ -548,6 +549,96 @@ public final class ComposeFileLoader {
         Object value = map.get(key);
         if (value != null && !(value instanceof List<?> || value instanceof Map<?, ?>))
             throw shapeFailure(file, service, path, "a YAML list or mapping", value);
+    }
+
+    private static void validatePorts(Path file, String service, Object value, String path) {
+        if (value == null) return;
+        if (!(value instanceof List<?> ports))
+            throw shapeFailure(file, service, path, "a YAML list", value);
+        for (int index = 0; index < ports.size(); index++) {
+            Object port = ports.get(index);
+            String itemPath = path + "[" + index + "]";
+            if (port instanceof Map<?, ?>) continue;
+            if (!isScalar(port))
+                throw shapeFailure(file, service, itemPath, "a scalar or YAML mapping", port);
+            String text = String.valueOf(port);
+            if (!isValidPortMapping(text))
+                throw conversionFailure(file, service, itemPath, port, "a supported short port mapping");
+        }
+    }
+
+    private static boolean isValidPortMapping(String value) {
+        String text = value.trim();
+        int slash = text.lastIndexOf('/');
+        if (slash >= 0) {
+            String protocol = text.substring(slash + 1);
+            if (!("tcp".equals(protocol) || "udp".equals(protocol))) return false;
+            text = text.substring(0, slash);
+        }
+
+        if (text.startsWith("[")) {
+            int closingBracket = text.indexOf(']');
+            if (closingBracket <= 1 || closingBracket == text.length() - 1 || text.charAt(closingBracket + 1) != ':')
+                return false;
+            String address = text.substring(1, closingBracket);
+            if (!isIpv6Address(address)) return false;
+            String[] parts = text.substring(closingBracket + 2).split(":", -1);
+            return parts.length == 2 && isPortRange(parts[0], true) && isPortRange(parts[1], false);
+        }
+
+        String[] parts = text.split(":", -1);
+        if (parts.length > 3) {
+            int containerSeparator = text.lastIndexOf(':');
+            int publishedSeparator = text.lastIndexOf(':', containerSeparator - 1);
+            return publishedSeparator > 0 && isIpv6Address(text.substring(0, publishedSeparator))
+                    && isPortRange(text.substring(publishedSeparator + 1, containerSeparator), true)
+                    && isPortRange(text.substring(containerSeparator + 1), false);
+        }
+        return switch (parts.length) {
+            case 1 -> isPortRange(parts[0], false);
+            case 2 -> isPortRange(parts[0], true) && isPortRange(parts[1], false);
+            case 3 -> isIpv4Address(parts[0]) && isPortRange(parts[1], true) && isPortRange(parts[2], false);
+            default -> false;
+        };
+    }
+
+    private static boolean isPortRange(String value, boolean allowZero) {
+        String[] range = value.split("-", -1);
+        if (range.length > 2 || !range[0].matches("[0-9]+")
+                || (range.length == 2 && !range[1].matches("[0-9]+"))) return false;
+        int minimum = allowZero ? 0 : 1;
+        try {
+            int start = Integer.parseInt(range[0]);
+            if (start < minimum || start > 65535) return false;
+            if (range.length == 1) return true;
+            int end = Integer.parseInt(range[1]);
+            return end >= start && end <= 65535;
+        } catch (NumberFormatException exception) {
+            return false;
+        }
+    }
+
+    private static boolean isIpv4Address(String value) {
+        String[] octets = value.split("\\.", -1);
+        if (octets.length != 4) return false;
+        try {
+            for (String octet : octets) {
+                int number = Integer.parseInt(octet);
+                if (number < 0 || number > 255 || octet.isEmpty()) return false;
+            }
+            return true;
+        } catch (NumberFormatException exception) {
+            return false;
+        }
+    }
+
+    private static boolean isIpv6Address(String value) {
+        if (!value.contains(":")) return false;
+        try {
+            return java.net.InetAddress.getByName(value) instanceof java.net.Inet6Address;
+        } catch (java.net.UnknownHostException exception) {
+            return false;
+        }
     }
 
     private static void validateDurations(Path file, String service, Map<?, ?> map, String parentPath, String... keys) {

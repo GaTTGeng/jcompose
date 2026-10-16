@@ -185,6 +185,55 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void reportsBaseSourceForInvalidPortAfterOverlayAppend() throws Exception {
+        Path base = directory.resolve("compose.yaml");
+        Path overlay = directory.resolve("compose.override.yaml");
+        Files.writeString(base, "services:\n  api:\n    image: alpine\n    ports: [invalid]\n");
+        Files.writeString(overlay, "services:\n  api:\n    ports: [8080:80]\n");
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().loadMerged(directory,
+                        List.of(base.getFileName().toString(), overlay.getFileName().toString())));
+
+        assertEquals(base.toAbsolutePath().normalize(), exception.sourceFile());
+        assertEquals("services.api.ports[0]", exception.propertyPath());
+        assertEquals("api", exception.serviceName());
+    }
+
+    @Test
+    void reportsOverlaySourceForInvalidAppendedPort() throws Exception {
+        Path base = directory.resolve("compose.yaml");
+        Path overlay = directory.resolve("compose.override.yaml");
+        Files.writeString(base, "services:\n  api:\n    image: alpine\n    ports: [8080:80]\n");
+        Files.writeString(overlay, "services:\n  api:\n    ports: [invalid]\n");
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().loadMerged(directory,
+                        List.of(base.getFileName().toString(), overlay.getFileName().toString())));
+
+        assertEquals(overlay.toAbsolutePath().normalize(), exception.sourceFile());
+        assertEquals("services.api.ports[1]", exception.propertyPath());
+        assertEquals("api", exception.serviceName());
+    }
+
+    @Test
+    void acceptsComposePortRangesAndBracketedIpv6Mappings() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    ports:
+                      - "9090-9091:8080-8081"
+                      - "[::1]:6001:6001/udp"
+                      - "::1:6000:6000"
+                """);
+
+        var project = new ComposeFileLoader().load(directory, null);
+
+        assertEquals(3, ((List<?>) project.services().get("app").configuration().get("ports")).size());
+    }
+
+    @Test
     void rejectsMutuallyExclusiveNetworkModeAndNetworksWhileLoading() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:
