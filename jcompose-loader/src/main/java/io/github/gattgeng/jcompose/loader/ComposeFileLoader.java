@@ -42,6 +42,8 @@ public final class ComposeFileLoader {
     private static final Set<String> REPLACE_FIELDS = Set.of("command", "entrypoint", "test");
     private static final Set<String> KEYED_LIST_FIELDS = Set.of("environment", "labels");
     private static final Set<String> TARGETED_LIST_FIELDS = Set.of("volumes", "secrets", "configs");
+    private static final Set<String> PORT_MAPPING_FIELDS = Set.of(
+            "target", "published", "host_ip", "protocol", "mode", "name", "app_protocol");
     private static final Set<String> EXTENDS_UNIQUE_LIST_FIELDS = Set.of("cap_add", "cap_drop", "configs",
             "constraints", "device_cgroup_rules", "expose", "external_links", "generic_resources", "ports",
             "preferences", "secrets", "security_opt");
@@ -571,6 +573,12 @@ public final class ComposeFileLoader {
     }
 
     private static void validateLongPortMapping(Path file, String service, Map<?, ?> mapping, String path) {
+        for (Object key : mapping.keySet()) {
+            if (!(key instanceof String field) || !PORT_MAPPING_FIELDS.contains(field))
+                throw new ComposeValidationException(file, path + "." + key, service,
+                        "unsupported long port option '" + key + "'.", null, null, null);
+        }
+
         Object target = mapping.get("target");
         String targetPath = path + ".target";
         if (target == null)
