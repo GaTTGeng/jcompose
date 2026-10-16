@@ -34,6 +34,32 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void rejectsUndefinedServiceNetworksAndAllowsImplicitDefault() throws Exception {
+        Path composeFile = directory.resolve("compose.yaml");
+        Files.writeString(composeFile, """
+                services:
+                  app:
+                    image: alpine
+                    networks: [missing]
+                """);
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, null));
+
+        assertEquals("services.app.networks.missing", exception.propertyPath());
+        assertEquals("app", exception.serviceName());
+
+        Files.writeString(composeFile, """
+                services:
+                  app:
+                    image: alpine
+                    networks: [default]
+                """);
+        assertEquals(List.of("default"), new ComposeFileLoader().load(directory, null)
+                .services().get("app").configuration().get("networks"));
+    }
+
+    @Test
     void retainsReservedDockerComposeLabelsForRuntimeValidation() throws Exception {
         Path composeFile = directory.resolve("compose.yaml");
         ComposeFileLoader loader = new ComposeFileLoader();

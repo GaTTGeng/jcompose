@@ -216,6 +216,7 @@ public final class ComposeFileLoader {
             if (service.containsKey("network_mode") && service.containsKey("networks"))
                 throw new ComposeValidationException(file, "services." + name + ".networks", name,
                         "service cannot combine network_mode with networks.", null, null, null);
+            validateServiceNetworks(file, name, service.get("networks"), root.get("networks"));
             resolveEnvFiles(file.getParent(), service, file, name, environmentOverrides);
             services.put(name, new ServiceDefinition(name, service));
         }
@@ -230,6 +231,20 @@ public final class ComposeFileLoader {
         Map<String, Object> result = new LinkedHashMap<>();
         map.forEach((key, definition) -> result.put(String.valueOf(key), definition));
         return result;
+    }
+
+    private static void validateServiceNetworks(Path file, String service, Object configured, Object declared) {
+        List<String> references;
+        if (configured instanceof Map<?, ?> map) references = map.keySet().stream().map(String::valueOf).toList();
+        else if (configured instanceof List<?> list) references = list.stream().map(String::valueOf).toList();
+        else return;
+        Set<String> known = new java.util.LinkedHashSet<>(names(declared));
+        known.add("default");
+        for (String network : references) {
+            if (!known.contains(network))
+                throw new ComposeValidationException(file, "services." + service + ".networks." + network, service,
+                        "service refers to undefined network '" + network + "'.", null, null, null);
+        }
     }
 
     private static void resolveEnvFiles(Path base, Map<String, Object> service, Path source, String name,
