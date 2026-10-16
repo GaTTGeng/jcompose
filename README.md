@@ -98,6 +98,8 @@ The loader supports `$NAME`, `${NAME}`, `$$`, and the `:-`, `-`, `:?`, `?`, `:+`
 
 See [loader compatibility](docs/loader-compatibility.md) for precedence, operator behavior, and current limits. For multi-file input, see [merge semantics](docs/merge-semantics.md). These rules are documented as jcompose behavior and must be checked against Docker Compose; they are not inherited as compatible merely because ComposeSharp implements similar logic.
 
+Service `extends` supports same-file and external-file references, recursive inheritance, and Compose-specific merge behavior. External inherited build, env-file, and bind paths are rebased to the project file. Dependencies and top-level resources still need to be declared by the project; see [loader compatibility](docs/loader-compatibility.md) for the current boundary.
+
 ## What the engine does today
 
 The engine is being ported from the ComposeSharp feature scope, one documented and reviewable slice at a time. The current snapshot implements a subset of image builds and publishing, basic `up`/`create` reconciliation, one-off `run`, host/container `copy`, `scale` and `wait`, `exec`/`attach`, local build-context watch events, container filesystem export and image commit, selected label-scoped operations for existing Docker resources, project container queries, and a normalized configuration snapshot. These operations have explicit limitations and are not complete Docker Compose equivalents; see the compatibility matrix for current gaps.

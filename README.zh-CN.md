@@ -98,6 +98,8 @@ Loader 支持 `$NAME`、`${NAME}`、`$$` 以及 `:-`、`-`、`:?`、`?`、`:+`�
 
 详细优先级、操作符行为和当前限制见 [Loader 兼容性](docs/loader-compatibility.md)。多文件输入见[合并规则](docs/merge-semantics.md)。这里记录的是 jcompose 当前行为；每项语义都应对照 Docker Compose 验证，不能仅因 ComposeSharp 也有类似逻辑就视为兼容。
 
+服务 `extends` 支持引用同一文件或外部文件中的服务、递归继承和 Compose 对应的合并行为。外部继承服务的 build、env_file 和 bind 路径会按项目 Compose 文件重新定位；依赖服务和顶层资源仍需由当前项目声明。具体边界见 [Loader 兼容性](docs/loader-compatibility.md)。
+
 ## Engine 当前实现
 
 jcompose 以 ComposeSharp 的功能范围作为同步路线，并为每一项记录边界和状态；兼容目标始终是 Docker Compose。当前快照包含基础服务协调、一次性 `run`、主机与容器间 `copy`、副本伸缩、容器退出等待、镜像构建、容器文件系统导出和容器提交为镜像等部分能力；这些操作有明确限制，不能等同于完整 Docker Compose 行为。
