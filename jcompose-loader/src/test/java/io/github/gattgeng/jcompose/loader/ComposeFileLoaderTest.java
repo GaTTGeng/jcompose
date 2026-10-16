@@ -258,6 +258,8 @@ class ComposeFileLoaderTest {
                       MODE: base
                       KEEP: "yes"
                     volumes: ["base-data:/data", "base-log:/logs"]
+                    cap_add: [CHOWN, SYS_ADMIN]
+                    expose: [80, 443]
                   app:
                     extends:
                       service: base
@@ -265,6 +267,8 @@ class ComposeFileLoaderTest {
                     environment:
                       MODE: app
                     volumes: ["app-data:/data"]
+                    cap_add: [SYS_ADMIN, NET_ADMIN]
+                    expose: [443, 8080]
                 volumes:
                   base-data: {}
                   base-log: {}
@@ -277,6 +281,8 @@ class ComposeFileLoaderTest {
         assertEquals(List.of("base", "app"), app.get("command"));
         assertEquals(Map.of("MODE", "app", "KEEP", "yes"), app.get("environment"));
         assertEquals(List.of("app-data:/data", "base-log:/logs"), app.get("volumes"));
+        assertEquals(List.of("CHOWN", "SYS_ADMIN", "NET_ADMIN"), app.get("cap_add"));
+        assertEquals(List.of(80, 443, 8080), app.get("expose"));
         org.junit.jupiter.api.Assertions.assertFalse(app.containsKey("extends"));
     }
 

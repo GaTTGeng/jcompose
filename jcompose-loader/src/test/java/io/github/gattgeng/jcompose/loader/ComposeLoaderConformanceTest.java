@@ -185,8 +185,8 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
-    void removesDuplicateEntriesFromComposeUniqueSequences() throws IOException {
-        Path directory = temporaryDirectory.resolve("unique-sequences");
+    void appendsDuplicateEntriesInOrdinaryOverlaySequences() throws IOException {
+        Path directory = temporaryDirectory.resolve("overlay-sequences");
         Files.createDirectories(directory);
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:
@@ -207,9 +207,10 @@ class ComposeLoaderConformanceTest {
         ServiceDefinition app = new ComposeFileLoader().loadMerged(directory,
                 List.of("compose.yaml", "compose.override.yaml")).services().get("app");
 
-        assertEquals(List.of("SYS_ADMIN", "CHOWN", "NET_ADMIN"), app.configuration().get("cap_add"));
-        assertEquals(List.of(80, 443, 8080), app.configuration().get("expose"));
-        assertEquals(List.of("label=role:ROLE", "no-new-privileges:true"), app.configuration().get("security_opt"));
+        assertEquals(List.of("SYS_ADMIN", "CHOWN", "CHOWN", "NET_ADMIN"), app.configuration().get("cap_add"));
+        assertEquals(List.of(80, 443, 443, 8080), app.configuration().get("expose"));
+        assertEquals(List.of("label=role:ROLE", "label=role:ROLE", "no-new-privileges:true"),
+                app.configuration().get("security_opt"));
     }
 
     @Test
