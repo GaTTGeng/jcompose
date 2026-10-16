@@ -99,6 +99,70 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void retainsValidDevelopWatchRules() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    develop:
+                      watch:
+                        - action: sync
+                          path: ./src
+                          target: /app/src
+                          initial_sync: true
+                          ignore: [generated, '*.tmp']
+                          include: ['*.java']
+                        - action: sync+exec
+                          path: ./config
+                          target: /etc/app
+                          exec:
+                            command: [app, reload]
+                            user: app
+                            privileged: false
+                            working_dir: /app
+                            environment:
+                              MODE: development
+                        - action: restart
+                          path: ./app.properties
+                        - action: rebuild
+                          path: ./pom.xml
+                """);
+
+        var project = new ComposeFileLoader().load(directory, null);
+
+        Map<?, ?> develop = (Map<?, ?>) project.services().get("app").configuration().get("develop");
+        List<?> rules = (List<?>) develop.get("watch");
+        assertEquals(4, rules.size());
+        assertEquals("sync+exec", ((Map<?, ?>) rules.get(1)).get("action"));
+    }
+
+    @Test
+    void rejectsInvalidDevelopWatchRulesWithComposePaths() throws Exception {
+        Path composeFile = directory.resolve("compose.yaml");
+        ComposeFileLoader loader = new ComposeFileLoader();
+        for (var invalid : List.of(
+                Map.entry("develop: invalid", "services.app.develop"),
+                Map.entry("develop:\n      watch: {}", "services.app.develop.watch"),
+                Map.entry("develop:\n      watch:\n        - action: rebuild", "services.app.develop.watch[0].path"),
+                Map.entry("develop:\n      watch:\n        - path: ./src\n          action: delete", "services.app.develop.watch[0].action"),
+                Map.entry("develop:\n      watch:\n        - path: ./src\n          action: sync", "services.app.develop.watch[0].target"),
+                Map.entry("develop:\n      watch:\n        - path: ./src\n          action: rebuild\n          target: /app", "services.app.develop.watch[0].target"),
+                Map.entry("develop:\n      watch:\n        - path: ./src\n          action: sync\n          target: /app\n          initial_sync: true", "services.app.develop.watch[0].initial_sync"),
+                Map.entry("develop:\n      watch:\n        - path: C:/src\n          action: rebuild", "services.app.develop.watch[0].path"),
+                Map.entry("develop:\n      watch:\n        - path: ./src\n          action: rebuild\n          ignore: generated", "services.app.develop.watch[0].ignore"),
+                Map.entry("develop:\n      watch:\n        - path: ./src\n          action: sync+exec\n          target: /app\n          exec: {}", "services.app.develop.watch[0].exec.command"),
+                Map.entry("develop:\n      watch:\n        - path: ./src\n          action: sync\n          target: /app\n          unexpected: true", "services.app.develop.watch[0].unexpected"))) {
+            Files.writeString(composeFile, "services:\n  app:\n    image: alpine\n    " + invalid.getKey() + "\n");
+
+            ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                    () -> loader.load(directory, null));
+
+            assertEquals(invalid.getValue(), exception.propertyPath());
+            assertEquals("app", exception.serviceName());
+        }
+    }
+
+    @Test
     void validatesComposeScalarFieldsWithPropertyContext() throws Exception {
         Path composeFile = directory.resolve("compose.yaml");
         ComposeFileLoader loader = new ComposeFileLoader();

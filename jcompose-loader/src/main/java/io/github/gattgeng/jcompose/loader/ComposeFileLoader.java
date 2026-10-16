@@ -490,6 +490,7 @@ public final class ComposeFileLoader {
         validatePorts(file, service, configuration.get("ports"), path + ".ports");
         for (String key : List.of("deploy", "healthcheck", "logging"))
             validateOptionalMap(file, service, configuration, key, path + "." + key);
+        validateDevelop(file, service, configuration.get("develop"), path + ".develop");
         validateScalarOrMap(file, service, configuration, "extends", path + ".extends");
 
         Object deployValue = configuration.get("deploy");
@@ -533,6 +534,120 @@ public final class ComposeFileLoader {
             for (String key : List.of("privileged", "pull", "no_cache"))
                 validateBoolean(file, service, build, key, path + ".build." + key);
         }
+    }
+
+    private static void validateDevelop(Path file, String service, Object configured, String path) {
+        if (configured == null) return;
+        if (!(configured instanceof Map<?, ?> develop))
+            throw shapeFailure(file, service, path, "a YAML mapping", configured);
+        for (Object key : develop.keySet()) {
+            if (!(key instanceof String field) || !field.equals("watch"))
+                throw new ComposeValidationException(file, path + "." + key, service,
+                        "unsupported develop option '" + key + "'.", null, null, null);
+        }
+        Object watchValue = develop.get("watch");
+        if (watchValue == null) return;
+        if (!(watchValue instanceof List<?> rules))
+            throw shapeFailure(file, service, path + ".watch", "a YAML list", watchValue);
+        for (int index = 0; index < rules.size(); index++)
+            validateDevelopWatchRule(file, service, rules.get(index), path + ".watch[" + index + "]");
+    }
+
+    private static void validateDevelopWatchRule(Path file, String service, Object configured, String path) {
+        if (!(configured instanceof Map<?, ?> rule))
+            throw shapeFailure(file, service, path, "a YAML mapping", configured);
+        Set<String> fields = Set.of("path", "action", "target", "ignore", "include", "initial_sync", "exec");
+        for (Object key : rule.keySet()) {
+            if (!(key instanceof String field) || !fields.contains(field))
+                throw new ComposeValidationException(file, path + "." + key, service,
+                        "unsupported develop watch option '" + key + "'.", null, null, null);
+        }
+
+        String rulePath = path + ".path";
+        Object source = rule.get("path");
+        if (!isNonBlankString(source) || isAbsoluteWatchPath((String) source))
+            throw new ComposeValidationException(file, rulePath, service,
+                    "a non-empty relative source path is required.", null, null, null);
+        String actionPath = path + ".action";
+        Object actionValue = rule.get("action");
+        if (!isNonBlankString(actionValue))
+            throw new ComposeValidationException(file, actionPath, service,
+                    "a watch action is required.", null, null, null);
+        String action = String.valueOf(actionValue);
+        if (!Set.of("rebuild", "restart", "sync", "sync+restart", "sync+exec").contains(action))
+            throw new ComposeValidationException(file, actionPath, service,
+                    "watch action must be rebuild, restart, sync, sync+restart, or sync+exec.", null, null, null);
+
+        boolean sync = action.startsWith("sync");
+        Object target = rule.get("target");
+        if (sync && (!isNonBlankString(target) || !String.valueOf(target).startsWith("/")))
+            throw new ComposeValidationException(file, path + ".target", service,
+                    "an absolute container target is required for sync actions.", null, null, null);
+        if (!sync && target != null)
+            throw new ComposeValidationException(file, path + ".target", service,
+                    "target is only supported for sync actions.", null, null, null);
+
+        validateStringList(file, service, rule.get("ignore"), path + ".ignore");
+        validateStringOrStringList(file, service, rule.get("include"), path + ".include");
+        validateBoolean(file, service, rule, "initial_sync", path + ".initial_sync");
+        if (rule.containsKey("initial_sync") && !sync)
+            throw new ComposeValidationException(file, path + ".initial_sync", service,
+                    "initial_sync is only supported for sync actions.", null, null, null);
+
+        Object exec = rule.get("exec");
+        if ("sync+exec".equals(action)) validateDevelopWatchExec(file, service, exec, path + ".exec");
+        else if (exec != null)
+            throw new ComposeValidationException(file, path + ".exec", service,
+                    "exec is only supported for the sync+exec action.", null, null, null);
+    }
+
+    private static void validateDevelopWatchExec(Path file, String service, Object configured, String path) {
+        if (!(configured instanceof Map<?, ?> exec))
+            throw shapeFailure(file, service, path, "a YAML mapping", configured);
+        Set<String> fields = Set.of("command", "user", "privileged", "working_dir", "environment");
+        for (Object key : exec.keySet()) {
+            if (!(key instanceof String field) || !fields.contains(field))
+                throw new ComposeValidationException(file, path + "." + key, service,
+                        "unsupported watch exec option '" + key + "'.", null, null, null);
+        }
+        Object command = exec.get("command");
+        if (!isNonBlankString(command) && !(command instanceof List<?> list && !list.isEmpty()
+                && list.stream().allMatch(String.class::isInstance)))
+            throw new ComposeValidationException(file, path + ".command", service,
+                    "a non-empty shell or exec command is required.", null, null, null);
+        for (String field : List.of("user", "working_dir")) {
+            Object value = exec.get(field);
+            if (value != null && !(value instanceof String))
+                throw shapeFailure(file, service, path + "." + field, "a scalar", value);
+        }
+        validateBoolean(file, service, exec, "privileged", path + ".privileged");
+        validateListOrMap(file, service, exec, "environment", path + ".environment");
+    }
+
+    private static void validateStringOrStringList(Path file, String service, Object value, String path) {
+        if (value == null) return;
+        if (value instanceof String) return;
+        if (value instanceof List<?> list && list.stream().allMatch(String.class::isInstance)) return;
+        throw shapeFailure(file, service, path, "a string or an array of strings", value);
+    }
+
+    private static boolean isNonBlankString(Object value) {
+        return value instanceof String text && !text.isBlank();
+    }
+
+    private static boolean isAbsoluteWatchPath(String value) {
+        try {
+            return Path.of(value).isAbsolute() || value.matches("^[A-Za-z]:[/\\\\].*")
+                    || value.startsWith("\\\\");
+        } catch (java.nio.file.InvalidPathException exception) {
+            return true;
+        }
+    }
+
+    private static void validateStringList(Path file, String service, Object value, String path) {
+        if (value == null) return;
+        if (value instanceof List<?> list && list.stream().allMatch(String.class::isInstance)) return;
+        throw shapeFailure(file, service, path, "an array of strings", value);
     }
 
     private static void validateOptionalMap(Path file, String service, Map<?, ?> map, String key, String path) {
