@@ -506,7 +506,7 @@ public final class ComposeFileLoader {
 
     private static void validateScalarOrMap(Path file, String service, Map<?, ?> map, String key, String path) {
         Object value = map.get(key);
-        if (value != null && (value instanceof Map<?, ?> || value instanceof List<?>))
+        if (value != null && value instanceof List<?>)
             throw shapeFailure(file, service, path, "a scalar or YAML mapping", value);
     }
 
