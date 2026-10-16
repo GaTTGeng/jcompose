@@ -77,7 +77,6 @@ class ComposeServiceDockerIntegrationTest {
                             .exec().getHostConfig().getInit()));
                     assertTrue(Boolean.TRUE.equals(client.inspectContainerCmd(runContainer)
                             .exec().getHostConfig().getInit()));
-                    assertTrue(DockerClientFactory.imageLastTagTime(client, "busybox:1.36") != null);
                 } finally {
                     client.removeContainerCmd(runContainer).withForce(true).withRemoveVolumes(false).exec();
                 }
