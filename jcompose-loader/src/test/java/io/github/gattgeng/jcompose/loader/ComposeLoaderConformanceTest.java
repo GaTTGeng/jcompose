@@ -1,6 +1,7 @@
 package io.github.gattgeng.jcompose.loader;
 
 import io.github.gattgeng.jcompose.api.ComposeProject;
+import io.github.gattgeng.jcompose.api.ComposeValidationException;
 import io.github.gattgeng.jcompose.api.ServiceDefinition;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -12,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Maps the ComposeSharp loader conformance fixtures to jcompose's normalized raw model. */
@@ -38,6 +40,35 @@ class ComposeLoaderConformanceTest {
         assertEquals(List.of("linux/amd64"), build.get("platforms"));
         assertTrue((Boolean) build.get("pull"));
         assertTrue((Boolean) build.get("no_cache"));
+    }
+
+    @Test
+    void rejectsUndefinedServiceSecret() throws IOException {
+        Path file = temporaryDirectory.resolve("compose.yaml");
+        Files.writeString(file, """
+                services:
+                  app:
+                    image: busybox
+                    secrets: [missing]
+                """);
+
+        assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(temporaryDirectory, "compose.yaml"));
+    }
+
+    @Test
+    void rejectsUndefinedServiceConfig() throws IOException {
+        Path file = temporaryDirectory.resolve("compose.yaml");
+        Files.writeString(file, """
+                services:
+                  app:
+                    image: busybox
+                    configs:
+                      - source: missing
+                """);
+
+        assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(temporaryDirectory, "compose.yaml"));
     }
 
     @Test
