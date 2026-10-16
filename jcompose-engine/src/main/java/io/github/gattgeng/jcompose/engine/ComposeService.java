@@ -457,7 +457,6 @@ public final class ComposeService implements IComposeService {
             InternetProtocol protocol = switch (protocolName) {
                 case "tcp" -> InternetProtocol.TCP;
                 case "udp" -> InternetProtocol.UDP;
-                case "sctp" -> InternetProtocol.SCTP;
                 default -> throw new IllegalArgumentException("Unsupported port protocol: " + protocolName);
             };
             try (DockerClient client = createDockerClient(context)) {
