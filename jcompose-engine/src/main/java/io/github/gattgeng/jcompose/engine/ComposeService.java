@@ -896,8 +896,10 @@ public final class ComposeService implements IComposeService {
                 0, List.of(), Map.of(), List.of(), List.of(), 0, 0, 0);
     }
 
-    private static String stackStatus(List<String> states) {
-        if (states.isEmpty()) return "unknown";
+    static String stackStatus(List<String> states) {
+        if (states.isEmpty() || states.stream().anyMatch(state ->
+                !"running".equalsIgnoreCase(state) && !"exited".equalsIgnoreCase(state)
+                        && !"dead".equalsIgnoreCase(state))) return "unknown";
         boolean running = states.stream().anyMatch(state -> "running".equalsIgnoreCase(state));
         boolean exited = states.stream().allMatch(state -> "exited".equalsIgnoreCase(state) || "dead".equalsIgnoreCase(state));
         if (running && states.stream().allMatch(state -> "running".equalsIgnoreCase(state))) return "running";
