@@ -18,6 +18,8 @@ import org.yaml.snakeyaml.nodes.Tag;
 import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -226,6 +228,7 @@ public final class ComposeFileLoader {
             String name = entry.getKey();
             Map<String, Object> service = entry.getValue();
             validateServiceProfiles(file, name, service);
+            validateServiceFields(file, name, service);
             if (service.containsKey("attach") && !(service.get("attach") instanceof Boolean))
                 throw new ComposeValidationException(file, "services." + name + ".attach", name,
                         "attach must be a boolean.", null, null, null);
@@ -442,6 +445,202 @@ public final class ComposeFileLoader {
                 throw new ComposeValidationException(file, "services." + service + ".profiles." + index, service,
                         "profile names must be strings.", null, null, null);
         }
+    }
+
+    private static void validateServiceFields(Path file, String service, Map<String, Object> configuration) {
+        String path = "services." + service;
+        validateScalarOrMap(file, service, configuration, "build", path + ".build");
+        validateListOrMap(file, service, configuration, "environment", path + ".environment");
+        for (String key : List.of("deploy", "healthcheck", "logging"))
+            validateOptionalMap(file, service, configuration, key, path + "." + key);
+        validateScalarOrMap(file, service, configuration, "extends", path + ".extends");
+
+        Object deployValue = configuration.get("deploy");
+        if (deployValue instanceof Map<?, ?> deploy) {
+            validateInteger(file, service, deploy, "replicas", path + ".deploy.replicas");
+            validateOptionalMap(file, service, deploy, "resources", path + ".deploy.resources");
+            validateOptionalMap(file, service, deploy, "restart_policy", path + ".deploy.restart_policy");
+            validateOptionalMap(file, service, deploy, "update_config", path + ".deploy.update_config");
+            validateOptionalMap(file, service, deploy, "rollback_config", path + ".deploy.rollback_config");
+            validateNestedBytes(file, service, deploy, "resources", "limits", "memory",
+                    path + ".deploy.resources.limits.memory");
+            validateNestedBytes(file, service, deploy, "resources", "reservations", "memory",
+                    path + ".deploy.resources.reservations.memory");
+            validateNestedInteger(file, service, deploy, "restart_policy", "max_retries",
+                    path + ".deploy.restart_policy.max_retries");
+            validateNestedDurations(file, service, deploy, "restart_policy", path + ".deploy.restart_policy",
+                    "delay", "window", "period");
+            for (String block : List.of("update_config", "rollback_config")) {
+                validateNestedDurations(file, service, deploy, block, path + ".deploy." + block, "delay", "monitor");
+                validateNestedNumeric(file, service, deploy, block, "max_failure_ratio",
+                        path + ".deploy." + block + ".max_failure_ratio");
+            }
+        }
+
+        Object healthcheckValue = configuration.get("healthcheck");
+        if (healthcheckValue instanceof Map<?, ?> healthcheck) {
+            validateBoolean(file, service, healthcheck, "disable", path + ".healthcheck.disable");
+            validateInteger(file, service, healthcheck, "retries", path + ".healthcheck.retries");
+            validateDurations(file, service, healthcheck, path + ".healthcheck",
+                    "interval", "timeout", "start_period", "start_interval");
+        }
+
+        validateDurations(file, service, configuration, path, "stop_grace_period");
+        for (String key : List.of("shm_size", "mem_limit", "memswap_limit", "mem_reservation"))
+            validateBytes(file, service, configuration, key, path + "." + key);
+        for (String key : List.of("privileged", "tty", "stdin_open", "read_only", "init", "oom_kill_disable"))
+            validateBoolean(file, service, configuration, key, path + "." + key);
+
+        Object buildValue = configuration.get("build");
+        if (buildValue instanceof Map<?, ?> build) {
+            for (String key : List.of("privileged", "pull", "no_cache"))
+                validateBoolean(file, service, build, key, path + ".build." + key);
+        }
+    }
+
+    private static void validateOptionalMap(Path file, String service, Map<?, ?> map, String key, String path) {
+        Object value = map.get(key);
+        if (value != null && !(value instanceof Map<?, ?>))
+            throw shapeFailure(file, service, path, "a YAML mapping", value);
+    }
+
+    private static void validateScalarOrMap(Path file, String service, Map<?, ?> map, String key, String path) {
+        Object value = map.get(key);
+        if (value != null && (value instanceof Map<?, ?> || value instanceof List<?>))
+            throw shapeFailure(file, service, path, "a scalar or YAML mapping", value);
+    }
+
+    private static void validateListOrMap(Path file, String service, Map<?, ?> map, String key, String path) {
+        Object value = map.get(key);
+        if (value != null && !(value instanceof List<?> || value instanceof Map<?, ?>))
+            throw shapeFailure(file, service, path, "a YAML list or mapping", value);
+    }
+
+    private static void validateDurations(Path file, String service, Map<?, ?> map, String parentPath, String... keys) {
+        for (String key : keys) {
+            Object value = map.get(key);
+            if (value != null && (!isScalar(value) || !isDuration(String.valueOf(value))))
+                throw conversionFailure(file, service, parentPath + "." + key, value, "a supported duration");
+        }
+    }
+
+    private static void validateBytes(Path file, String service, Map<?, ?> map, String key, String path) {
+        Object value = map.get(key);
+        if (value != null && (!isScalar(value) || !isByteValue(String.valueOf(value))))
+            throw conversionFailure(file, service, path, value, "a supported byte value");
+    }
+
+    private static void validateBoolean(Path file, String service, Map<?, ?> map, String key, String path) {
+        Object value = map.get(key);
+        if (value != null && (!isScalar(value) || !(value instanceof Boolean
+                || "true".equalsIgnoreCase(String.valueOf(value)) || "false".equalsIgnoreCase(String.valueOf(value)))))
+            throw conversionFailure(file, service, path, value, "a boolean value");
+    }
+
+    private static void validateInteger(Path file, String service, Map<?, ?> map, String key, String path) {
+        Object value = map.get(key);
+        if (value == null) return;
+        try {
+            if (!isScalar(value) || new BigInteger(String.valueOf(value)).compareTo(BigInteger.valueOf(Integer.MIN_VALUE)) < 0
+                    || new BigInteger(String.valueOf(value)).compareTo(BigInteger.valueOf(Integer.MAX_VALUE)) > 0)
+                throw conversionFailure(file, service, path, value, "an integer value");
+        } catch (NumberFormatException exception) {
+            throw conversionFailure(file, service, path, value, "an integer value", exception);
+        }
+    }
+
+    private static void validateNumeric(Path file, String service, Map<?, ?> map, String key, String path) {
+        Object value = map.get(key);
+        if (value == null) return;
+        try {
+            if (!isScalar(value) || !Double.isFinite(Double.parseDouble(String.valueOf(value))))
+                throw conversionFailure(file, service, path, value, "a numeric value");
+        } catch (NumberFormatException exception) {
+            throw conversionFailure(file, service, path, value, "a numeric value", exception);
+        }
+    }
+
+    private static void validateNestedBytes(Path file, String service, Map<?, ?> parent, String block, String key, String field, String path) {
+        if (parent.get(block) instanceof Map<?, ?> nested && nested.get(key) instanceof Map<?, ?> values)
+            validateBytes(file, service, values, field, path);
+    }
+
+    private static void validateNestedInteger(Path file, String service, Map<?, ?> parent, String block, String key, String path) {
+        if (parent.get(block) instanceof Map<?, ?> nested) validateInteger(file, service, nested, key, path);
+    }
+
+    private static void validateNestedNumeric(Path file, String service, Map<?, ?> parent, String block, String key, String path) {
+        if (parent.get(block) instanceof Map<?, ?> nested) validateNumeric(file, service, nested, key, path);
+    }
+
+    private static void validateNestedDurations(Path file, String service, Map<?, ?> parent, String block,
+                                                String parentPath, String... keys) {
+        if (parent.get(block) instanceof Map<?, ?> nested) validateDurations(file, service, nested, parentPath, keys);
+    }
+
+    private static boolean isScalar(Object value) {
+        return !(value instanceof Map<?, ?> || value instanceof List<?>);
+    }
+
+    private static boolean isDuration(String value) {
+        if ("0".equals(value)) return true;
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("([0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(ns|us|µs|μs|ms|s|m|h)")
+                .matcher(value);
+        int offset = 0;
+        BigDecimal totalNanos = BigDecimal.ZERO;
+        while (matcher.find()) {
+            if (matcher.start() != offset) return false;
+            BigDecimal amount = new BigDecimal(matcher.group(1));
+            BigDecimal multiplier = switch (matcher.group(2)) {
+                case "ns" -> BigDecimal.ONE;
+                case "us", "µs", "μs" -> BigDecimal.valueOf(1_000);
+                case "ms" -> BigDecimal.valueOf(1_000_000);
+                case "s" -> BigDecimal.valueOf(1_000_000_000L);
+                case "m" -> BigDecimal.valueOf(60_000_000_000L);
+                case "h" -> BigDecimal.valueOf(3_600_000_000_000L);
+                default -> BigDecimal.ZERO;
+            };
+            totalNanos = totalNanos.add(amount.multiply(multiplier));
+            if (totalNanos.compareTo(BigDecimal.valueOf(Long.MAX_VALUE)) > 0) return false;
+            offset = matcher.end();
+        }
+        return offset == value.length() && offset > 0;
+    }
+
+    private static boolean isByteValue(String value) {
+        try {
+            if (value.matches("[+-]?\\d+")) {
+                new BigInteger(value).longValueExact();
+                return true;
+            }
+            java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(\\d+)([kmg])b?", java.util.regex.Pattern.CASE_INSENSITIVE)
+                    .matcher(value);
+            if (!matcher.matches()) return false;
+            BigInteger multiplier = switch (matcher.group(2).toLowerCase(Locale.ROOT)) {
+                case "k" -> BigInteger.valueOf(1024);
+                case "m" -> BigInteger.valueOf(1024L * 1024);
+                case "g" -> BigInteger.valueOf(1024L * 1024 * 1024);
+                default -> BigInteger.ZERO;
+            };
+            new BigInteger(matcher.group(1)).multiply(multiplier).longValueExact();
+            return true;
+        } catch (ArithmeticException | NumberFormatException exception) {
+            return false;
+        }
+    }
+
+    private static ComposeValidationException shapeFailure(Path file, String service, String path, String expected, Object found) {
+        String actual = found instanceof Map<?, ?> ? "a YAML mapping" : found instanceof List<?> ? "a YAML list" : "scalar '" + found + "'";
+        return new ComposeValidationException(file, path, service, "expected " + expected + ", but found " + actual + ".", null, null, null);
+    }
+
+    private static ComposeValidationException conversionFailure(Path file, String service, String path, Object value, String expected) {
+        return conversionFailure(file, service, path, value, expected, new NumberFormatException("Value '" + value + "' is not " + expected + "."));
+    }
+
+    private static ComposeValidationException conversionFailure(Path file, String service, String path, Object value,
+                                                                String expected, RuntimeException cause) {
+        return new ComposeValidationException(file, path, service, "'" + value + "' is not " + expected + ".", null, null, cause);
     }
 
     private static void validateServiceDependencies(Path file, String service, Object configured,

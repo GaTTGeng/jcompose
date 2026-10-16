@@ -99,6 +99,45 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void validatesComposeScalarFieldsWithPropertyContext() throws Exception {
+        Path composeFile = directory.resolve("compose.yaml");
+        ComposeFileLoader loader = new ComposeFileLoader();
+        for (var invalid : List.of(
+                Map.entry("healthcheck:\n      interval: eventually", "services.app.healthcheck.interval"),
+                Map.entry("shm_size: huge", "services.app.shm_size"),
+                Map.entry("deploy:\n      replicas: many", "services.app.deploy.replicas"),
+                Map.entry("privileged: sometimes", "services.app.privileged"),
+                Map.entry("environment: invalid", "services.app.environment"),
+                Map.entry("build: []", "services.app.build"))) {
+            Files.writeString(composeFile, "services:\n  app:\n    image: alpine\n    " + invalid.getKey() + "\n");
+
+            ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                    () -> loader.load(directory, null));
+
+            assertEquals(invalid.getValue(), exception.propertyPath());
+            assertEquals("app", exception.serviceName());
+            assertEquals(composeFile, exception.sourceFile());
+        }
+    }
+
+    @Test
+    void acceptsCompositeHealthcheckDurationsIncludingStartInterval() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    healthcheck:
+                      interval: 1m30s
+                      start_interval: 250ms
+                """);
+
+        var project = new ComposeFileLoader().load(directory, null);
+
+        assertEquals("250ms", ((Map<?, ?>) project.services().get("app").configuration().get("healthcheck"))
+                .get("start_interval"));
+    }
+
+    @Test
     void rejectsMutuallyExclusiveNetworkModeAndNetworksWhileLoading() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:
