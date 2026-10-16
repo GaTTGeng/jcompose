@@ -147,7 +147,7 @@ class ComposeFileLoaderTest {
                 Map.entry("develop:\n      watch:\n        - path: ./src\n          action: delete", "services.app.develop.watch[0].action"),
                 Map.entry("develop:\n      watch:\n        - path: ./src\n          action: sync", "services.app.develop.watch[0].target"),
                 Map.entry("develop:\n      watch:\n        - path: ./src\n          action: rebuild\n          target: /app", "services.app.develop.watch[0].target"),
-                Map.entry("develop:\n      watch:\n        - path: ./src\n          action: sync\n          target: /app\n          initial_sync: true", "services.app.develop.watch[0].initial_sync"),
+                Map.entry("develop:\n      watch:\n        - path: ./src\n          action: rebuild\n          initial_sync: true", "services.app.develop.watch[0].initial_sync"),
                 Map.entry("develop:\n      watch:\n        - path: C:/src\n          action: rebuild", "services.app.develop.watch[0].path"),
                 Map.entry("develop:\n      watch:\n        - path: ./src\n          action: rebuild\n          ignore: generated", "services.app.develop.watch[0].ignore"),
                 Map.entry("develop:\n      watch:\n        - path: ./src\n          action: sync+exec\n          target: /app\n          exec: {}", "services.app.develop.watch[0].exec.command"),
