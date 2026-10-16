@@ -294,10 +294,23 @@ public final class ComposeFileLoader {
             overrides.remove("extends");
             if (!source.toAbsolutePath().normalize().getParent().equals(baseDirectory.toAbsolutePath().normalize()))
                 rebaseServicePaths(overrides, source.getParent(), baseDirectory);
+            validateExtendedHealthcheck(source, name, inherited, overrides);
             return mergeExtended(inherited, overrides);
         } finally {
             resolving.remove(key);
         }
+    }
+
+    private static void validateExtendedHealthcheck(Path source, String service,
+                                                    Map<String, Object> inherited,
+                                                    Map<String, Object> overrides) {
+        Object healthcheck = overrides.get("healthcheck");
+        if (!(healthcheck instanceof Map<?, ?> child) || !Boolean.TRUE.equals(child.get("disable"))) return;
+        Object inheritedHealthcheck = inherited.get("healthcheck");
+        if (inheritedHealthcheck instanceof Map<?, ?> parent && Boolean.TRUE.equals(parent.get("disable"))) return;
+        throw new ComposeValidationException(source, "services." + service + ".healthcheck.disable", service,
+                "healthcheck.disable cannot be enabled by an extending service unless it is enabled in the base service.",
+                null, null, null);
     }
 
     private static void rebaseServicePaths(Map<String, Object> service, Path sourceDirectory, Path baseDirectory) {

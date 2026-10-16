@@ -333,4 +333,43 @@ class ComposeFileLoaderTest {
 
         assertEquals("services.first.extends", exception.propertyPath());
     }
+
+    @Test
+    void rejectsEnablingHealthcheckDisableOnlyInExtendingService() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  base:
+                    image: example/base
+                  app:
+                    extends:
+                      service: base
+                    healthcheck:
+                      disable: true
+                """);
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, null));
+
+        assertEquals("services.app.healthcheck.disable", exception.propertyPath());
+    }
+
+    @Test
+    void allowsExtendedHealthcheckDisableWhenBaseAlsoDisablesIt() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  base:
+                    image: example/base
+                    healthcheck:
+                      disable: true
+                  app:
+                    extends:
+                      service: base
+                    healthcheck:
+                      disable: true
+                """);
+
+        Map<?, ?> app = new ComposeFileLoader().load(directory, null).services().get("app").configuration();
+
+        assertEquals(Map.of("disable", true), app.get("healthcheck"));
+    }
 }
