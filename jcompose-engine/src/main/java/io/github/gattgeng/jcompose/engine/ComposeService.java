@@ -2395,9 +2395,11 @@ public final class ComposeService implements IComposeService {
                         || sourceName.startsWith(".") || sourceName.startsWith("~");
                 String resolved = bind ? project.sourceFile().getParent().resolve(sourceName).normalize().toString()
                         : sourceName.isBlank() ? "" : engineVolumeName(projectName, project, sourceName);
-                binds.add(new com.github.dockerjava.api.model.Bind(resolved, new com.github.dockerjava.api.model.Volume(String.valueOf(target)),
-                        "ro".equalsIgnoreCase(String.valueOf(map.get("read_only"))) || Boolean.TRUE.equals(map.get("read_only"))
-                                ? com.github.dockerjava.api.model.AccessMode.ro : com.github.dockerjava.api.model.AccessMode.rw));
+                Map<?, ?> bindOptions = bind && map.get("bind") instanceof Map<?, ?> options ? options : Map.of();
+                String propagation = stringValue(bindOptions.get("propagation"), null);
+                String selinux = stringValue(bindOptions.get("selinux"), null);
+                boolean readOnly = "ro".equalsIgnoreCase(String.valueOf(map.get("read_only"))) || Boolean.TRUE.equals(map.get("read_only"));
+                binds.add(serviceBind(resolved, String.valueOf(target), readOnly, selinux, propagation));
             } else {
                 VolumeSpec specification = parseVolumeSpec(String.valueOf(volume));
                 if (specification == null) continue;
@@ -2406,13 +2408,39 @@ public final class ComposeService implements IComposeService {
                 String resolved = bind ? project.sourceFile().getParent().resolve(source).normalize().toString()
                         : source.isBlank() ? "" : engineVolumeName(projectName, project, source);
                 boolean readOnly = volumeIsReadOnly(specification.mode());
-                binds.add(new com.github.dockerjava.api.model.Bind(resolved, new com.github.dockerjava.api.model.Volume(target),
-                        readOnly ? com.github.dockerjava.api.model.AccessMode.ro : com.github.dockerjava.api.model.AccessMode.rw));
+                String selinux = bind ? volumeModeOption(specification.mode(), Set.of("z", "Z")) : null;
+                String propagation = bind ? volumeModeOption(specification.mode(), Set.of("shared", "rshared", "slave", "rslave", "private", "rprivate")) : null;
+                binds.add(serviceBind(resolved, target, readOnly, selinux, propagation));
             }
         }
         addFileResourceBinds(project, service, "secrets", project.secretDefinitions(), binds);
         addFileResourceBinds(project, service, "configs", project.configDefinitions(), binds);
         return binds;
+    }
+
+    static com.github.dockerjava.api.model.Bind serviceBind(
+            String source, String target, boolean readOnly, String selinux, String propagation) {
+        com.github.dockerjava.api.model.SELContext selContext = switch (selinux == null ? "" : selinux) {
+            case "" -> com.github.dockerjava.api.model.SELContext.DEFAULT;
+            case "z" -> com.github.dockerjava.api.model.SELContext.shared;
+            case "Z" -> com.github.dockerjava.api.model.SELContext.single;
+            default -> throw new IllegalArgumentException("Bind mount selinux must be 'z' or 'Z'.");
+        };
+        com.github.dockerjava.api.model.PropagationMode propagationMode = propagation == null || propagation.isBlank()
+                ? com.github.dockerjava.api.model.PropagationMode.DEFAULT
+                : switch (propagation.toLowerCase(java.util.Locale.ROOT)) {
+                    case "shared" -> com.github.dockerjava.api.model.PropagationMode.SHARED;
+                    case "rshared" -> com.github.dockerjava.api.model.PropagationMode.RSHARED;
+                    case "slave" -> com.github.dockerjava.api.model.PropagationMode.SLAVE;
+                    case "rslave" -> com.github.dockerjava.api.model.PropagationMode.RSLAVE;
+                    case "private" -> com.github.dockerjava.api.model.PropagationMode.PRIVATE;
+                    case "rprivate" -> com.github.dockerjava.api.model.PropagationMode.RPRIVATE;
+                    default -> throw new IllegalArgumentException("Unsupported bind mount propagation: " + propagation);
+                };
+        return new com.github.dockerjava.api.model.Bind(source,
+                new com.github.dockerjava.api.model.Volume(target),
+                readOnly ? com.github.dockerjava.api.model.AccessMode.ro : com.github.dockerjava.api.model.AccessMode.rw,
+                selContext, null, propagationMode);
     }
 
     private static void addFileResourceBinds(ComposeProject project, ServiceDefinition service, String field,
@@ -2505,6 +2533,11 @@ public final class ComposeService implements IComposeService {
     static boolean volumeIsReadOnly(String mode) {
         return java.util.Arrays.stream(mode.split(","))
                 .anyMatch(option -> "ro".equalsIgnoreCase(option) || "readonly".equalsIgnoreCase(option));
+    }
+
+    private static String volumeModeOption(String mode, Set<String> values) {
+        return java.util.Arrays.stream(mode.split(","))
+                .map(String::trim).filter(values::contains).findFirst().orElse(null);
     }
 
     private static List<Container> serviceArchiveContainers(DockerClient client, String projectName, String service, boolean includeOneOff) {

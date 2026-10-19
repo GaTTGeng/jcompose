@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ComposeVolumeSpecTest {
     @Test
@@ -36,5 +37,22 @@ class ComposeVolumeSpecTest {
     @Test
     void rejectsVolumeSpecificationsWithoutAContainerTarget() {
         assertNull(ComposeService.parseVolumeSpec("app-data:"));
+    }
+
+    @Test
+    void mapsBindPropagationAndSelinuxOptions() {
+        var bind = ComposeService.serviceBind("/host/data", "/data", true, "z", "rshared");
+
+        assertEquals(com.github.dockerjava.api.model.AccessMode.ro, bind.getAccessMode());
+        assertEquals(com.github.dockerjava.api.model.SELContext.shared, bind.getSecMode());
+        assertEquals(com.github.dockerjava.api.model.PropagationMode.RSHARED, bind.getPropagationMode());
+    }
+
+    @Test
+    void rejectsUnknownBindPropagationAndSelinuxOptions() {
+        assertThrows(IllegalArgumentException.class,
+                () -> ComposeService.serviceBind("/host/data", "/data", false, "x", null));
+        assertThrows(IllegalArgumentException.class,
+                () -> ComposeService.serviceBind("/host/data", "/data", false, null, "recursive"));
     }
 }
