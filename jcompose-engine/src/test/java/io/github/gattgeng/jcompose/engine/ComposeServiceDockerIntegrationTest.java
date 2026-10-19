@@ -26,12 +26,15 @@ import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ComposeServiceDockerIntegrationTest {
@@ -590,6 +593,45 @@ class ComposeServiceDockerIntegrationTest {
             var containers = service.psAsync(context, null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
             var app = containers.stream().filter(container -> "app".equals(container.service())).findFirst().orElseThrow();
             assertEquals("running", app.state());
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
+    void healthyDependencyTimeoutNamesDependentAndDependencyServices() throws Exception {
+        String projectName = "jcompose-dependency-timeout-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: ["sleep", "60"]
+                    depends_on:
+                      database:
+                        condition: service_healthy
+                  database:
+                    image: busybox:1.36
+                    command: ["sleep", "60"]
+                    healthcheck:
+                      test: ["CMD-SHELL", "sleep 10"]
+                      interval: 30s
+                      timeout: 15s
+                      retries: 5
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            ExecutionException failure = assertThrows(ExecutionException.class,
+                    () -> service.upAsync(context, io.github.gattgeng.jcompose.api.ComposeUpOptions.builder()
+                                    .dependencyWaitTimeoutSeconds(2).build())
+                            .get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS));
+            Throwable cause = failure.getCause();
+            while (cause.getCause() != null) cause = cause.getCause();
+
+            assertTrue(cause instanceof TimeoutException, "Expected timeout, got: " + cause);
+            assertTrue(cause.getMessage().contains("app"));
+            assertTrue(cause.getMessage().contains("database"));
         } finally {
             service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
         }

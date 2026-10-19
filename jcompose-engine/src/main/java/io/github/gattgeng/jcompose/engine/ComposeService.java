@@ -2230,7 +2230,8 @@ public final class ComposeService implements IComposeService {
                 }
                 if (pending.isEmpty()) break;
                 if (System.nanoTime() >= deadline) {
-                    String message = "Timed out waiting for dependency '" + dependencyName + "' to satisfy " + condition + ".";
+                    String message = "Service '" + service.name() + "' timed out waiting for dependency '"
+                            + dependencyName + "' to satisfy " + condition + ".";
                     if (required) throw new java.util.concurrent.CompletionException(new java.util.concurrent.TimeoutException(message));
                     LOGGER.warning("Optional " + message + " Continuing service '" + service.name() + "'.");
                     break;
