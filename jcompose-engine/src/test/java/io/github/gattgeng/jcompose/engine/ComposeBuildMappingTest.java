@@ -8,8 +8,20 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ComposeBuildMappingTest {
+    @Test
+    void identifiesRemoteBuildContextsWithoutTreatingWindowsPathsAsUrls() {
+        assertTrue(ComposeService.isRemoteBuildContext("https://github.com/example/project.git#main:service"));
+        assertTrue(ComposeService.isRemoteBuildContext("git://github.com/example/project.git"));
+        assertTrue(ComposeService.isRemoteBuildContext("ssh://git@github.com/example/project.git"));
+        assertTrue(ComposeService.isRemoteBuildContext("git@github.com:example/project.git"));
+        assertFalse(ComposeService.isRemoteBuildContext("../service"));
+        assertFalse(ComposeService.isRemoteBuildContext("C:\\projects\\service"));
+    }
+
     @Test
     void mapsBuildExtraHostsFromComposeMappingForm() {
         Map<String, Object> configured = new LinkedHashMap<>();

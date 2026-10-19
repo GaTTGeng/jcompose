@@ -44,6 +44,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -3287,21 +3288,27 @@ public final class ComposeService implements IComposeService {
                     if (buildValue == null || Boolean.FALSE.equals(buildValue)) continue;
                     Map<String, Object> build = buildValue instanceof Map<?, ?> map
                             ? stringKeyMap(map) : Map.of("context", buildValue);
+                    String configuredContext = stringValue(build.get("context"), ".");
+                    boolean remoteContext = isRemoteBuildContext(configuredContext);
                     Path projectDirectory = project.sourceFile().getParent();
-                    Path buildContext = projectDirectory.resolve(stringValue(build.get("context"), ".")).normalize();
-                    if (!Files.isDirectory(buildContext))
+                    Path buildContext = remoteContext ? null : projectDirectory.resolve(configuredContext).normalize();
+                    if (!remoteContext && !Files.isDirectory(buildContext))
                         throw new IllegalArgumentException("Build context for service '" + service.name() + "' does not exist: " + buildContext);
                     String dockerfile = stringValue(build.get("dockerfile"), "Dockerfile");
-                    Path dockerfilePath = buildContext.resolve(dockerfile).normalize();
-                    if (!Files.isRegularFile(dockerfilePath))
+                    Path dockerfilePath = remoteContext ? null : buildContext.resolve(dockerfile).normalize();
+                    if (!remoteContext && !Files.isRegularFile(dockerfilePath))
                         throw new IllegalArgumentException("Dockerfile for service '" + service.name() + "' does not exist: " + dockerfilePath);
 
                     String image = service.image() == null || service.image().isBlank()
                             ? context.projectName() + "-" + service.name() : service.image();
-                    try (DockerBuildContextArchive archive = DockerBuildContextArchive.create(buildContext, dockerfilePath)) {
-                        var command = client.buildImageCmd()
-                                .withTarInputStream(archive.stream())
-                                .withDockerfilePath(archive.dockerfilePath())
+                    try (DockerBuildContextArchive archive = remoteContext ? null : DockerBuildContextArchive.create(buildContext, dockerfilePath)) {
+                        var command = client.buildImageCmd();
+                        if (remoteContext) {
+                            command.withRemote(URI.create(configuredContext)).withDockerfilePath(dockerfile);
+                        } else {
+                            command.withTarInputStream(archive.stream()).withDockerfilePath(archive.dockerfilePath());
+                        }
+                        command
                                 .withTags(buildTags(image, build.get("tags")))
                                 .withNoCache(options != null && options.noCache() || Boolean.TRUE.equals(build.get("no_cache")))
                                 .withPull(!context.offline() && (options != null && options.pull() || Boolean.TRUE.equals(build.get("pull"))))
@@ -3354,6 +3361,17 @@ public final class ComposeService implements IComposeService {
             }
             return null;
         });
+    }
+
+    static boolean isRemoteBuildContext(String context) {
+        if (context == null) return false;
+        if (context.startsWith("git@")) return true;
+        try {
+            String scheme = URI.create(context).getScheme();
+            return scheme != null && Set.of("http", "https", "git", "ssh").contains(scheme.toLowerCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
     }
 
     private static String buildPlatform(ServiceDefinition service, Map<String, Object> build) {
