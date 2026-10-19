@@ -3,6 +3,7 @@ package io.github.gattgeng.jcompose.engine;
 import io.github.gattgeng.jcompose.api.ComposeProjectContext;
 import io.github.gattgeng.jcompose.api.ComposePublishOptions;
 import io.github.gattgeng.jcompose.api.ComposePushOptions;
+import io.github.gattgeng.jcompose.api.ServiceDefinition;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -10,6 +11,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -65,6 +67,23 @@ class ComposePublishCompatibilityTest {
                 ComposeService.imageReferenceWithDigest("team/app", "sha256:abcd"));
         assertEquals("team/app@sha256:existing",
                 ComposeService.imageReferenceWithDigest("team/app@sha256:existing", "sha256:resolved"));
+    }
+
+    @Test
+    void rejectsComposeServicesThatCannotBePublished() {
+        IllegalArgumentException buildOnly = assertThrows(IllegalArgumentException.class,
+                () -> ComposeService.validatePublishServices(List.of(new ServiceDefinition("app",
+                        Map.of("build", ".")))));
+        assertEquals("Service 'app' has a build section but no image and cannot be published.",
+                buildOnly.getMessage());
+
+        IllegalArgumentException bindMount = assertThrows(IllegalArgumentException.class,
+                () -> ComposeService.validatePublishServices(List.of(new ServiceDefinition("app",
+                        Map.of("image", "example/app", "volumes", List.of("./data:/data"))))));
+        assertEquals("Service 'app' uses a bind mount and cannot be published.", bindMount.getMessage());
+
+        ComposeService.validatePublishServices(List.of(new ServiceDefinition("app",
+                Map.of("image", "example/app", "volumes", List.of("app-data:/data")))));
     }
 
     @Test

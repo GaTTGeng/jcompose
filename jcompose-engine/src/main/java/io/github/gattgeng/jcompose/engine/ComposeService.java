@@ -4249,6 +4249,7 @@ public final class ComposeService implements IComposeService {
             }
             ComposeProject project = loadComposeProject(context);
             List<ServiceDefinition> services = selectConfigurationServices(project, context.profiles(), null);
+            validatePublishServices(services);
             try (DockerClient client = createDockerClient(context)) {
                 for (ServiceDefinition service : services) {
                     String image = service.image();
@@ -4295,6 +4296,30 @@ public final class ComposeService implements IComposeService {
                 }
             }
         });
+    }
+
+    static void validatePublishServices(List<ServiceDefinition> services) {
+        for (ServiceDefinition service : services) {
+            if (service.build() != null && (service.image() == null || service.image().isBlank())) {
+                throw new IllegalArgumentException("Service '" + service.name()
+                        + "' has a build section but no image and cannot be published.");
+            }
+            Object volumes = service.configuration().get("volumes");
+            if (volumes instanceof List<?> list && list.stream().anyMatch(ComposeService::isBindMount)) {
+                throw new IllegalArgumentException("Service '" + service.name()
+                        + "' uses a bind mount and cannot be published.");
+            }
+        }
+    }
+
+    private static boolean isBindMount(Object volume) {
+        if (volume instanceof Map<?, ?> mapping) return "bind".equals(mapping.get("type"));
+        if (!(volume instanceof String specification)) return false;
+        String[] parts = specification.split(":", 3);
+        if (parts.length < 2) return false;
+        String source = parts[0];
+        return source.startsWith(".") || source.startsWith("/") || source.startsWith("~")
+                || source.matches("^[A-Za-z]:[\\\\/].*");
     }
 
     private static List<ServiceDefinition> resolvePublishedImageDigests(
