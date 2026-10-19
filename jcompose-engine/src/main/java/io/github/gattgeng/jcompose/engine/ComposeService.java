@@ -4041,13 +4041,30 @@ public final class ComposeService implements IComposeService {
             target.append(new String(payload, StandardCharsets.UTF_8));
         }
     }
-    @Override public CompletableFuture<List<PublishResult>> publishAsync(
+    @Override public CompletableFuture<PublishResult> publishAsync(
             ComposeProjectContext context, String repository, ComposePublishOptions options) {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
             if (repository == null || repository.isBlank()) throw new IllegalArgumentException("Repository must not be blank.");
-            throw new UnsupportedOperationException(
-                    "Compose application publishing as an OCI artifact is not implemented yet.");
+            ComposePublishOptions effectiveOptions = options == null
+                    ? ComposePublishOptions.builder().build() : options;
+            if (effectiveOptions.resolveImageDigests() || effectiveOptions.withEnvironment()
+                    || effectiveOptions.ocIVersion() != null) {
+                throw new UnsupportedOperationException("Image digest resolution, environment layers, and custom OCI versions are not supported yet.");
+            }
+            java.nio.file.Path composeFile = context.workingDirectory().resolve(context.composeFileName()).normalize();
+            if (!composeFile.startsWith(context.workingDirectory()) || !java.nio.file.Files.isRegularFile(composeFile)) {
+                throw new IllegalArgumentException("Compose file does not exist: " + composeFile);
+            }
+            land.oras.Registry.Builder registryBuilder = land.oras.Registry.builder().defaults();
+            if (effectiveOptions.insecureRegistry()) registryBuilder.insecure();
+            land.oras.Registry registry = registryBuilder.build();
+            land.oras.ContainerRef target = land.oras.ContainerRef.parse(repository);
+            land.oras.Manifest manifest = registry.pushArtifact(target,
+                    land.oras.ArtifactType.from("application/vnd.docker.compose.application"),
+                    land.oras.Annotations.empty(),
+                    land.oras.LocalPath.of(composeFile, "application/vnd.docker.compose.file+yaml"));
+            return new PublishResult(repository, manifest.getDescriptor().getDigest().toString());
         });
     }
 }

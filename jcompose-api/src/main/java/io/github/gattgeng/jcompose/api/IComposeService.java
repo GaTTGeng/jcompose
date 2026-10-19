@@ -44,5 +44,5 @@ public interface IComposeService {
     CompletableFuture<String> vizAsync(ComposeProjectContext c);
     CompletableFuture<ComposeProjectConfig> generateAsync(ComposeProjectContext c, ComposeGenerateOptions o);
     CompletableFuture<List<VolumesSummary>> volumesAsync(ComposeProjectContext c, ComposeVolumesOptions o);
-    CompletableFuture<List<PublishResult>> publishAsync(ComposeProjectContext c, String repository, ComposePublishOptions o);
+    CompletableFuture<PublishResult> publishAsync(ComposeProjectContext c, String repository, ComposePublishOptions o);
 }

@@ -4,10 +4,10 @@ import java.util.Objects;
 
 /**
  * Options for publishing a Compose application as an OCI artifact.
- * @param resolveImageDigests Prefer content digests when resolving image references.
- * @param withEnvironment Include service environment configuration alongside the tagged image.
- * @param ocIVersion OCI image-spec version the published artifacts should target.
- * @param insecureRegistry Allow tagging/pushing against a registry without TLS verification.
+ * @param resolveImageDigests Pin referenced image tags to content digests.
+ * @param withEnvironment Include service environment configuration in the published artifact.
+ * @param ocIVersion OCI image/artifact specification version to use.
+ * @param insecureRegistry Allow insecure registry transport.
  */
 public record ComposePublishOptions(
         boolean resolveImageDigests,
@@ -27,15 +27,15 @@ public record ComposePublishOptions(
         private boolean insecureRegistry;
 
         /**
-         * Prefer content digests when resolving image references.
-         * @param value Prefer content digests when resolving image references.
+         * Pin referenced image tags to content digests.
+         * @param value Pin referenced image tags to content digests.
          * @return this builder
          */
         public Builder resolveImageDigests(boolean value) { this.resolveImageDigests = value; return this; }
 
         /**
-         * Include service environment configuration alongside the tagged image.
-         * @param value Include service environment configuration alongside the tagged image.
+         * Include service environment configuration in the published artifact.
+         * @param value Include service environment configuration in the published artifact.
          * @return this builder
          */
         public Builder withEnvironment(boolean value) { this.withEnvironment = value; return this; }
@@ -48,8 +48,8 @@ public record ComposePublishOptions(
         public Builder ocIVersion(String value) { this.ocIVersion = value; return this; }
 
         /**
-         * Allow tagging/pushing against a registry without TLS verification.
-         * @param value Allow tagging/pushing against a registry without TLS verification.
+         * Allow insecure registry transport.
+         * @param value Allow insecure registry transport.
          * @return this builder
          */
         public Builder insecureRegistry(boolean value) { this.insecureRegistry = value; return this; }
