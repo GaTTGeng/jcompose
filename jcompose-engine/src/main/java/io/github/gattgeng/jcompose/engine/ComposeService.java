@@ -4004,6 +4004,13 @@ public final class ComposeService implements IComposeService {
         return new BuildContextWatcher(registrations, () -> {
             if (!effective.noUp() && !selectedServices.isEmpty()) await(upAsync(context, ComposeUpOptions.builder()
                     .services(selectedServices).build(true).detach(true).build()));
+            for (Map.Entry<String, List<Map<String, Object>>> serviceEntry : rulesByService.entrySet()) {
+                for (Map<String, Object> rule : serviceEntry.getValue()) {
+                    if (Boolean.TRUE.equals(rule.get("initial_sync")) && isSyncWatchAction(stringValue(rule.get("action"), "")))
+                        syncWatchPath(context, projectDirectory, serviceEntry.getKey(), rule,
+                                projectDirectory.resolve(stringValue(rule.get("path"), "")).normalize(), true);
+                }
+            }
         }, change -> {
             List<Map<String, Object>> serviceRules = rulesByService.get(change.serviceName());
             if (serviceRules == null) return;
@@ -4035,6 +4042,49 @@ public final class ComposeService implements IComposeService {
         return patterns.stream().map(pattern -> java.nio.file.FileSystems.getDefault().getPathMatcher("glob:" + pattern)).toList();
     }
 
+    private static boolean isSyncWatchAction(String action) {
+        return action.equals("sync") || action.equals("sync+restart") || action.equals("sync+exec");
+    }
+
+    private void syncWatchPath(ComposeProjectContext context, Path projectDirectory, String service,
+                               Map<String, Object> rule, Path changed, boolean initial) {
+        Path sourceRoot = projectDirectory.resolve(stringValue(rule.get("path"), "")).normalize();
+        List<Path> files;
+        try {
+            files = initial ? collectWatchFiles(sourceRoot, rule) : List.of(changed);
+        } catch (java.io.IOException exception) {
+            throw new java.io.UncheckedIOException("Could not enumerate Compose watch path '" + sourceRoot + "'.", exception);
+        }
+        for (Path file : files) {
+            if (!Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)) continue;
+            Path relative = sourceRoot.equals(file) ? file.getFileName() : sourceRoot.relativize(file);
+            if (!watchPathIncluded(rule, relative)) continue;
+            String target = stringValue(rule.get("target"), "");
+            Path parent = relative.getParent();
+            Path destination = parent == null ? Path.of(target) : Path.of(target).resolve(parent).normalize();
+            await(copyAsync(context, ComposeCopyOptions.builder().source(file.toString())
+                    .destination(service + ":" + destination.toString().replace('\\', '/')).build()));
+        }
+    }
+
+    static List<Path> collectWatchFiles(Path sourceRoot, Map<String, Object> rule) throws java.io.IOException {
+        if (Files.isRegularFile(sourceRoot, java.nio.file.LinkOption.NOFOLLOW_LINKS))
+            return watchPathIncluded(rule, sourceRoot.getFileName()) ? List.of(sourceRoot) : List.of();
+        if (!Files.isDirectory(sourceRoot)) return List.of();
+        try (var paths = Files.walk(sourceRoot)) {
+            return paths.filter(file -> Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS))
+                    .filter(file -> watchPathIncluded(rule, sourceRoot.relativize(file)))
+                    .sorted().toList();
+        }
+    }
+
+    static boolean watchPathIncluded(Map<String, Object> rule, Path relative) {
+        List<java.nio.file.PathMatcher> includes = watchMatchers(rule.get("include"));
+        List<java.nio.file.PathMatcher> ignores = watchMatchers(rule.get("ignore"));
+        return (includes.isEmpty() || includes.stream().anyMatch(matcher -> matcher.matches(relative)))
+                && ignores.stream().noneMatch(matcher -> matcher.matches(relative));
+    }
+
     private void applyDevelopWatchChange(ComposeProjectContext context, Path projectDirectory,
                                         String service, Map<String, Object> rule, Path changed) {
         String action = stringValue(rule.get("action"), "rebuild");
@@ -4049,13 +4099,18 @@ public final class ComposeService implements IComposeService {
             return;
         }
         Path sourceRoot = projectDirectory.resolve(stringValue(rule.get("path"), "")).normalize();
-        Path relative = sourceRoot.relativize(changed);
+        Path relative = sourceRoot.equals(changed) ? changed.getFileName() : sourceRoot.relativize(changed);
         String target = stringValue(rule.get("target"), "");
         Path parent = relative.getParent();
         Path destination = parent == null ? Path.of(target) : Path.of(target).resolve(parent).normalize();
-        if (relative.toString().isEmpty() && Files.isDirectory(changed)) return;
-        await(copyAsync(context, ComposeCopyOptions.builder().source(changed.toString())
-                .destination(service + ":" + destination.toString().replace('\\', '/')).build()));
+        if (!Files.exists(changed)) {
+            if (isSyncWatchAction(action)) {
+                await(execAsync(context, service, ComposeExecOptions.builder()
+                        .command(List.of("rm", "-rf", "--", destination.resolve(relative.getFileName()).toString().replace('\\', '/'))).build()));
+            }
+        } else if (Files.isRegularFile(changed)) {
+            syncWatchPath(context, projectDirectory, service, rule, changed, false);
+        }
         if ("sync+restart".equals(action)) {
             await(restartAsync(context, ComposeRestartOptions.builder().services(List.of(service)).noDeps(true).build()));
         } else if ("sync+exec".equals(action)) {

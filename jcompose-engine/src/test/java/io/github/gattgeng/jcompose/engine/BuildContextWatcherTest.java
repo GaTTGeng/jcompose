@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
@@ -96,7 +97,25 @@ class BuildContextWatcherTest {
         assertTrue(events.stream().allMatch(event -> "sync".equals(event.action())));
         assertFalse(subscriber.snapshot().stream().anyMatch(event -> event.path().equals(ignored.toAbsolutePath().normalize().toString())));
         assertEquals(events, List.copyOf(changes));
+        Files.delete(included);
+        List<WatchEvent> deletionEvents = awaitPathEvents(subscriber, included, 2);
+        assertEquals(2, deletionEvents.size());
+        assertEquals(deletionEvents, List.copyOf(changes));
         subscriber.subscription.get().cancel();
+    }
+
+    @Test
+    void initialSyncCollectsOnlyIncludedNonIgnoredFiles() throws Exception {
+        Files.createDirectories(directory.resolve("src/generated"));
+        Path main = Files.createFile(directory.resolve("Main.java"));
+        Path nested = Files.createFile(directory.resolve("src/App.java"));
+        Files.createFile(directory.resolve("src/generated/Build.java"));
+        Files.createFile(directory.resolve("README.md"));
+        Map<String, Object> rule = Map.of("include", List.of("**/*.java", "*.java"), "ignore", List.of("src/generated/**"));
+
+        List<Path> files = ComposeService.collectWatchFiles(directory, rule);
+
+        assertEquals(List.of(main, nested), files);
     }
 
     private static final class RecordingSubscriber implements Flow.Subscriber<WatchEvent> {

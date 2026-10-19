@@ -27,7 +27,7 @@ The rendered document is available from `ComposeProjectConfig.renderedYaml()`.
 
 The publisher honors subscriber demand and cancellation. Projects with no selected local build contexts complete without notifications. A watcher registration or queue-overflow failure is delivered to the subscriber as `onError`. Notifications can repeat for one logical editor save, and services sharing a context each receive an event. `prune` is currently rejected.
 
-The implementation is still a subset of Docker Compose Watch. `initial_sync` is not applied. Sync uses the project copy operation for changed paths; delete propagation, Docker-specific ignore processing, event coalescing, and platform-specific command-shell behavior for string `sync+exec` commands are not implemented. `prune` is unsupported. See [Compose Watch](https://docs.docker.com/compose/how-tos/file-watch/) for the compatibility target.
+For sync actions, `initial_sync: true` copies the matching regular files under the rule path before the file watcher starts. Matching file changes are copied into the corresponding target path; deleted files and directories are removed from the container with `rm -rf`. The container image therefore needs `rm` and write permission for the target. Docker Compose Watch uses Docker-specific ignore rules and automatically excludes common editor temporary files and `.git`; jcompose does not yet implement those exclusions or event coalescing. String `sync+exec` commands use `/bin/sh -c`, and `prune` is unsupported. See [Compose Watch](https://docs.docker.com/compose/how-tos/file-watch/) for the compatibility target.
 
 ## Conformance evidence
 
