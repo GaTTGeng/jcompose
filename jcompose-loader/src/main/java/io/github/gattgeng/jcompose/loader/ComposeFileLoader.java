@@ -426,6 +426,8 @@ public final class ComposeFileLoader {
                         "service cannot combine network_mode with networks.", null, null, null);
             if (service.containsKey("depends_on"))
                 validateServiceDependencies(file, name, service.get("depends_on"), serviceMap);
+            if (service.containsKey("links"))
+                validateServiceLinks(file, name, service.get("links"), serviceMap);
             validateServiceNetworks(file, name, service.get("networks"), root.get("networks"));
             validateServiceResources(file, name, serviceVolumeReferences(service.get("volumes")),
                     root.get("volumes"), "volumes");
@@ -1283,6 +1285,24 @@ public final class ComposeFileLoader {
             if (!services.containsKey(dependency))
                 throw new ComposeValidationException(file, "services." + service + ".depends_on." + dependency,
                         service, "service depends on undefined service '" + dependency + "'.", null, null, null);
+        }
+    }
+
+    private static void validateServiceLinks(Path file, String service, Object configured, Map<?, ?> services) {
+        String path = "services." + service + ".links";
+        if (!(configured instanceof List<?> links))
+            throw new ComposeValidationException(file, path, service, "links must be an array.", null, null, null);
+        for (int index = 0; index < links.size(); index++) {
+            if (!(links.get(index) instanceof String link))
+                throw new ComposeValidationException(file, path + "." + index, service,
+                        "link entries must be strings.", null, null, null);
+            String[] parts = link.split(":", -1);
+            if (parts.length > 2 || parts[0].isBlank() || parts.length == 2 && parts[1].isBlank())
+                throw new ComposeValidationException(file, path + "." + index, service,
+                        "link entries must be a service name or service:alias.", null, null, null);
+            if (!services.containsKey(parts[0]))
+                throw new ComposeValidationException(file, path + "." + index, service,
+                        "link refers to undefined service '" + parts[0] + "'.", null, null, null);
         }
     }
 

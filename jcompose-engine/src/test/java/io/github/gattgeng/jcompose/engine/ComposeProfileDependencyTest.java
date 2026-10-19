@@ -116,6 +116,23 @@ class ComposeProfileDependencyTest {
     }
 
     @Test
+    void linksSelectAndStartTheLinkedServiceBeforeConsumer() throws IOException {
+        ComposeProject project = load("""
+                services:
+                  app:
+                    image: busybox
+                    links: [database:db]
+                  database:
+                    image: busybox
+                """);
+
+        List<ServiceDefinition> ordered = ComposeService.dependencyOrderedServices(project,
+                List.of(project.services().get("app")), List.of());
+
+        assertEquals(List.of("database", "app"), ordered.stream().map(ServiceDefinition::name).toList());
+    }
+
+    @Test
     void rejectsNetworkModeServiceOutsideActiveProfiles() throws IOException {
         ComposeProject project = load("""
                 services:

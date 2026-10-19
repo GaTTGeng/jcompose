@@ -550,6 +550,34 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void validatesServiceLinksAndAcceptsAliases() throws Exception {
+        Path composeFile = directory.resolve("compose.yaml");
+        Files.writeString(composeFile, """
+                services:
+                  app:
+                    image: alpine
+                    links: [database:db]
+                  database:
+                    image: postgres
+                """);
+
+        assertEquals(List.of("database:db"), new ComposeFileLoader().load(directory, null)
+                .services().get("app").configuration().get("links"));
+
+        Files.writeString(composeFile, """
+                services:
+                  app:
+                    image: alpine
+                    links: [missing:db]
+                """);
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, null));
+
+        assertEquals("services.app.links.0", exception.propertyPath());
+        assertEquals("app", exception.serviceName());
+    }
+
+    @Test
     void retainsReservedDockerComposeLabelsForRuntimeValidation() throws Exception {
         Path composeFile = directory.resolve("compose.yaml");
         ComposeFileLoader loader = new ComposeFileLoader();

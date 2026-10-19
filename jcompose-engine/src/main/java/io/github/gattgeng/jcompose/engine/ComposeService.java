@@ -219,7 +219,7 @@ public final class ComposeService implements IComposeService {
         while (!remaining.isEmpty()) {
             List<ServiceDefinition> ready = project.services().values().stream()
                     .filter(service -> remaining.contains(service.name()))
-                    .filter(service -> dependencyNames(service.configuration().get("depends_on")).stream()
+                    .filter(service -> orderingDependencyNames(service).stream()
                             .filter(selectedServices::contains).allMatch(ordered::contains))
                     .toList();
             if (ready.isEmpty()) throw new IllegalArgumentException("Circular service dependency among: "
@@ -636,7 +636,7 @@ public final class ComposeService implements IComposeService {
                 String image = service.image() == null ? "build" : service.image();
                 graph.append("  ").append(quote(service.name())).append(" [label=")
                         .append(quote(service.name() + "\n" + image)).append("];\n");
-                for (String dependency : dependencyNames(service.configuration().get("depends_on"))) {
+                for (String dependency : orderingDependencyNames(service)) {
                     graph.append("  ").append(quote(service.name())).append(" -> ")
                             .append(quote(dependency)).append(";\n");
                 }
@@ -766,6 +766,16 @@ public final class ComposeService implements IComposeService {
                 }
                 pending.addLast(dependency);
             }
+            for (String dependency : linkServiceNames(service.configuration().get("links"))) {
+                if (!servicesByName.containsKey(dependency))
+                    throw new IllegalArgumentException("Service '" + name + "' links to unknown service '" + dependency + "'.");
+                ServiceDefinition definition = servicesByName.get(dependency);
+                if (!definition.profiles().isEmpty()
+                        && definition.profiles().stream().noneMatch(enabledProfiles::contains))
+                    throw new IllegalArgumentException("Service '" + name + "' links to service '" + dependency
+                            + "', but none of its profiles are active.");
+                pending.addLast(dependency);
+            }
         }
         return names.stream().map(servicesByName::get).toList();
     }
@@ -857,10 +867,26 @@ public final class ComposeService implements IComposeService {
     private static List<String> serviceDependencyNames(ServiceDefinition service) {
         java.util.LinkedHashSet<String> dependencies = new java.util.LinkedHashSet<>(
                 dependencyNames(service.configuration().get("depends_on")));
+        dependencies.addAll(linkServiceNames(service.configuration().get("links")));
         volumeFromReferences(service.configuration().get("volumes_from")).stream()
                 .filter(reference -> !reference.externalContainer())
                 .map(VolumeFromReference::source)
                 .forEach(dependencies::add);
+        return List.copyOf(dependencies);
+    }
+
+    private static List<String> linkServiceNames(Object value) {
+        return dependencyNames(value).stream()
+                .map(link -> link.split(":", 2)[0].trim())
+                .filter(name -> !name.isEmpty())
+                .distinct()
+                .toList();
+    }
+
+    private static List<String> orderingDependencyNames(ServiceDefinition service) {
+        java.util.LinkedHashSet<String> dependencies = new java.util.LinkedHashSet<>(
+                dependencyNames(service.configuration().get("depends_on")));
+        dependencies.addAll(linkServiceNames(service.configuration().get("links")));
         return List.copyOf(dependencies);
     }
 
@@ -1066,6 +1092,16 @@ public final class ComposeService implements IComposeService {
                 }
                 if (selectedNames.add(name)) pending.add(dependency);
             }
+            for (String name : linkServiceNames(service.configuration().get("links"))) {
+                ServiceDefinition dependency = byName.get(name);
+                if (dependency == null) throw new IllegalArgumentException("Service '" + service.name()
+                        + "' links to unknown service '" + name + "'.");
+                if (!dependency.profiles().isEmpty()
+                        && dependency.profiles().stream().noneMatch(enabledProfiles::contains))
+                    throw new IllegalArgumentException("Service '" + service.name() + "' links to service '"
+                            + name + "', but none of its profiles are active.");
+                if (selectedNames.add(name)) pending.add(dependency);
+            }
             for (String namespace : SERVICE_NAMESPACE_FIELDS) {
                 String namespaceService = serviceNamespaceReference(service, namespace);
                 if (namespaceService == null) continue;
@@ -1122,6 +1158,7 @@ public final class ComposeService implements IComposeService {
                     && dependency.profiles().stream().noneMatch(enabledProfiles::contains)) continue;
             dependencies.add(name);
         }
+        dependencies.addAll(linkServiceNames(service.configuration().get("links")));
         volumeFromReferences(service.configuration().get("volumes_from")).stream()
                 .filter(reference -> !reference.externalContainer())
                 .map(VolumeFromReference::source)
