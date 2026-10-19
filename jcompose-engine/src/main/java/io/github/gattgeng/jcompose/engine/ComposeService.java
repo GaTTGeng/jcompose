@@ -1386,7 +1386,7 @@ public final class ComposeService implements IComposeService {
                 .filter(field -> serviceNamespaceReference(service, field) != null)
                 .map(field -> field + "=" + dockerNamespaceMode(client, context.projectName(), service, field))
                 .collect(java.util.stream.Collectors.joining(";"));
-        String hash = configHash(service) + (namespaceServiceIds.isEmpty() ? "" : "-" + namespaceServiceIds);
+        String hash = configHash(service, project) + (namespaceServiceIds.isEmpty() ? "" : "-" + namespaceServiceIds);
         boolean configurationChanged = existing.stream()
                 .anyMatch(container -> !hash.equals(label(container, ComposeConstants.CONFIG_HASH_LABEL)));
         boolean recreate = forceRecreate || configurationChanged && !noRecreate;
@@ -1472,7 +1472,7 @@ public final class ComposeService implements IComposeService {
             if (service.configuration().get("stdin_open") instanceof Boolean stdin) command.withStdinOpen(stdin);
             if (serviceNamespaceReference(service, "network_mode") == null) {
                 String primaryNetwork = serviceNetworks(service).getFirst();
-                List<String> primaryAliases = networkAliases(service, primaryNetwork, true);
+                List<String> primaryAliases = networkAliases(project, service, primaryNetwork, true);
                 if (!primaryAliases.isEmpty()) command.withAliases(primaryAliases);
                 applyPrimaryNetworkOptions(command, service, primaryNetwork);
             }
@@ -1588,10 +1588,22 @@ public final class ComposeService implements IComposeService {
         return result;
     }
 
-    private static List<String> networkAliases(ServiceDefinition service, String network, boolean includeServiceName) {
+    private static List<String> networkAliases(ComposeProject project, ServiceDefinition service, String network,
+                                               boolean includeServiceName) {
         java.util.LinkedHashSet<String> aliases = new java.util.LinkedHashSet<>();
         if (includeServiceName) aliases.add(service.name());
         aliases.addAll(asStringList(serviceNetworkOptions(service, network).get("aliases")));
+        if (service.configuration().get("network_mode") == null) {
+            for (ServiceDefinition consumer : project.services().values()) {
+                if (consumer.configuration().get("network_mode") != null
+                        || !serviceNetworks(consumer).contains(network)) continue;
+                for (String link : asStringList(consumer.configuration().get("links"))) {
+                    String[] parts = link.split(":", 2);
+                    if (parts.length == 2 && parts[0].trim().equals(service.name()) && !parts[1].isBlank())
+                        aliases.add(parts[1].trim());
+                }
+            }
+        }
         return List.copyOf(aliases);
     }
 
@@ -1627,7 +1639,7 @@ public final class ComposeService implements IComposeService {
             if (networkId == null) throw new IllegalStateException("Docker network '" + engineName + "' was not created.");
             Map<String, Object> options = serviceNetworkOptions(service, logicalName);
             var endpoint = new com.github.dockerjava.api.model.ContainerNetwork();
-            List<String> aliases = networkAliases(service, logicalName, includeServiceName);
+            List<String> aliases = networkAliases(project, service, logicalName, includeServiceName);
             if (!aliases.isEmpty()) endpoint.withAliases(aliases);
             if (options.get("mac_address") != null) endpoint.withMacAddress(String.valueOf(options.get("mac_address")));
             String ipv4 = stringValue(options.get("ipv4_address"), null);
@@ -2605,9 +2617,20 @@ public final class ComposeService implements IComposeService {
     }
 
     private static String configHash(ServiceDefinition service) {
+        return configHash(service.configuration().toString());
+    }
+
+    private static String configHash(ServiceDefinition service, ComposeProject project) {
+        String aliases = serviceNetworks(service).stream()
+                .map(network -> network + "=" + networkAliases(project, service, network, true))
+                .collect(java.util.stream.Collectors.joining(";"));
+        return configHash(service.configuration() + "\u0000networkAliases=" + aliases);
+    }
+
+    private static String configHash(String configuration) {
         try {
             byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
-                    .digest(service.configuration().toString().getBytes(StandardCharsets.UTF_8));
+                    .digest(configuration.getBytes(StandardCharsets.UTF_8));
             return java.util.HexFormat.of().formatHex(digest);
         } catch (java.security.NoSuchAlgorithmException exception) {
             throw new IllegalStateException(exception);
@@ -3491,7 +3514,8 @@ public final class ComposeService implements IComposeService {
                 if (!ports.isEmpty()) command.withPortBindings(ports);
                 if (serviceNamespaceReference(service, "network_mode") == null) {
                     String primaryNetwork = serviceNetworks(service).getFirst();
-                    List<String> primaryAliases = networkAliases(service, primaryNetwork, effective.useNetworkAliases());
+                    List<String> primaryAliases = networkAliases(project, service, primaryNetwork,
+                            effective.useNetworkAliases());
                     if (!primaryAliases.isEmpty()) command.withAliases(primaryAliases);
                     applyPrimaryNetworkOptions(command, service, primaryNetwork);
                 }

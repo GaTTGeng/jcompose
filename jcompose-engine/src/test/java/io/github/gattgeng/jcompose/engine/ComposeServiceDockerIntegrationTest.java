@@ -1,5 +1,6 @@
 package io.github.gattgeng.jcompose.engine;
 
+import io.github.gattgeng.jcompose.api.ComposeExecOptions;
 import io.github.gattgeng.jcompose.api.ComposeProjectContext;
 import io.github.gattgeng.jcompose.api.ComposeRestartOptions;
 import io.github.gattgeng.jcompose.api.ComposeRunOptions;
@@ -86,6 +87,64 @@ class ComposeServiceDockerIntegrationTest {
         }
 
         assertTrue(service.psAsync(context, null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS).isEmpty());
+    }
+
+    @Test
+    void linkAliasesResolveOnSharedNetworkAndChangesRecreateTarget() throws Exception {
+        String projectName = "jcompose-links-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Path composeFile = directory.resolve("compose.yaml");
+        Files.writeString(composeFile, """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: ["sh", "-c", "sleep 60"]
+                    links: [db:database]
+                    networks: [frontend]
+                  db:
+                    image: busybox:1.36
+                    command: ["sh", "-c", "sleep 60"]
+                    networks: [frontend]
+                networks:
+                  frontend: {}
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            var before = service.psAsync(context, null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            var beforeDb = before.stream().filter(container -> "db".equals(container.service())).findFirst().orElseThrow();
+            var inspected = service.execAsync(context, "app", ComposeExecOptions.builder()
+                            .command(java.util.List.of("ping", "-c", "1", "-W", "1", "database")).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertTrue(inspected.succeeded(), inspected.standardError());
+
+            Files.writeString(composeFile, """
+                    services:
+                      app:
+                        image: busybox:1.36
+                        command: ["sh", "-c", "sleep 60"]
+                        links: [db:database-next]
+                        networks: [frontend]
+                      db:
+                        image: busybox:1.36
+                        command: ["sh", "-c", "sleep 60"]
+                        networks: [frontend]
+                    networks:
+                      frontend: {}
+                    """);
+            service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+
+            var after = service.psAsync(context, null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            var afterDb = after.stream().filter(container -> "db".equals(container.service())).findFirst().orElseThrow();
+            assertFalse(beforeDb.id().equals(afterDb.id()), "changing a link alias must recreate its target service");
+            var afterPing = service.execAsync(context, "app", ComposeExecOptions.builder()
+                            .command(java.util.List.of("ping", "-c", "1", "-W", "1", "database-next")).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertTrue(afterPing.succeeded(), afterPing.standardError());
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
     }
 
     @Test
