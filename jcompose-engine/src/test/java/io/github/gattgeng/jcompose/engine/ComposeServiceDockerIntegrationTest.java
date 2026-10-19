@@ -1,6 +1,8 @@
 package io.github.gattgeng.jcompose.engine;
 
+import io.github.gattgeng.jcompose.api.ComposeEvent;
 import io.github.gattgeng.jcompose.api.ComposeExecOptions;
+import io.github.gattgeng.jcompose.api.ComposeEventsOptions;
 import io.github.gattgeng.jcompose.api.ComposeListOptions;
 import io.github.gattgeng.jcompose.api.ComposePauseOptions;
 import io.github.gattgeng.jcompose.api.ComposeProjectContext;
@@ -22,11 +24,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ComposeServiceDockerIntegrationTest {
@@ -311,6 +316,119 @@ class ComposeServiceDockerIntegrationTest {
             assertTrue(service.topAsync(context, ComposeTopOptions.builder().services(java.util.List.of()).build())
                     .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS).isEmpty());
         } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
+    void eventsSignalReadyAndFilterLifecycleEventsByService() throws Exception {
+        String projectName = "jcompose-events-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  web:
+                    image: busybox:1.36
+                    command: ["sleep", "60"]
+                  worker:
+                    image: busybox:1.36
+                    command: ["sleep", "60"]
+                """);
+
+        IComposeService service = new ComposeService();
+        CompletableFuture<Void> subscribed = new CompletableFuture<>();
+        CompletableFuture<Flow.Subscription> subscription = new CompletableFuture<>();
+        CompletableFuture<ComposeEvent> stoppedEvent = new CompletableFuture<>();
+        var observed = new CopyOnWriteArrayList<ComposeEvent>();
+        try {
+            service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            service.eventsAsync(context, ComposeEventsOptions.builder().services(java.util.List.of("worker"))
+                            .onSubscribed(() -> subscribed.complete(null)).build())
+                    .subscribe(new Flow.Subscriber<>() {
+                        @Override public void onSubscribe(Flow.Subscription value) {
+                            subscription.complete(value);
+                            value.request(Long.MAX_VALUE);
+                        }
+
+                        @Override public void onNext(ComposeEvent event) {
+                            observed.add(event);
+                            if (event.type().equals("container")
+                                    && java.util.Set.of("die", "kill", "stop").contains(event.action()))
+                                stoppedEvent.complete(event);
+                        }
+
+                        @Override public void onError(Throwable failure) {
+                            subscribed.completeExceptionally(failure);
+                            stoppedEvent.completeExceptionally(failure);
+                        }
+                        @Override public void onComplete() {
+                            stoppedEvent.completeExceptionally(new AssertionError("Docker event stream ended unexpectedly."));
+                        }
+                    });
+
+            subscription.get(30, TimeUnit.SECONDS);
+            subscribed.get(30, TimeUnit.SECONDS);
+            service.stopAsync(context, ComposeStopOptions.builder().services(java.util.List.of("worker")).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            ComposeEvent event = stoppedEvent.get(30, TimeUnit.SECONDS);
+
+            assertEquals("worker", event.service());
+            assertTrue(observed.stream().allMatch(item -> "worker".equals(item.service())));
+        } finally {
+            Flow.Subscription activeSubscription = subscription.getNow(null);
+            if (activeSubscription != null) activeSubscription.cancel();
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
+    void eventsKeepProjectNetworkEventsWithoutAServiceFilter() throws Exception {
+        String projectName = "jcompose-project-events-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  web:
+                    image: busybox:1.36
+                    command: ["sleep", "60"]
+                """);
+
+        IComposeService service = new ComposeService();
+        CompletableFuture<Void> subscribed = new CompletableFuture<>();
+        CompletableFuture<Flow.Subscription> subscription = new CompletableFuture<>();
+        CompletableFuture<ComposeEvent> networkEvent = new CompletableFuture<>();
+        try {
+            service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            service.eventsAsync(context, ComposeEventsOptions.builder().onSubscribed(() -> subscribed.complete(null)).build())
+                    .subscribe(new Flow.Subscriber<>() {
+                        @Override public void onSubscribe(Flow.Subscription value) {
+                            subscription.complete(value);
+                            value.request(Long.MAX_VALUE);
+                        }
+
+                        @Override public void onNext(ComposeEvent event) {
+                            if (event.type().equals("network")
+                                    && java.util.Set.of("destroy", "remove").contains(event.action()))
+                                networkEvent.complete(event);
+                        }
+
+                        @Override public void onError(Throwable failure) {
+                            subscribed.completeExceptionally(failure);
+                            networkEvent.completeExceptionally(failure);
+                        }
+                        @Override public void onComplete() {
+                            networkEvent.completeExceptionally(new AssertionError("Docker event stream ended unexpectedly."));
+                        }
+                    });
+
+            subscription.get(30, TimeUnit.SECONDS);
+            subscribed.get(30, TimeUnit.SECONDS);
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+            ComposeEvent event = networkEvent.get(30, TimeUnit.SECONDS);
+
+            assertEquals("network", event.type());
+            assertNull(event.service());
+        } finally {
+            Flow.Subscription activeSubscription = subscription.getNow(null);
+            if (activeSubscription != null) activeSubscription.cancel();
             service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
         }
     }
