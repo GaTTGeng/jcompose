@@ -5,6 +5,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -79,5 +81,19 @@ class ComposeVolumeSpecTest {
         assertThrows(IllegalArgumentException.class, () -> ComposeService.prepareBindSource(source, false));
 
         assertTrue(Files.notExists(source));
+    }
+
+    @Test
+    void mapsLongSyntaxTmpfsMountAndSize() {
+        Map<String, String> mounts = ComposeService.longSyntaxTmpfsMounts(List.of(Map.of(
+                "type", "tmpfs", "target", "/run/cache", "tmpfs", Map.of("size", "1m"))));
+
+        assertEquals(Map.of("/run/cache", "size=1048576"), mounts);
+    }
+
+    @Test
+    void rejectsTmpfsMountWithoutTarget() {
+        assertThrows(IllegalArgumentException.class, () -> ComposeService.longSyntaxTmpfsMounts(List.of(
+                Map.of("type", "tmpfs", "tmpfs", Map.of("size", 1024)))));
     }
 }

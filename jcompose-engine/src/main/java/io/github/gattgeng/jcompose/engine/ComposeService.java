@@ -1819,15 +1819,7 @@ public final class ComposeService implements IComposeService {
 
         List<String> extraHosts = extraHostEntries(config.get("extra_hosts"));
         if (!extraHosts.isEmpty()) host.withExtraHosts(extraHosts.toArray(String[]::new));
-        List<String> tmpfs = asStringList(config.get("tmpfs"));
-        if (!tmpfs.isEmpty()) {
-            Map<String, String> mounts = new LinkedHashMap<>();
-            for (String mount : tmpfs) {
-                String[] parts = mount.split(":", -1);
-                mounts.put(parts[0], parts.length > 1 ? parts[parts.length - 1] : "");
-            }
-            host.withTmpFs(mounts);
-        }
+        applyTmpfsMounts(host, config);
         List<String> capAdd = asStringList(config.get("cap_add"));
         if (!capAdd.isEmpty()) host.withCapAdd(capAdd.stream().map(ComposeService::capability)
                 .toArray(com.github.dockerjava.api.model.Capability[]::new));
@@ -2389,6 +2381,7 @@ public final class ComposeService implements IComposeService {
             if (volume instanceof Map<?, ?> map) {
                 Object target = map.get("target"), source = map.get("source");
                 if (target == null) continue;
+                if ("tmpfs".equals(String.valueOf(map.get("type")))) continue;
                 String sourceName = source == null ? "" : String.valueOf(source);
                 Object type = map.get("type");
                 boolean bind = "bind".equals(String.valueOf(type)) || Path.of(sourceName.isBlank() ? "." : sourceName).isAbsolute()
@@ -2495,6 +2488,34 @@ public final class ComposeService implements IComposeService {
             binds.add(new com.github.dockerjava.api.model.Bind(source.toString(),
                     new com.github.dockerjava.api.model.Volume(target), com.github.dockerjava.api.model.AccessMode.ro));
         }
+    }
+
+    static Map<String, String> longSyntaxTmpfsMounts(Object configuredVolumes) {
+        if (!(configuredVolumes instanceof List<?> volumes)) return Map.of();
+        Map<String, String> mounts = new LinkedHashMap<>();
+        for (Object volume : volumes) {
+            if (!(volume instanceof Map<?, ?> mount) || !"tmpfs".equals(String.valueOf(mount.get("type")))) continue;
+            String target = stringValue(mount.get("target"), null);
+            if (target == null || target.isBlank())
+                throw new IllegalArgumentException("A long-syntax tmpfs mount requires a target.");
+            Object configuredTmpfs = mount.get("tmpfs");
+            if (configuredTmpfs != null && !(configuredTmpfs instanceof Map<?, ?>))
+                throw new IllegalArgumentException("A long-syntax tmpfs mount's tmpfs options must be a mapping.");
+            Object size = configuredTmpfs instanceof Map<?, ?> options ? options.get("size") : null;
+            mounts.put(target, size == null ? "" : "size=" + parseByteSize(String.valueOf(size)));
+        }
+        return Map.copyOf(mounts);
+    }
+
+    private static void applyTmpfsMounts(com.github.dockerjava.api.model.HostConfig host,
+                                         Map<String, Object> serviceConfiguration) {
+        Map<String, String> mounts = new LinkedHashMap<>();
+        for (String mount : asStringList(serviceConfiguration.get("tmpfs"))) {
+            String[] parts = mount.split(":", -1);
+            mounts.put(parts[0], parts.length > 1 ? parts[parts.length - 1] : "");
+        }
+        mounts.putAll(longSyntaxTmpfsMounts(serviceConfiguration.get("volumes")));
+        if (!mounts.isEmpty()) host.withTmpFs(mounts);
     }
 
     private static String defaultResourceTarget(String sourceName, ServiceDefinition service, String field) {
@@ -3720,6 +3741,7 @@ public final class ComposeService implements IComposeService {
                 applyDeviceCgroupRules(host, service.configuration());
                 applyBlockIoConfig(host, service.configuration().get("blkio_config"));
                 applyRuntimeOptions(host, service.configuration());
+                applyTmpfsMounts(host, service.configuration());
                 List<com.github.dockerjava.api.model.Bind> binds = new ArrayList<>(serviceBinds(project, context.projectName(), service));
                 for (String volume : effective.volumes() == null ? List.<String>of() : effective.volumes())
                     binds.add(parseRunBind(volume));

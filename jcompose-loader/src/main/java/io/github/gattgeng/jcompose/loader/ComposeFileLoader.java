@@ -741,6 +741,11 @@ public final class ComposeFileLoader {
             Object bind = mount.get("bind");
             if (bind instanceof Map<?, ?> options)
                 validateBoolean(file, service, options, "create_host_path", path + "." + index + ".bind.create_host_path");
+            if ("tmpfs".equals(String.valueOf(mount.get("type")))) {
+                validateOptionalMap(file, service, mount, "tmpfs", path + "." + index + ".tmpfs");
+                if (mount.get("tmpfs") instanceof Map<?, ?> options)
+                    validateBytes(file, service, options, "size", path + "." + index + ".tmpfs.size");
+            }
         }
     }
 

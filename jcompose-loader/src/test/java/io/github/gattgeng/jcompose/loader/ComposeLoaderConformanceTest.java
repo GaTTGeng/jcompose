@@ -93,6 +93,45 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
+    void rejectsInvalidLongSyntaxTmpfsSize() throws IOException {
+        Path file = temporaryDirectory.resolve("compose.yaml");
+        Files.writeString(file, """
+                services:
+                  app:
+                    image: busybox
+                    volumes:
+                      - type: tmpfs
+                        target: /run/cache
+                        tmpfs:
+                          size: tiny
+                """);
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(temporaryDirectory, "compose.yaml"));
+
+        assertEquals("services.app.volumes.0.tmpfs.size", exception.propertyPath());
+    }
+
+    @Test
+    void rejectsNonMappingLongSyntaxTmpfsOptions() throws IOException {
+        Path file = temporaryDirectory.resolve("compose.yaml");
+        Files.writeString(file, """
+                services:
+                  app:
+                    image: busybox
+                    volumes:
+                      - type: tmpfs
+                        target: /run/cache
+                        tmpfs: invalid
+                """);
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(temporaryDirectory, "compose.yaml"));
+
+        assertEquals("services.app.volumes.0.tmpfs", exception.propertyPath());
+    }
+
+    @Test
     void rejectsUndefinedServiceSecret() throws IOException {
         Path file = temporaryDirectory.resolve("compose.yaml");
         Files.writeString(file, """
