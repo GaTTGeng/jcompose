@@ -3510,8 +3510,10 @@ public final class ComposeService implements IComposeService {
                     command.withStopTimeout(parseDurationSeconds(String.valueOf(service.configuration().get("stop_grace_period"))));
                 List<com.github.dockerjava.api.model.ExposedPort> exposed = serviceExposedPorts(service);
                 if (!exposed.isEmpty()) command.withExposedPorts(exposed);
-                List<com.github.dockerjava.api.model.PortBinding> ports = servicePorts(service);
-                if (!ports.isEmpty()) command.withPortBindings(ports);
+                if (effective.servicePorts()) {
+                    List<com.github.dockerjava.api.model.PortBinding> ports = servicePorts(service);
+                    if (!ports.isEmpty()) command.withPortBindings(ports);
+                }
                 if (serviceNamespaceReference(service, "network_mode") == null) {
                     String primaryNetwork = serviceNetworks(service).getFirst();
                     List<String> primaryAliases = networkAliases(project, service, primaryNetwork,

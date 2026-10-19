@@ -90,6 +90,44 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void runPublishesServicePortsOnlyWhenRequested() throws Exception {
+        String projectName = "jcompose-run-ports-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: ["sh", "-c", "sleep 60"]
+                    ports: ["127.0.0.1:0:8080"]
+                """);
+
+        IComposeService service = new ComposeService();
+        String defaultRun = null;
+        String servicePortsRun = null;
+        try {
+            defaultRun = service.runAsync(context, "app", ComposeRunOptions.builder()
+                    .noDeps(true).detach(true).tty(false).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            servicePortsRun = service.runAsync(context, "app", ComposeRunOptions.builder()
+                    .noDeps(true).detach(true).tty(false).servicePorts(true).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+
+            try (var client = DockerClientFactory.create(context)) {
+                var defaultBindings = client.inspectContainerCmd(defaultRun).exec().getHostConfig().getPortBindings();
+                var requestedBindings = client.inspectContainerCmd(servicePortsRun).exec().getHostConfig().getPortBindings();
+                assertTrue(defaultBindings == null || defaultBindings.getBindings().isEmpty());
+                assertFalse(requestedBindings == null || requestedBindings.getBindings().isEmpty());
+            }
+        } finally {
+            try (var client = DockerClientFactory.create(context)) {
+                if (defaultRun != null) client.removeContainerCmd(defaultRun).withForce(true).withRemoveVolumes(false).exec();
+                if (servicePortsRun != null) client.removeContainerCmd(servicePortsRun).withForce(true).withRemoveVolumes(false).exec();
+            }
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
     void linkAliasesResolveOnSharedNetworkAndChangesRecreateTarget() throws Exception {
         String projectName = "jcompose-links-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);

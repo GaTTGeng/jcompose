@@ -23,6 +23,7 @@ import java.util.Objects;
  * @param privileged Run the container with extended privileges.
  * @param useNetworkAliases Connect the container to the service's network aliases so dependents can resolve it.
  * @param index Replica index used in the generated container name and labels.
+ * @param servicePorts Publish ports declared by the service.
  */
 public record ComposeRunOptions(
         List<String> command,
@@ -42,7 +43,8 @@ public record ComposeRunOptions(
         List<String> capDrop,
         boolean privileged,
         boolean useNetworkAliases,
-        Integer index) {
+        Integer index,
+        boolean servicePorts) {
     public ComposeRunOptions {
         command = command == null ? null : List.copyOf(command);
         env = env == null ? null : List.copyOf(env);
@@ -50,6 +52,15 @@ public record ComposeRunOptions(
         volumes = volumes == null ? null : List.copyOf(volumes);
         capAdd = capAdd == null ? null : List.copyOf(capAdd);
         capDrop = capDrop == null ? null : List.copyOf(capDrop);
+    }
+
+    /** Keeps the previous constructor contract; service ports remain unpublished by default. */
+    public ComposeRunOptions(List<String> command, String entrypoint, String name, List<String> env,
+            List<String> labels, List<String> volumes, boolean remove, boolean detach, boolean noDeps,
+            boolean tty, boolean interactive, String workdir, String user, List<String> capAdd,
+            List<String> capDrop, boolean privileged, boolean useNetworkAliases, Integer index) {
+        this(command, entrypoint, name, env, labels, volumes, remove, detach, noDeps, tty, interactive,
+                workdir, user, capAdd, capDrop, privileged, useNetworkAliases, index, false);
     }
 
     public static Builder builder() { return new Builder(); }
@@ -74,6 +85,7 @@ public record ComposeRunOptions(
         private boolean privileged;
         private boolean useNetworkAliases;
         private Integer index;
+        private boolean servicePorts;
 
         /**
          * Command overriding the service image's default command.
@@ -194,6 +206,9 @@ public record ComposeRunOptions(
          */
         public Builder useNetworkAliases(boolean value) { this.useNetworkAliases = value; return this; }
 
+        /** Publish ports declared by the service, matching Compose run's --service-ports option. */
+        public Builder servicePorts(boolean value) { this.servicePorts = value; return this; }
+
         /**
          * Replica index used in the generated container name and labels.
          * @param value Replica index used in the generated container name and labels.
@@ -202,6 +217,6 @@ public record ComposeRunOptions(
         public Builder index(Integer value) { this.index = value; return this; }
 
         /** @return the immutable operation options */
-        public ComposeRunOptions build() { return new ComposeRunOptions(command, entrypoint, name, env, labels, volumes, remove, detach, noDeps, tty, interactive, workdir, user, capAdd, capDrop, privileged, useNetworkAliases, index); }
+        public ComposeRunOptions build() { return new ComposeRunOptions(command, entrypoint, name, env, labels, volumes, remove, detach, noDeps, tty, interactive, workdir, user, capAdd, capDrop, privileged, useNetworkAliases, index, servicePorts); }
     }
 }
