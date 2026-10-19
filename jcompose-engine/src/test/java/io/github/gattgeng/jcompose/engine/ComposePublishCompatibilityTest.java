@@ -2,6 +2,7 @@ package io.github.gattgeng.jcompose.engine;
 
 import io.github.gattgeng.jcompose.api.ComposeProjectContext;
 import io.github.gattgeng.jcompose.api.ComposePublishOptions;
+import io.github.gattgeng.jcompose.api.ComposePushOptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -31,6 +32,15 @@ class ComposePublishCompatibilityTest {
         assertTrue(ComposeService.isImagePushFailure(registryFailure));
         assertFalse(ComposeService.isImagePushFailure(unexpectedFailure));
         assertFalse(ComposeService.isImagePushFailure(cancellation));
+
+        ComposePushOptions ignoreFailures = ComposePushOptions.builder().ignoreFailures(true).build();
+        assertTrue(ComposeService.shouldIgnorePushFailure(ignoreFailures, dockerFailure));
+        assertTrue(ComposeService.shouldIgnorePushFailure(ignoreFailures, registryFailure));
+        assertFalse(ComposeService.shouldIgnorePushFailure(ignoreFailures, unexpectedFailure));
+        assertFalse(ComposeService.shouldIgnorePushFailure(ignoreFailures, cancellation));
+        assertFalse(ComposeService.shouldIgnorePushFailure(null, dockerFailure));
+        ComposePushOptions propagateFailures = ComposePushOptions.builder().ignoreFailures(false).build();
+        assertFalse(ComposeService.shouldIgnorePushFailure(propagateFailures, dockerFailure));
     }
 
     @Test

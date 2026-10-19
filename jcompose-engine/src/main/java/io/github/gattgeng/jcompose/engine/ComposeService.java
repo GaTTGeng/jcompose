@@ -804,8 +804,7 @@ public final class ComposeService implements IComposeService {
                     try {
                         pushImage(client, context.registryAuth(), image);
                     } catch (RuntimeException failure) {
-                        if (failure instanceof java.util.concurrent.CancellationException) throw failure;
-                        if (options == null || !options.ignoreFailures()) throw failure;
+                        if (!shouldIgnorePushFailure(options, failure)) throw failure;
                     }
                 }
             } catch (java.io.IOException exception) {
@@ -4151,6 +4150,10 @@ public final class ComposeService implements IComposeService {
     static boolean isImagePushFailure(Throwable failure) {
         return !(failure instanceof java.util.concurrent.CancellationException)
                 && (failure instanceof DockerException || failure instanceof IllegalStateException);
+    }
+
+    static boolean shouldIgnorePushFailure(ComposePushOptions options, Throwable failure) {
+        return options != null && options.ignoreFailures() && isImagePushFailure(failure);
     }
 
     String publishComposeYaml(ComposeProjectContext context) {
