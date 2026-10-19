@@ -84,11 +84,11 @@ class ComposeVolumeSpecTest {
     }
 
     @Test
-    void mapsLongSyntaxTmpfsMountAndSize() {
+    void mapsLongSyntaxTmpfsMountSizeAndOctalMode() {
         Map<String, String> mounts = ComposeService.longSyntaxTmpfsMounts(List.of(Map.of(
-                "type", "tmpfs", "target", "/run/cache", "tmpfs", Map.of("size", "1m"))));
+                "type", "tmpfs", "target", "/run/cache", "tmpfs", Map.of("size", "1m", "mode", 493))));
 
-        assertEquals(Map.of("/run/cache", "size=1048576"), mounts);
+        assertEquals(Map.of("/run/cache", "size=1048576,mode=755"), mounts);
     }
 
     @Test

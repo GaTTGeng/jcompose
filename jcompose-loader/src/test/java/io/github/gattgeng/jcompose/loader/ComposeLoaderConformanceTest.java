@@ -113,6 +113,26 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
+    void rejectsNonOctalLongSyntaxTmpfsMode() throws IOException {
+        Path file = temporaryDirectory.resolve("compose.yaml");
+        Files.writeString(file, """
+                services:
+                  app:
+                    image: busybox
+                    volumes:
+                      - type: tmpfs
+                        target: /run/cache
+                        tmpfs:
+                          mode: "0899"
+                """);
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(temporaryDirectory, "compose.yaml"));
+
+        assertEquals("services.app.volumes.0.tmpfs.mode", exception.propertyPath());
+    }
+
+    @Test
     void rejectsNonMappingLongSyntaxTmpfsOptions() throws IOException {
         Path file = temporaryDirectory.resolve("compose.yaml");
         Files.writeString(file, """

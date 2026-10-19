@@ -743,8 +743,10 @@ public final class ComposeFileLoader {
                 validateBoolean(file, service, options, "create_host_path", path + "." + index + ".bind.create_host_path");
             if ("tmpfs".equals(String.valueOf(mount.get("type")))) {
                 validateOptionalMap(file, service, mount, "tmpfs", path + "." + index + ".tmpfs");
-                if (mount.get("tmpfs") instanceof Map<?, ?> options)
+                if (mount.get("tmpfs") instanceof Map<?, ?> options) {
                     validateBytes(file, service, options, "size", path + "." + index + ".tmpfs.size");
+                    validateTmpfsMode(file, service, options, path + "." + index + ".tmpfs.mode");
+                }
             }
         }
     }
@@ -1079,6 +1081,24 @@ public final class ComposeFileLoader {
         Object value = map.get(key);
         if (value != null && (!isScalar(value) || !isByteValue(String.valueOf(value))))
             throw conversionFailure(file, service, path, value, "a supported byte value");
+    }
+
+    private static void validateTmpfsMode(Path file, String service, Map<?, ?> map, String path) {
+        Object value = map.get("mode");
+        if (value == null) return;
+        try {
+            if (value instanceof Number) {
+                BigInteger permissions = new BigInteger(String.valueOf(value));
+                if (permissions.signum() >= 0 && permissions.compareTo(BigInteger.valueOf(07777)) <= 0) return;
+            } else if (isScalar(value)) {
+                String permissions = String.valueOf(value).trim();
+                if (permissions.startsWith("0o") || permissions.startsWith("0O")) permissions = permissions.substring(2);
+                if (permissions.matches("[0-7]{1,4}")) return;
+            }
+        } catch (NumberFormatException ignored) {
+            // Report invalid permission values with the Compose property path below.
+        }
+        throw conversionFailure(file, service, path, value, "an octal permission value");
     }
 
     private static void validateBoolean(Path file, String service, Map<?, ?> map, String key, String path) {

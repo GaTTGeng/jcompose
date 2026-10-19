@@ -2501,10 +2501,28 @@ public final class ComposeService implements IComposeService {
             Object configuredTmpfs = mount.get("tmpfs");
             if (configuredTmpfs != null && !(configuredTmpfs instanceof Map<?, ?>))
                 throw new IllegalArgumentException("A long-syntax tmpfs mount's tmpfs options must be a mapping.");
-            Object size = configuredTmpfs instanceof Map<?, ?> options ? options.get("size") : null;
-            mounts.put(target, size == null ? "" : "size=" + parseByteSize(String.valueOf(size)));
+            Map<?, ?> options = configuredTmpfs instanceof Map<?, ?> map ? map : Map.of();
+            List<String> mountOptions = new ArrayList<>();
+            Object size = options.get("size");
+            if (size != null) mountOptions.add("size=" + parseByteSize(String.valueOf(size)));
+            Object mode = options.get("mode");
+            if (mode != null) mountOptions.add("mode=" + tmpfsMode(mode));
+            mounts.put(target, String.join(",", mountOptions));
         }
         return Map.copyOf(mounts);
+    }
+
+    private static String tmpfsMode(Object mode) {
+        if (mode instanceof Number number) {
+            long value = number.longValue();
+            if (value < 0 || value > 07777) throw new IllegalArgumentException("tmpfs.mode must be an octal permission value.");
+            return Long.toOctalString(value);
+        }
+        String value = String.valueOf(mode).trim();
+        if (value.startsWith("0o") || value.startsWith("0O")) value = value.substring(2);
+        if (!value.matches("[0-7]{1,4}"))
+            throw new IllegalArgumentException("tmpfs.mode must be an octal permission value.");
+        return value.replaceFirst("^0+(?!$)", "");
     }
 
     private static void applyTmpfsMounts(com.github.dockerjava.api.model.HostConfig host,
