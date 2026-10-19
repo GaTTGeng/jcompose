@@ -348,6 +348,53 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void validatesPostStartAndPreStopHookDefinitions() throws Exception {
+        Path composeFile = directory.resolve("compose.yaml");
+        Files.writeString(composeFile, """
+                services:
+                  app:
+                    image: alpine
+                    post_start:
+                      - command: [sh, -c, 'echo started']
+                        user: root
+                        privileged: true
+                        working_dir: /app
+                        environment: [HOOK=post]
+                    pre_stop:
+                      - command: ./shutdown.sh
+                        environment:
+                          HOOK: pre
+                """);
+
+        var project = new ComposeFileLoader().load(directory, null);
+
+        assertEquals(1, ((List<?>) project.services().get("app").configuration().get("post_start")).size());
+        assertEquals(1, ((List<?>) project.services().get("app").configuration().get("pre_stop")).size());
+    }
+
+    @Test
+    void rejectsInvalidLifecycleHooksWithComposePaths() throws Exception {
+        Path composeFile = directory.resolve("compose.yaml");
+        ComposeFileLoader loader = new ComposeFileLoader();
+        for (var invalid : List.of(
+                Map.entry("post_start: {}", "services.app.post_start"),
+                Map.entry("post_start:\n      - user: app", "services.app.post_start[0].command"),
+                Map.entry("pre_stop:\n      - command: [sh, 4]", "services.app.pre_stop[0].command"),
+                Map.entry("pre_stop:\n      - command: true", "services.app.pre_stop[0].command"),
+                Map.entry("post_start:\n      - command: echo ok\n        unexpected: true", "services.app.post_start[0].unexpected"),
+                Map.entry("pre_stop:\n      - command: echo ok\n        privileged: \"yes\"", "services.app.pre_stop[0].privileged"))) {
+            Files.writeString(composeFile, "services:\n  app:\n    image: alpine\n    " + invalid.getKey() + "\n");
+
+            ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                    () -> loader.load(directory, null));
+
+            assertEquals(invalid.getValue(), exception.propertyPath());
+            assertEquals("app", exception.serviceName());
+            assertEquals(composeFile, exception.sourceFile());
+        }
+    }
+
+    @Test
     void validatesComposeScalarFieldsWithPropertyContext() throws Exception {
         Path composeFile = directory.resolve("compose.yaml");
         ComposeFileLoader loader = new ComposeFileLoader();
