@@ -93,6 +93,38 @@ class DockerBuildContextArchiveTest {
     }
 
     @Test
+    void watchIgnoreMatcherAppliesDockerignoreAndGitDefaults() throws Exception {
+        Path context = Files.createDirectory(temporaryDirectory.resolve("watch-ignore-context"));
+        Files.writeString(context.resolve(".dockerignore"), "private/**\n");
+        Path privateFile = Files.createDirectories(context.resolve("private")).resolve("secret.txt");
+        Path gitFile = Files.createDirectories(context.resolve(".git")).resolve("config");
+        Path publicFile = Files.writeString(context.resolve("Main.java"), "public");
+
+        var ignored = DockerBuildContextArchive.watchIgnoreMatcher(context, context.resolve("Dockerfile"));
+
+        assertTrue(ignored.test(privateFile));
+        assertTrue(ignored.test(gitFile));
+        assertTrue(!ignored.test(publicFile));
+    }
+
+    @Test
+    void watchIgnoreMatcherUsesDockerfileIgnoreBesideDockerfileInBuildContext() throws Exception {
+        Path context = Files.createDirectory(temporaryDirectory.resolve("watch-dockerfile-ignore-context"));
+        Path dockerfile = context.resolve("docker/Dockerfile");
+        Files.createDirectories(dockerfile.getParent());
+        Files.writeString(dockerfile, "FROM scratch");
+        Files.writeString(context.resolve(".dockerignore"), "root-only.txt\n");
+        Files.writeString(dockerfile.resolveSibling("Dockerfile.dockerignore"), "dockerfile-only.txt\n");
+        Path rootOnly = Files.writeString(context.resolve("root-only.txt"), "root");
+        Path dockerfileOnly = Files.writeString(context.resolve("dockerfile-only.txt"), "specific");
+
+        var ignored = DockerBuildContextArchive.watchIgnoreMatcher(context, dockerfile);
+
+        assertTrue(!ignored.test(rootOnly));
+        assertTrue(ignored.test(dockerfileOnly));
+    }
+
+    @Test
     void normalizesDotSegmentsInIgnorePatterns() throws Exception {
         Path context = Files.createDirectory(temporaryDirectory.resolve("dot-segment-ignore-context"));
         Path dockerfile = Files.writeString(context.resolve("Dockerfile"), "FROM scratch\n");

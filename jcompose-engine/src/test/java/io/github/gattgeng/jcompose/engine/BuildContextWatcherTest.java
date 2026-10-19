@@ -107,15 +107,20 @@ class BuildContextWatcherTest {
     @Test
     void initialSyncCollectsOnlyIncludedNonIgnoredFiles() throws Exception {
         Files.createDirectories(directory.resolve("src/generated"));
+        Files.createDirectories(directory.resolve(".git"));
         Path main = Files.createFile(directory.resolve("Main.java"));
         Path nested = Files.createFile(directory.resolve("src/App.java"));
         Files.createFile(directory.resolve("src/generated/Build.java"));
+        Path gitFile = Files.createFile(directory.resolve(".git/config"));
         Files.createFile(directory.resolve("README.md"));
+        Files.writeString(directory.resolve(".dockerignore"), "src/App.java\n");
         Map<String, Object> rule = Map.of("include", List.of("**/*.java", "*.java"), "ignore", List.of("src/generated/**"));
 
-        List<Path> files = ComposeService.collectWatchFiles(directory, rule);
+        List<Path> files = ComposeService.collectWatchFiles(directory, rule,
+                DockerBuildContextArchive.watchIgnoreMatcher(directory, directory.resolve("Dockerfile")));
 
-        assertEquals(List.of(main, nested), files);
+        assertEquals(List.of(main), files);
+        assertFalse(files.contains(gitFile));
     }
 
     private static final class RecordingSubscriber implements Flow.Subscriber<WatchEvent> {

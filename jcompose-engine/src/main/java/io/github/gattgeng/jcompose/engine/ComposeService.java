@@ -3962,7 +3962,26 @@ public final class ComposeService implements IComposeService {
         Path projectDirectory = project.sourceFile().getParent();
         List<BuildContextWatcher.Registration> registrations = new ArrayList<>();
         Map<String, List<Map<String, Object>>> rulesByService = new LinkedHashMap<>();
+        Map<String, java.util.function.Predicate<Path>> watchIgnoresByService = new LinkedHashMap<>();
         for (ServiceDefinition service : selectConfigurationServices(project, context.profiles(), effective.services())) {
+            Object buildValue = service.build();
+            Map<String, Object> build = buildValue instanceof Map<?, ?> raw
+                    ? stringKeyMap(raw) : buildValue == null || Boolean.FALSE.equals(buildValue)
+                    ? Map.of() : Map.of("context", buildValue);
+            Path buildDirectory = projectDirectory.resolve(stringValue(build.get("context"), ".")).normalize();
+            java.util.function.Predicate<Path> resolvedWatchIgnore = ignored -> false;
+            if (buildValue != null && !Boolean.FALSE.equals(buildValue) && !isRemoteBuildContext(stringValue(build.get("context"), "."))) {
+                String inlineDockerfile = stringValue(build.get("dockerfile_inline"), null);
+                Path dockerfile = inlineDockerfile != null ? null
+                        : buildDirectory.resolve(stringValue(build.get("dockerfile"), "Dockerfile")).normalize();
+                try {
+                    resolvedWatchIgnore = DockerBuildContextArchive.watchIgnoreMatcher(buildDirectory, dockerfile);
+                } catch (java.io.IOException exception) {
+                    throw new java.io.UncheckedIOException("Could not read Docker ignore rules for service '" + service.name() + "'.", exception);
+                }
+            }
+            java.util.function.Predicate<Path> watchIgnore = resolvedWatchIgnore;
+            watchIgnoresByService.put(service.name(), watchIgnore);
             Object developValue = service.configuration().get("develop");
             Map<String, Object> develop = developValue instanceof Map<?, ?> raw ? stringKeyMap(raw) : Map.of();
             Object watchValue = develop.get("watch");
@@ -3981,6 +4000,7 @@ public final class ComposeService implements IComposeService {
                         if (!changedPath.startsWith(sourcePath)) return false;
                         Path normalized = Files.isDirectory(sourcePath) ? sourcePath.relativize(changedPath)
                                 : sourcePath.getFileName();
+                        if (watchIgnore.test(changedPath)) return false;
                         if (includes.isEmpty() || includes.stream().anyMatch(matcher -> matcher.matches(normalized)))
                             return ignores.stream().noneMatch(matcher -> matcher.matches(normalized));
                         return false;
@@ -3992,13 +4012,9 @@ public final class ComposeService implements IComposeService {
                 rulesByService.put(service.name(), List.copyOf(normalizedRules));
                 continue;
             }
-            Object buildValue = service.build();
             if (buildValue == null || Boolean.FALSE.equals(buildValue)) continue;
-            Map<String, Object> build = buildValue instanceof Map<?, ?> raw
-                    ? stringKeyMap(raw) : Map.of("context", buildValue);
-            String directory = stringValue(build.get("context"), ".");
-            Path buildDirectory = projectDirectory.resolve(directory).normalize();
-            registrations.add(new BuildContextWatcher.Registration(service.name(), buildDirectory));
+            registrations.add(new BuildContextWatcher.Registration(service.name(), buildDirectory, "rebuild",
+                    relative -> !watchIgnore.test(buildDirectory.resolve(relative))));
         }
         List<String> selectedServices = registrations.stream().map(BuildContextWatcher.Registration::service).distinct().toList();
         return new BuildContextWatcher(registrations, () -> {
@@ -4008,7 +4024,8 @@ public final class ComposeService implements IComposeService {
                 for (Map<String, Object> rule : serviceEntry.getValue()) {
                     if (Boolean.TRUE.equals(rule.get("initial_sync")) && isSyncWatchAction(stringValue(rule.get("action"), "")))
                         syncWatchPath(context, projectDirectory, serviceEntry.getKey(), rule,
-                                projectDirectory.resolve(stringValue(rule.get("path"), "")).normalize(), true);
+                                projectDirectory.resolve(stringValue(rule.get("path"), "")).normalize(), true,
+                                watchIgnoresByService.getOrDefault(serviceEntry.getKey(), ignored -> false));
                 }
             }
         }, change -> {
@@ -4020,7 +4037,9 @@ public final class ComposeService implements IComposeService {
                             && watchRuleMatches(projectDirectory, changed, candidate))
                     .max(java.util.Comparator.comparingInt(candidate ->
                             projectDirectory.resolve(stringValue(candidate.get("path"), "")).normalize().getNameCount())).orElse(null);
-            if (rule != null) applyDevelopWatchChange(context, projectDirectory, change.serviceName(), rule, changed);
+            java.util.function.Predicate<Path> watchIgnore = watchIgnoresByService.getOrDefault(change.serviceName(), ignored -> false);
+            if (rule != null && !watchIgnore.test(changed))
+                applyDevelopWatchChange(context, projectDirectory, change.serviceName(), rule, changed, watchIgnore);
         });
     }
 
@@ -4047,18 +4066,19 @@ public final class ComposeService implements IComposeService {
     }
 
     private void syncWatchPath(ComposeProjectContext context, Path projectDirectory, String service,
-                               Map<String, Object> rule, Path changed, boolean initial) {
+                               Map<String, Object> rule, Path changed, boolean initial,
+                               java.util.function.Predicate<Path> dockerIgnored) {
         Path sourceRoot = projectDirectory.resolve(stringValue(rule.get("path"), "")).normalize();
         List<Path> files;
         try {
-            files = initial ? collectWatchFiles(sourceRoot, rule) : List.of(changed);
+            files = initial ? collectWatchFiles(sourceRoot, rule, dockerIgnored) : List.of(changed);
         } catch (java.io.IOException exception) {
             throw new java.io.UncheckedIOException("Could not enumerate Compose watch path '" + sourceRoot + "'.", exception);
         }
         for (Path file : files) {
             if (!Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)) continue;
             Path relative = sourceRoot.equals(file) ? file.getFileName() : sourceRoot.relativize(file);
-            if (!watchPathIncluded(rule, relative)) continue;
+            if (!watchPathIncluded(rule, relative) || dockerIgnored.test(file)) continue;
             String target = stringValue(rule.get("target"), "");
             Path parent = relative.getParent();
             Path destination = parent == null ? Path.of(target) : Path.of(target).resolve(parent).normalize();
@@ -4068,12 +4088,19 @@ public final class ComposeService implements IComposeService {
     }
 
     static List<Path> collectWatchFiles(Path sourceRoot, Map<String, Object> rule) throws java.io.IOException {
+        return collectWatchFiles(sourceRoot, rule, ignored -> false);
+    }
+
+    static List<Path> collectWatchFiles(Path sourceRoot, Map<String, Object> rule,
+                                       java.util.function.Predicate<Path> dockerIgnored) throws java.io.IOException {
         if (Files.isRegularFile(sourceRoot, java.nio.file.LinkOption.NOFOLLOW_LINKS))
-            return watchPathIncluded(rule, sourceRoot.getFileName()) ? List.of(sourceRoot) : List.of();
+            return watchPathIncluded(rule, sourceRoot.getFileName()) && !dockerIgnored.test(sourceRoot)
+                    ? List.of(sourceRoot) : List.of();
         if (!Files.isDirectory(sourceRoot)) return List.of();
         try (var paths = Files.walk(sourceRoot)) {
             return paths.filter(file -> Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS))
                     .filter(file -> watchPathIncluded(rule, sourceRoot.relativize(file)))
+                    .filter(file -> !dockerIgnored.test(file))
                     .sorted().toList();
         }
     }
@@ -4086,7 +4113,8 @@ public final class ComposeService implements IComposeService {
     }
 
     private void applyDevelopWatchChange(ComposeProjectContext context, Path projectDirectory,
-                                        String service, Map<String, Object> rule, Path changed) {
+                                        String service, Map<String, Object> rule, Path changed,
+                                        java.util.function.Predicate<Path> dockerIgnored) {
         String action = stringValue(rule.get("action"), "rebuild");
         if ("rebuild".equals(action)) {
             await(buildAsync(context, ComposeBuildOptions.builder().services(List.of(service)).build()));
@@ -4109,7 +4137,7 @@ public final class ComposeService implements IComposeService {
                         .command(List.of("rm", "-rf", "--", destination.resolve(relative.getFileName()).toString().replace('\\', '/'))).build()));
             }
         } else if (Files.isRegularFile(changed)) {
-            syncWatchPath(context, projectDirectory, service, rule, changed, false);
+            syncWatchPath(context, projectDirectory, service, rule, changed, false, dockerIgnored);
         }
         if ("sync+restart".equals(action)) {
             await(restartAsync(context, ComposeRestartOptions.builder().services(List.of(service)).noDeps(true).build()));

@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import java.util.function.Predicate;
 
 /** Creates Docker Engine build-context tars with Docker ignore rules and external Dockerfile staging. */
 final class DockerBuildContextArchive implements AutoCloseable {
@@ -79,6 +80,17 @@ final class DockerBuildContextArchive implements AutoCloseable {
 
     String dockerfilePath() { return dockerfilePath; }
     InputStream stream() { return stream; }
+
+    static Predicate<Path> watchIgnoreMatcher(Path context, Path dockerfile) throws IOException {
+        Path root = context.toAbsolutePath().normalize();
+        List<IgnoreRule> rules = readIgnoreRules(root, dockerfile);
+        return candidate -> {
+            Path path = candidate.toAbsolutePath().normalize();
+            if (!path.startsWith(root)) return false;
+            String relative = toArchivePath(root, path);
+            return isIgnored(relative, rules) || containsGitDirectory(relative);
+        };
+    }
 
     @Override public void close() throws IOException {
         try { stream.close(); }
@@ -318,6 +330,11 @@ final class DockerBuildContextArchive implements AutoCloseable {
             if (rule.pattern().matcher(path).matches()) ignored = !rule.include();
         }
         return ignored;
+    }
+
+    private static boolean containsGitDirectory(String path) {
+        for (String segment : path.split("/")) if (segment.equals(".git")) return true;
+        return false;
     }
 
     private static boolean mayBeReincluded(String directory, List<IgnoreRule> rules) {
