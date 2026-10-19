@@ -28,10 +28,10 @@ class ComposePublishCompatibilityTest {
         assertTrue(ComposeService.isImageTagFailure(dockerFailure));
         assertFalse(ComposeService.isImageTagFailure(registryFailure));
         assertFalse(ComposeService.isImageTagFailure(cancellation));
-        assertTrue(ComposeService.isImagePushFailure(dockerFailure));
-        assertTrue(ComposeService.isImagePushFailure(registryFailure));
-        assertFalse(ComposeService.isImagePushFailure(unexpectedFailure));
-        assertFalse(ComposeService.isImagePushFailure(cancellation));
+        assertTrue(ComposeService.isImageTransferFailure(dockerFailure));
+        assertTrue(ComposeService.isImageTransferFailure(registryFailure));
+        assertFalse(ComposeService.isImageTransferFailure(unexpectedFailure));
+        assertFalse(ComposeService.isImageTransferFailure(cancellation));
 
         ComposePushOptions ignoreFailures = ComposePushOptions.builder().ignoreFailures(true).build();
         assertTrue(ComposeService.shouldIgnorePushFailure(ignoreFailures, dockerFailure));

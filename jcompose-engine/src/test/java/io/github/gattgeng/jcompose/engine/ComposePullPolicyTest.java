@@ -3,6 +3,7 @@ package io.github.gattgeng.jcompose.engine;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientImpl;
 import com.github.dockerjava.transport.DockerHttpClient;
+import io.github.gattgeng.jcompose.api.ComposePullOptions;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
@@ -14,9 +15,28 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ComposePullPolicyTest {
+    @Test
+    void ignoreFailuresOnlySuppressesDockerAndPullProgressFailures() {
+        RuntimeException dockerFailure = new com.github.dockerjava.api.exception.DockerException("Docker error", 500);
+        RuntimeException progressFailure = new IllegalStateException("registry rejected pull");
+        RuntimeException unexpectedFailure = new IllegalArgumentException("invalid internal state");
+        RuntimeException cancellation = new java.util.concurrent.CancellationException();
+        ComposePullOptions ignoreFailures = ComposePullOptions.builder().ignoreFailures(true).build();
+
+        assertTrue(ComposeService.shouldIgnorePullFailure(ignoreFailures, dockerFailure));
+        assertTrue(ComposeService.shouldIgnorePullFailure(ignoreFailures, progressFailure));
+        assertFalse(ComposeService.shouldIgnorePullFailure(ignoreFailures, unexpectedFailure));
+        assertFalse(ComposeService.shouldIgnorePullFailure(ignoreFailures, cancellation));
+        assertFalse(ComposeService.shouldIgnorePullFailure(null, dockerFailure));
+        assertFalse(ComposeService.shouldIgnorePullFailure(
+                ComposePullOptions.builder().ignoreFailures(false).build(), dockerFailure));
+    }
+
     @Test
     void parsesComposeTimeBasedRefreshPolicies() {
         assertEquals(Duration.ofDays(1), ComposeService.pullRefreshDuration("daily", null));

@@ -778,8 +778,7 @@ public final class ComposeService implements IComposeService {
                         pullImage(client, context.registryAuth(), image, platform);
                         pulledImages.add(image);
                     } catch (RuntimeException failure) {
-                        if (failure instanceof java.util.concurrent.CancellationException) throw failure;
-                        if (options == null || !options.ignoreFailures()) throw failure;
+                        if (!shouldIgnorePullFailure(options, failure)) throw failure;
                     }
                 }
             } catch (java.io.IOException exception) {
@@ -4131,7 +4130,7 @@ public final class ComposeService implements IComposeService {
                         results.add(new ImagePublishResult(service.name(), service.image(), taggedImage,
                                 true, true, null));
                     } catch (RuntimeException failure) {
-                        if (!isImagePushFailure(failure)) throw failure;
+                        if (!isImageTransferFailure(failure)) throw failure;
                         results.add(new ImagePublishResult(service.name(), service.image(), taggedImage,
                                 true, false, "Push failed: " + failure.getMessage()));
                     }
@@ -4147,13 +4146,17 @@ public final class ComposeService implements IComposeService {
         return failure instanceof DockerException;
     }
 
-    static boolean isImagePushFailure(Throwable failure) {
+    static boolean isImageTransferFailure(Throwable failure) {
         return !(failure instanceof java.util.concurrent.CancellationException)
                 && (failure instanceof DockerException || failure instanceof IllegalStateException);
     }
 
+    static boolean shouldIgnorePullFailure(ComposePullOptions options, Throwable failure) {
+        return options != null && options.ignoreFailures() && isImageTransferFailure(failure);
+    }
+
     static boolean shouldIgnorePushFailure(ComposePushOptions options, Throwable failure) {
-        return options != null && options.ignoreFailures() && isImagePushFailure(failure);
+        return options != null && options.ignoreFailures() && isImageTransferFailure(failure);
     }
 
     String publishComposeYaml(ComposeProjectContext context) {
