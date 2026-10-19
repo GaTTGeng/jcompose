@@ -48,6 +48,14 @@ class VariableInterpolatorTest {
     }
 
     @Test
+    void rejectsMalformedBracedExpressions() {
+        assertThrows(IllegalArgumentException.class,
+                () -> VariableInterpolator.expand("${NAME", Map.of(), Map.of()));
+        assertThrows(IllegalArgumentException.class,
+                () -> VariableInterpolator.expand("${NAME:invalid}", Map.of(), Map.of()));
+    }
+
+    @Test
     void processEnvironmentOverridesDotenvValues() {
         assertEquals("process", VariableInterpolator.expand("${VALUE}", Map.of("VALUE", "dotenv"), Map.of("VALUE", "process")));
     }

@@ -8,6 +8,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 
 ### Added
 
+- Rejected malformed or unclosed Compose interpolation expressions with the YAML property path and source location.
 - Loaded recursive local Docker Compose `include` files, merging each mapping's ordered `path` list into one included project before import, rebasing included file paths, and rejecting cross-project name conflicts; remote OCI/Git includes remain unsupported.
 - Retained and validated Docker Compose `develop.watch` rule configuration, including supported actions, source paths, sync targets, filters, initial sync, and `sync+exec` options; action execution is not implemented.
 - Added per-call environment overrides for multi-file merges without changing process-wide environment variables.

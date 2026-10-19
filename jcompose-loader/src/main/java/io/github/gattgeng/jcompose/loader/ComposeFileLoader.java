@@ -338,7 +338,7 @@ public final class ComposeFileLoader {
             Yaml yaml = new Yaml(new ComposeSafeConstructor(options));
             Node document = yaml.compose(new StringReader(text));
             if (document == null) throw new ComposeValidationException(file, "$", "the document must be a YAML mapping.");
-            Node expanded = interpolateValues(document, envFile, process);
+            Node expanded = interpolateValues(document, envFile, process, file, "$", null);
             StringWriter serialized = new StringWriter();
             yaml.serialize(expanded, serialized);
             Object parsed = yaml.load(serialized.toString());
@@ -355,25 +355,38 @@ public final class ComposeFileLoader {
         }
     }
 
-    private static Node interpolateValues(Node node, Map<String, String> dotenv, Map<String, String> process) {
+    private static Node interpolateValues(Node node, Map<String, String> dotenv, Map<String, String> process,
+                                         Path file, String propertyPath, String serviceName) {
         if (node instanceof MappingNode mapping) {
             List<NodeTuple> entries = new ArrayList<>();
-            for (var entry : mapping.getValue())
-                entries.add(new NodeTuple(entry.getKeyNode(), interpolateValues(entry.getValueNode(), dotenv, process)));
+            for (var entry : mapping.getValue()) {
+                String key = entry.getKeyNode() instanceof ScalarNode scalar ? scalar.getValue() : "?";
+                String childPath = propertyPath.equals("$") ? key : propertyPath + "." + key;
+                String childService = propertyPath.equals("services") ? key : serviceName;
+                entries.add(new NodeTuple(entry.getKeyNode(), interpolateValues(entry.getValueNode(), dotenv, process,
+                        file, childPath, childService)));
+            }
             mapping.setValue(entries);
             return mapping;
         }
         if (node instanceof SequenceNode sequence) {
             List<Node> values = sequence.getValue();
             for (int index = 0; index < values.size(); index++)
-                values.set(index, interpolateValues(values.get(index), dotenv, process));
+                values.set(index, interpolateValues(values.get(index), dotenv, process,
+                        file, propertyPath + ".[" + index + "]", serviceName));
             return sequence;
         }
         if (node instanceof ScalarNode scalar
                 && (scalar.getScalarStyle() == DumperOptions.ScalarStyle.PLAIN
                 || scalar.getScalarStyle() == DumperOptions.ScalarStyle.DOUBLE_QUOTED)) {
-            return new ScalarNode(scalar.getTag(), interpolate(scalar.getValue(), dotenv, process),
-                    scalar.getStartMark(), scalar.getEndMark(), scalar.getScalarStyle());
+            try {
+                return new ScalarNode(scalar.getTag(), interpolate(scalar.getValue(), dotenv, process),
+                        scalar.getStartMark(), scalar.getEndMark(), scalar.getScalarStyle());
+            } catch (IllegalArgumentException exception) {
+                throw new ComposeValidationException(file, propertyPath, serviceName,
+                        exception.getMessage(), scalar.getStartMark() == null ? null : scalar.getStartMark().getLine() + 1,
+                        scalar.getStartMark() == null ? null : scalar.getStartMark().getColumn() + 1, exception);
+            }
         }
         return node;
     }

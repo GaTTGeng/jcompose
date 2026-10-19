@@ -31,11 +31,13 @@ final class VariableInterpolator {
             } else if (next == '{') {
                 int end = expressionEnd(text, index + 2);
                 if (end < 0) {
-                    result.append(text.substring(index));
-                    break;
+                    throw new IllegalArgumentException("invalid interpolation format: " + text.substring(index));
                 }
                 String source = text.substring(index, end + 1);
-                result.append(expandBraced(text.substring(index + 2, end), source, dotenv, process, depth));
+                String expression = text.substring(index + 2, end);
+                if (!EXPRESSION.matcher(expression).matches())
+                    throw new IllegalArgumentException("invalid interpolation format: " + source);
+                result.append(expandBraced(expression, source, dotenv, process, depth));
                 index = end + 1;
             } else {
                 Matcher nameMatcher = NAME.matcher(text);

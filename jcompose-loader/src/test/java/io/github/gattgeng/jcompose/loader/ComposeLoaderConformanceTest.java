@@ -149,6 +149,24 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
+    void malformedInterpolationIncludesComposePropertyAndSourceLocation() throws IOException {
+        Path file = temporaryDirectory.resolve("compose.yaml");
+        Files.writeString(file, """
+                services:
+                  app:
+                    image: "${IMAGE:invalid}"
+                """);
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(temporaryDirectory, "compose.yaml"));
+
+        assertEquals("services.app.image", exception.propertyPath());
+        assertEquals("app", exception.serviceName());
+        assertEquals(file.toAbsolutePath(), exception.sourceFile());
+        assertTrue(exception.line() != null);
+    }
+
+    @Test
     void rejectsNonMappingLongSyntaxTmpfsOptions() throws IOException {
         Path file = temporaryDirectory.resolve("compose.yaml");
         Files.writeString(file, """
