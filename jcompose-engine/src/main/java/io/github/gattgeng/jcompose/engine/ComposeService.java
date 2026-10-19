@@ -2518,6 +2518,15 @@ public final class ComposeService implements IComposeService {
         return result;
     }
 
+    static List<com.github.dockerjava.api.model.PortBinding> runPortBindings(
+            ServiceDefinition service, ComposeRunOptions options) {
+        List<com.github.dockerjava.api.model.PortBinding> result = new ArrayList<>();
+        if (options.servicePorts()) result.addAll(servicePorts(service));
+        if (options.publish() != null) for (String mapping : options.publish())
+            result.addAll(servicePorts(new ServiceDefinition(service.name(), Map.of("ports", List.of(mapping)))));
+        return result;
+    }
+
     private static void addPortBindings(List<com.github.dockerjava.api.model.PortBinding> result, String hostIp,
                                         String targetValue, String publishedValue, String protocol) {
         PortRange target = parsePortRange(targetValue);
@@ -3510,10 +3519,8 @@ public final class ComposeService implements IComposeService {
                     command.withStopTimeout(parseDurationSeconds(String.valueOf(service.configuration().get("stop_grace_period"))));
                 List<com.github.dockerjava.api.model.ExposedPort> exposed = serviceExposedPorts(service);
                 if (!exposed.isEmpty()) command.withExposedPorts(exposed);
-                if (effective.servicePorts()) {
-                    List<com.github.dockerjava.api.model.PortBinding> ports = servicePorts(service);
-                    if (!ports.isEmpty()) command.withPortBindings(ports);
-                }
+                List<com.github.dockerjava.api.model.PortBinding> ports = runPortBindings(service, effective);
+                if (!ports.isEmpty()) command.withPortBindings(ports);
                 if (serviceNamespaceReference(service, "network_mode") == null) {
                     String primaryNetwork = serviceNetworks(service).getFirst();
                     List<String> primaryAliases = networkAliases(project, service, primaryNetwork,

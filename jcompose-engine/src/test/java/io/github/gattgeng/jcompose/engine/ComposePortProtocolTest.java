@@ -2,6 +2,7 @@ package io.github.gattgeng.jcompose.engine;
 
 import io.github.gattgeng.jcompose.api.ComposePortOptions;
 import io.github.gattgeng.jcompose.api.ComposeProjectContext;
+import io.github.gattgeng.jcompose.api.ComposeRunOptions;
 import io.github.gattgeng.jcompose.api.ServiceDefinition;
 import org.junit.jupiter.api.Test;
 
@@ -64,6 +65,28 @@ class ComposePortProtocolTest {
         List<com.github.dockerjava.api.model.PortBinding> ports = ComposeService.servicePorts(service);
 
         assertEquals(List.of("0", "0"), ports.stream().map(binding -> binding.getBinding().getHostPortSpec()).toList());
+    }
+
+    @Test
+    void runCombinesExplicitPublishedPortsAndOptionalServicePorts() {
+        ServiceDefinition service = service(Map.of("ports", List.of("8080:80")));
+        ComposeRunOptions options = ComposeRunOptions.builder()
+                .servicePorts(true).publish(List.of("127.0.0.1:9090:90/udp")).build();
+
+        List<com.github.dockerjava.api.model.PortBinding> ports = ComposeService.runPortBindings(service, options);
+
+        assertEquals(List.of("80/tcp=8080", "90/udp=127.0.0.1:9090"), ports.stream()
+                .map(binding -> binding.getExposedPort() + "=" + binding.getBinding()).toList());
+    }
+
+    @Test
+    void runDoesNotPublishServicePortsUnlessRequested() {
+        ServiceDefinition service = service(Map.of("ports", List.of("8080:80")));
+
+        assertEquals(List.of(), ComposeService.runPortBindings(service, ComposeRunOptions.builder().build()));
+        assertEquals(List.of("80/tcp=8080"), ComposeService.runPortBindings(service,
+                ComposeRunOptions.builder().publish(List.of("8080:80")).build()).stream()
+                .map(binding -> binding.getExposedPort() + "=" + binding.getBinding()).toList());
     }
 
     @Test
