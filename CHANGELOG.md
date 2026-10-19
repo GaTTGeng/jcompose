@@ -57,6 +57,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 
 ### Fixed
 
+- Made `wait` aggregate exit codes deterministically by container ID, regardless of Docker wait completion order.
 - Matched Docker Compose's profile handling by loading inactive services without `image` or `build` and rejecting them with a clear diagnostic when a runtime operation selects them.
 - Validated service `profiles` as an array of strings, matching Docker Compose's loader behavior for malformed profile declarations.
 - Validated `depends_on` short and long forms, including dependency names, supported conditions, and boolean `restart`/`required` options against Docker Compose CLI behavior.

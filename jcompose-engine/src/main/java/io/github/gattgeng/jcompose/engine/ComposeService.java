@@ -3787,17 +3787,13 @@ public final class ComposeService implements IComposeService {
                     });
                     waits.put(container.getId(), result);
                 }
-                CompletableFuture<Void> allWaits = CompletableFuture.allOf(waits.values().toArray(CompletableFuture[]::new));
+                CompletableFuture<WaitResult> collectedWaits = WaitResultCollector.collect(waits);
+                CompletableFuture<Void> allWaits = collectedWaits.thenApply(ignored -> null);
                 if (downOnExit != null) {
                     await(CompletableFuture.anyOf(allWaits, downOnExit));
                     if (firstContainerExit.isDone()) await(downOnExit);
                 }
-                await(allWaits);
-                List<String> ids = waits.keySet().stream().sorted().toList();
-                Map<String, Integer> exitCodes = new LinkedHashMap<>();
-                for (String id : ids) exitCodes.put(id, await(waits.get(id)));
-                int aggregateCode = exitCodes.values().stream().filter(code -> code != 0).findFirst().orElse(0);
-                return new WaitResult(exitCodes, aggregateCode);
+                return await(collectedWaits);
             } catch (java.io.IOException exception) {
                 throw new java.io.UncheckedIOException("Could not close Docker Engine client.", exception);
             }
