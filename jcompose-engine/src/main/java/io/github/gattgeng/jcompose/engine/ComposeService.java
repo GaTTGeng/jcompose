@@ -4258,9 +4258,9 @@ public final class ComposeService implements IComposeService {
             if (context.offline()) throw new IllegalStateException("Cannot publish when the Compose project context is offline.");
             ComposePublishOptions effectiveOptions = options == null
                     ? ComposePublishOptions.builder().build() : options;
-            if (effectiveOptions.withEnvironment() || effectiveOptions.ocIVersion() != null) {
+            if (effectiveOptions.ocIVersion() != null) {
                 throw new UnsupportedOperationException(
-                        "Environment-file layers and custom OCI versions are not supported yet.");
+                        "Custom OCI versions are not supported yet.");
             }
             ComposeProject project = loadComposeProject(context);
             List<ServiceDefinition> services = selectConfigurationServices(project, context.profiles(), null);
@@ -4284,7 +4284,6 @@ public final class ComposeService implements IComposeService {
             if (effectiveOptions.resolveImageDigests()) {
                 services = resolvePublishedImageDigests(services, registry);
             }
-            String composeYaml = ComposeConfigRenderer.render(project, services, context.projectName(), false);
             java.nio.file.Path publishDirectory;
             try {
                 publishDirectory = java.nio.file.Files.createTempDirectory("jcompose-publish-");
@@ -4293,12 +4292,22 @@ public final class ComposeService implements IComposeService {
             }
             java.nio.file.Path composeFile = publishDirectory.resolve("compose.yaml");
             try {
+                ComposeEnvFileLayers envFiles = effectiveOptions.withEnvironment()
+                        ? prepareComposeEnvFileLayers(services, context.workingDirectory(), publishDirectory)
+                        : new ComposeEnvFileLayers(java.util.Map.of(), List.of());
+                String composeYaml = ComposeConfigRenderer.render(project, services, context.projectName(),
+                        effectiveOptions.withEnvironment(), effectiveOptions.withEnvironment() ? envFiles.aliases() : null);
                 java.nio.file.Files.writeString(composeFile, composeYaml, StandardCharsets.UTF_8);
                 land.oras.ContainerRef target = land.oras.ContainerRef.parse(repository);
+                List<land.oras.LocalPath> artifactLayers = new ArrayList<>();
+                artifactLayers.add(land.oras.LocalPath.of(composeFile, "application/vnd.docker.compose.file+yaml"));
+                artifactLayers.addAll(envFiles.layers());
+                land.oras.Annotations annotations = composeArtifactFileAnnotations(artifactLayers);
                 land.oras.Manifest manifest = registry.pushArtifact(target,
-                        land.oras.ArtifactType.from("application/vnd.docker.compose.application"),
-                        land.oras.Annotations.empty(),
-                        land.oras.LocalPath.of(composeFile, "application/vnd.docker.compose.file+yaml"));
+                        land.oras.ArtifactType.from("application/vnd.docker.compose.project"),
+                        annotations,
+                        land.oras.Config.empty(), land.oras.OCI.PushOptions.defaults(),
+                        artifactLayers.toArray(land.oras.LocalPath[]::new));
                 return new PublishResult(repository, manifest.getDescriptor().getDigest().toString());
             } catch (java.io.IOException exception) {
                 throw new java.io.UncheckedIOException(exception);
@@ -4311,6 +4320,70 @@ public final class ComposeService implements IComposeService {
                 }
             }
         });
+    }
+
+    static ComposeEnvFileLayers prepareComposeEnvFileLayers(List<ServiceDefinition> services,
+                                                              java.nio.file.Path workingDirectory,
+                                                              java.nio.file.Path outputDirectory) throws java.io.IOException {
+        java.util.Map<String, String> aliases = new java.util.LinkedHashMap<>();
+        java.util.Map<java.nio.file.Path, String> layerNames = new java.util.LinkedHashMap<>();
+        List<land.oras.LocalPath> layers = new ArrayList<>();
+        for (ServiceDefinition service : services) {
+            Object envFile = service.configuration().get("env_file");
+            for (String reference : composeEnvFilePaths(envFile)) {
+                java.nio.file.Path source = java.nio.file.Path.of(reference);
+                java.nio.file.Path resolved = (source.isAbsolute() ? source : workingDirectory.resolve(source)).normalize();
+                String layerName = layerNames.get(resolved);
+                if (layerName == null) {
+                    String hash;
+                    try {
+                        byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                                .digest(resolved.toString().getBytes(StandardCharsets.UTF_8));
+                        hash = java.util.HexFormat.of().formatHex(digest);
+                    } catch (java.security.NoSuchAlgorithmException exception) {
+                        throw new IllegalStateException("SHA-256 is unavailable.", exception);
+                    }
+                    layerName = "env-" + hash + ".env";
+                    layerNames.put(resolved, layerName);
+                    java.nio.file.Path packaged = outputDirectory.resolve(layerName);
+                    if (java.nio.file.Files.exists(resolved)) {
+                        java.nio.file.Files.copy(resolved, packaged);
+                        layers.add(land.oras.LocalPath.of(packaged, "application/vnd.docker.compose.envfile"));
+                    }
+                }
+                aliases.put(reference, layerName);
+            }
+        }
+        return new ComposeEnvFileLayers(java.util.Map.copyOf(aliases), List.copyOf(layers));
+    }
+
+    private static List<String> composeEnvFilePaths(Object value) {
+        if (value instanceof String path) return List.of(path);
+        if (value instanceof List<?> list) {
+            List<String> paths = new ArrayList<>();
+            for (Object entry : list) paths.addAll(composeEnvFilePaths(entry));
+            return paths;
+        }
+        if (value instanceof java.util.Map<?, ?> map && map.get("path") instanceof String path) return List.of(path);
+        return List.of();
+    }
+
+    record ComposeEnvFileLayers(java.util.Map<String, String> aliases, List<land.oras.LocalPath> layers) { }
+
+    static land.oras.Annotations composeArtifactFileAnnotations(List<land.oras.LocalPath> layers) {
+        land.oras.Annotations annotations = land.oras.Annotations.empty();
+        for (land.oras.LocalPath layer : layers) {
+            String filename = layer.getPath().getFileName().toString();
+            java.util.Map<String, String> fileAnnotations = new java.util.LinkedHashMap<>();
+            fileAnnotations.put("org.opencontainers.image.title", filename);
+            if ("application/vnd.docker.compose.file+yaml".equals(layer.getMediaType())) {
+                fileAnnotations.put("com.docker.compose.file", filename);
+            } else if ("application/vnd.docker.compose.envfile".equals(layer.getMediaType())) {
+                fileAnnotations.put("com.docker.compose.envfile", filename);
+            }
+            annotations = annotations.withFileAnnotations(filename, fileAnnotations);
+        }
+        return annotations;
     }
 
     static void validatePublishServices(List<ServiceDefinition> services) {

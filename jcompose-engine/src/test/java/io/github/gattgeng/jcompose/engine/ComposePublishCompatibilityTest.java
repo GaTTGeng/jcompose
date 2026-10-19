@@ -46,21 +46,44 @@ class ComposePublishCompatibilityTest {
     }
 
     @Test
-    void rejectsUnsupportedEnvironmentLayersAndCustomOciVersion() {
+    void rejectsUnsupportedCustomOciVersion() {
         ComposeProjectContext context = new ComposeProjectContext("publish-test", Path.of("."));
 
-        CompletionException environmentFailure = assertThrows(CompletionException.class,
-                () -> new ComposeService().publishAsync(context, "example/application",
-                        ComposePublishOptions.builder().withEnvironment(true).build()).join());
         CompletionException versionFailure = assertThrows(CompletionException.class,
                 () -> new ComposeService().publishAsync(context, "example/application",
                         ComposePublishOptions.builder().ocIVersion("1.1").build()).join());
 
-        assertEquals(UnsupportedOperationException.class, environmentFailure.getCause().getClass());
         assertEquals(UnsupportedOperationException.class, versionFailure.getCause().getClass());
-        assertEquals("Environment-file layers and custom OCI versions are not supported yet.",
-                environmentFailure.getCause().getMessage());
-        assertEquals(environmentFailure.getCause().getMessage(), versionFailure.getCause().getMessage());
+        assertEquals("Custom OCI versions are not supported yet.", versionFailure.getCause().getMessage());
+    }
+
+    @Test
+    void packagesEnvironmentFilesAsOpaqueLayersAndRewritesComposeReferences(@TempDir Path directory) throws Exception {
+        Path envFile = directory.resolve("private.env");
+        Files.writeString(envFile, "TOKEN=local-secret\n");
+        ServiceDefinition service = new ServiceDefinition("app", Map.of(
+                "image", "example/app:latest", "env_file", envFile.toString()));
+        Path layersDirectory = Files.createDirectory(directory.resolve("layers"));
+
+        ComposeService.ComposeEnvFileLayers envLayers = ComposeService.prepareComposeEnvFileLayers(
+                List.of(service), directory, layersDirectory);
+        String yaml = ComposeConfigRenderer.render(
+                new io.github.gattgeng.jcompose.api.ComposeProject(directory.resolve("compose.yaml"),
+                        Map.of("app", service), List.of(), List.of(), List.of(), List.of(), Map.of()),
+                List.of(service), "publish-test", true, envLayers.aliases());
+
+        assertEquals(1, envLayers.layers().size());
+        assertEquals("application/vnd.docker.compose.envfile", envLayers.layers().getFirst().getMediaType());
+        assertTrue(Files.readString(envLayers.layers().getFirst().getPath()).contains("local-secret"));
+        assertTrue(yaml.contains(envLayers.aliases().get(envFile.toString())));
+        assertFalse(yaml.contains(envFile.toString()));
+
+        var annotations = ComposeService.composeArtifactFileAnnotations(List.of(
+                land.oras.LocalPath.of(layersDirectory.resolve("compose.yaml"),
+                        "application/vnd.docker.compose.file+yaml"), envLayers.layers().getFirst()));
+        assertEquals("compose.yaml", annotations.getFileAnnotations("compose.yaml").get("com.docker.compose.file"));
+        String envLayerName = envLayers.layers().getFirst().getPath().getFileName().toString();
+        assertEquals(envLayerName, annotations.getFileAnnotations(envLayerName).get("com.docker.compose.envfile"));
     }
 
     @Test

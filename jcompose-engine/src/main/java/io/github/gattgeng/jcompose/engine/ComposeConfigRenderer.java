@@ -21,15 +21,22 @@ final class ComposeConfigRenderer {
 
     static String render(ComposeProject project, List<ServiceDefinition> services, String projectName,
                          boolean withEnvironment) {
+        return render(project, services, projectName, withEnvironment, null);
+    }
+
+    static String render(ComposeProject project, List<ServiceDefinition> services, String projectName,
+                         boolean withEnvironment, Map<String, String> envFileAliases) {
         Map<String, Object> root = new LinkedHashMap<>();
         root.put("name", projectName);
 
         Map<String, Object> renderedServices = new LinkedHashMap<>();
         for (ServiceDefinition service : services) {
             Map<String, Object> configuration = new LinkedHashMap<>(service.configuration());
-            // The loader has already resolved env_file values into environment. Keeping the file
-            // reference would make the generated snapshot depend on the original local file.
-            configuration.remove("env_file");
+            // Environment files are omitted from snapshots unless their contents are packaged
+            // as OCI layers and their paths are rewritten to those packaged layer names.
+            Object envFile = configuration.get("env_file");
+            if (envFileAliases == null) configuration.remove("env_file");
+            else if (envFile != null) configuration.put("env_file", rewriteEnvFile(envFile, envFileAliases));
             if (!withEnvironment) configuration.remove("environment");
             renderedServices.put(service.name(), configuration);
         }
@@ -48,6 +55,22 @@ final class ComposeConfigRenderer {
         options.setPrettyFlow(true);
         options.setWidth(120);
         return new Yaml(options).dump(escapeInterpolation(root));
+    }
+
+    private static Object rewriteEnvFile(Object value, Map<String, String> aliases) {
+        if (value instanceof String path) return aliases.getOrDefault(path, path);
+        if (value instanceof List<?> list) {
+            List<Object> rewritten = new ArrayList<>(list.size());
+            for (Object entry : list) rewritten.add(rewriteEnvFile(entry, aliases));
+            return rewritten;
+        }
+        if (value instanceof Map<?, ?> map && map.get("path") instanceof String path) {
+            Map<String, Object> rewritten = new LinkedHashMap<>();
+            map.forEach((key, entry) -> rewritten.put(String.valueOf(key), entry));
+            rewritten.put("path", aliases.getOrDefault(path, path));
+            return rewritten;
+        }
+        return value;
     }
 
     private static void addNames(Map<String, Object> root, String key, List<String> names) {
