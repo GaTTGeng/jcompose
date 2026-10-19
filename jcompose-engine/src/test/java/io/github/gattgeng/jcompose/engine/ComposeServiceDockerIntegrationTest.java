@@ -8,6 +8,7 @@ import io.github.gattgeng.jcompose.api.ComposePauseOptions;
 import io.github.gattgeng.jcompose.api.ComposeProjectContext;
 import io.github.gattgeng.jcompose.api.ComposeRestartOptions;
 import io.github.gattgeng.jcompose.api.ComposeRunOptions;
+import io.github.gattgeng.jcompose.api.ComposeScaleOptions;
 import io.github.gattgeng.jcompose.api.ComposeStopOptions;
 import io.github.gattgeng.jcompose.api.ComposeTopOptions;
 import io.github.gattgeng.jcompose.api.IComposeService;
@@ -116,6 +117,63 @@ class ComposeServiceDockerIntegrationTest {
             try (var client = DockerClientFactory.create(context)) {
                 client.removeContainerCmd(containerId).withForce(true).withRemoveVolumes(false).exec();
             }
+        }
+    }
+
+    @Test
+    void scaleStartsDependenciesUnlessNoDepsIsSet() throws Exception {
+        String projectName = "jcompose-scale-deps-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: [sh, -c, 'sleep 300']
+                    depends_on: [db]
+                  db:
+                    image: busybox:1.36
+                    command: [sh, -c, 'sleep 300']
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            service.scaleAsync(context, ComposeScaleOptions.builder().services(java.util.Map.of("app", 1)).build())
+                    .get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+
+            var containers = service.psAsync(context, null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertTrue(containers.stream().anyMatch(container -> "db".equals(container.service())));
+            assertTrue(containers.stream().anyMatch(container -> "app".equals(container.service())));
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
+    void scaleNoDepsDoesNotStartDependencies() throws Exception {
+        String projectName = "jcompose-scale-nodeps-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: [sh, -c, 'sleep 300']
+                    depends_on: [db]
+                  db:
+                    image: busybox:1.36
+                    command: [sh, -c, 'sleep 300']
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            service.scaleAsync(context, ComposeScaleOptions.builder().services(java.util.Map.of("app", 1))
+                            .noDeps(true).build())
+                    .get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+
+            var containers = service.psAsync(context, null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertTrue(containers.stream().anyMatch(container -> "app".equals(container.service())));
+            assertFalse(containers.stream().anyMatch(container -> "db".equals(container.service())));
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
         }
     }
 

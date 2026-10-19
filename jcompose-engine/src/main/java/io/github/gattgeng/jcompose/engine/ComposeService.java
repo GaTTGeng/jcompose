@@ -3817,29 +3817,34 @@ public final class ComposeService implements IComposeService {
             ComposeProject project = loadComposeProject(context);
             List<String> requested = List.copyOf(options.services().keySet());
             List<ServiceDefinition> selected = selectConfigurationServices(project, context.profiles(), requested);
-            Map<String, ServiceDefinition> definitions = new LinkedHashMap<>();
-            selected.forEach(service -> definitions.put(service.name(), service));
-            for (Map.Entry<String, Integer> entry : options.services().entrySet()) {
-                ServiceDefinition service = definitions.get(entry.getKey());
-                if (service != null) {
-                    validateRunnableService(service);
-                    validateContainerNameScaling(service, entry.getValue());
-                }
+            for (ServiceDefinition service : selected) {
+                validateRunnableService(service);
+                validateContainerNameScaling(service, options.services().get(service.name()));
             }
             try (DockerClient client = createDockerClient(context)) {
                 ensureProjectResources(client, context.projectName(), project);
+                List<ServiceDefinition> ordered = options.noDeps() ? selected
+                        : dependencyOrderedServices(project, selected, effectiveProfiles(selected, context.profiles()));
+                java.util.Set<String> requestedServices = options.services().keySet();
                 List<ServiceStatus> results = new ArrayList<>();
-                for (Map.Entry<String, Integer> entry : options.services().entrySet()) {
-                    String serviceName = entry.getKey();
-                    int desired = entry.getValue();
+                for (ServiceDefinition service : ordered) {
+                    String serviceName = service.name();
+                    int desired = requestedServices.contains(serviceName)
+                            ? options.services().get(serviceName) : replicaCount(service);
                     if (desired < 0) throw new IllegalArgumentException("Replica count must not be negative for service '" + serviceName + "'.");
-                    ensureServiceContainers(client, context, project, definitions.get(serviceName), desired,
+                    validateContainerNameScaling(service, desired);
+                    ensureServiceContainers(client, context, project, service, desired,
                             false, false, false, true, positiveTimeout(options.timeoutSeconds()), null);
-                    List<Container> containers = projectContainers(client, context.projectName(), List.of(serviceName), true);
-                    long running = containers.stream()
-                            .filter(container -> !"true".equalsIgnoreCase(label(container, ComposeConstants.ONE_OFF_LABEL)))
-                            .filter(ComposeService::isRunning).count();
-                    results.add(new ServiceStatus(serviceName, desired, Math.toIntExact(running), List.of(), List.of()));
+                    if (requestedServices.contains(serviceName)) {
+                        List<Container> containers = projectContainers(client, context.projectName(), List.of(serviceName), true);
+                        long running = containers.stream()
+                                .filter(container -> !"true".equalsIgnoreCase(label(container, ComposeConstants.ONE_OFF_LABEL)))
+                                .filter(ComposeService::isRunning).count();
+                        results.add(new ServiceStatus(serviceName, desired, Math.toIntExact(running), List.of(), List.of()));
+                    } else {
+                        awaitDependencies(client, project, context.projectName(), service, null,
+                                effectiveProfiles(selected, context.profiles()));
+                    }
                 }
                 return List.copyOf(results);
             } catch (java.io.IOException exception) {

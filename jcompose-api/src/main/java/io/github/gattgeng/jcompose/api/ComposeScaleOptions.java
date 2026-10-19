@@ -7,7 +7,7 @@ import java.util.Objects;
  * Options describing the desired replica counts per service.
  * @param services Desired replica count per service name. These counts are applied directly and take precedence over <code>deploy.replicas</code> declared in the Compose file.
  * @param timeoutSeconds Grace period in seconds when stopping surplus containers.
- * @param noDeps Do not also rescale the selection's dependency services.
+ * @param noDeps Do not start the selected services' dependencies.
  */
 public record ComposeScaleOptions(
         Map<String, Integer> services,
@@ -41,8 +41,8 @@ public record ComposeScaleOptions(
         public Builder timeoutSeconds(Integer value) { this.timeoutSeconds = value; return this; }
 
         /**
-         * Do not also rescale the selection's dependency services.
-         * @param value Do not also rescale the selection's dependency services.
+         * Do not start the selected services' dependencies.
+         * @param value Do not start the selected services' dependencies.
          * @return this builder
          */
         public Builder noDeps(boolean value) { this.noDeps = value; return this; }
