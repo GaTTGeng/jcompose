@@ -4312,14 +4312,19 @@ public final class ComposeService implements IComposeService {
             } catch (java.io.IOException exception) {
                 throw new java.io.UncheckedIOException(exception);
             } finally {
-                try {
-                    java.nio.file.Files.deleteIfExists(composeFile);
-                    java.nio.file.Files.deleteIfExists(publishDirectory);
-                } catch (java.io.IOException exception) {
-                    throw new java.io.UncheckedIOException(exception);
-                }
+                deletePublishDirectory(publishDirectory);
             }
         });
+    }
+
+    static void deletePublishDirectory(java.nio.file.Path directory) {
+        try (var paths = java.nio.file.Files.walk(directory)) {
+            for (java.nio.file.Path path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                java.nio.file.Files.deleteIfExists(path);
+            }
+        } catch (java.io.IOException exception) {
+            throw new java.io.UncheckedIOException(exception);
+        }
     }
 
     static ComposeEnvFileLayers prepareComposeEnvFileLayers(List<ServiceDefinition> services,

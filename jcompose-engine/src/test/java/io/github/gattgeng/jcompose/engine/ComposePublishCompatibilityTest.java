@@ -87,6 +87,18 @@ class ComposePublishCompatibilityTest {
     }
 
     @Test
+    void removesPublishDirectoryIncludingEnvironmentLayers(@TempDir Path directory) throws Exception {
+        Path publishDirectory = Files.createDirectory(directory.resolve("publish"));
+        Path envLayerDirectory = Files.createDirectory(publishDirectory.resolve("nested"));
+        Files.writeString(publishDirectory.resolve("compose.yaml"), "services: {}\n");
+        Files.writeString(envLayerDirectory.resolve("env-secret.env"), "TOKEN=value\n");
+
+        ComposeService.deletePublishDirectory(publishDirectory);
+
+        assertFalse(Files.exists(publishDirectory));
+    }
+
+    @Test
     void publishArtifactOmitsEnvironmentByDefault() {
         ServiceDefinition service = new ServiceDefinition("app", Map.of(
                 "image", "example/app:latest", "environment", Map.of("TOKEN", "secret-value")));
