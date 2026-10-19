@@ -77,11 +77,16 @@ public final class ComposeService implements IComposeService {
         this.loader = java.util.Objects.requireNonNull(loader, "loader");
     }
 
+    private ComposeProject loadComposeProject(ComposeProjectContext context) {
+        return loader.loadProject(context.workingDirectory(), context.composeFileName(),
+                Map.of("COMPOSE_PROJECT_NAME", context.projectName()));
+    }
+
     @Override
     public CompletableFuture<ComposeProjectConfig> loadProject(ComposeProjectContext context) {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
-            ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
+            ComposeProject project = loadComposeProject(context);
             List<ServiceDefinition> services = selectConfigurationServices(project, context.profiles(), null);
             return projectConfig(project, services, context.projectName(), context.composeFileName(), null);
         });
@@ -93,7 +98,7 @@ public final class ComposeService implements IComposeService {
             java.util.Objects.requireNonNull(context, "context");
             ComposeProject project = null;
             if (loader.hasComposeFile(context.workingDirectory(), context.composeFileName())) {
-                project = loader.loadProject(context.workingDirectory(), context.composeFileName());
+                project = loadComposeProject(context);
             } else if (context.profiles() != null && !context.profiles().isEmpty()) {
                 throw new IllegalArgumentException("Cannot select profiles because no Compose file exists under "
                         + context.workingDirectory());
@@ -162,7 +167,7 @@ public final class ComposeService implements IComposeService {
             List<String> requestedServices = options == null ? null : options.services();
             List<String> selectedServices = selectExistingServices(context, requestedServices).serviceNames();
             if ((options == null || !options.noDeps()) && loader.hasComposeFile(context.workingDirectory(), context.composeFileName())) {
-                ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
+                ComposeProject project = loadComposeProject(context);
                 java.util.LinkedHashSet<String> restartServices = new java.util.LinkedHashSet<>(selectedServices);
                 Set<String> enabledProfiles = Set.copyOf(effectiveProfiles(selectedServices.stream()
                         .map(project.services()::get).filter(java.util.Objects::nonNull).toList(), context.profiles()));
@@ -272,7 +277,7 @@ public final class ComposeService implements IComposeService {
                 throw new IllegalArgumentException("Invalid image removal policy '" + removeImages + "'; expected 'local' or 'all'.");
             ExistingServiceSelection selection = selectExistingServices(context, options == null ? null : options.services());
             ComposeProject project = loader.hasComposeFile(context.workingDirectory(), context.composeFileName())
-                    ? loader.loadProject(context.workingDirectory(), context.composeFileName()) : null;
+                    ? loadComposeProject(context) : null;
             List<Container> containers = new ArrayList<>(projectContainers(client, context.projectName(), selection.serviceNames()));
             if (options != null && options.removeOrphans() && project != null) {
                 java.util.Set<String> containerIds = containers.stream().map(Container::getId).collect(java.util.stream.Collectors.toSet());
@@ -591,7 +596,7 @@ public final class ComposeService implements IComposeService {
                     ? context.projectName() : options.projectName();
             if (projectName.isBlank()) throw new IllegalArgumentException("projectName must not be blank");
 
-            ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
+            ComposeProject project = loadComposeProject(context);
             List<ServiceDefinition> services = selectConfigurationServices(project, context.profiles(),
                     options == null ? null : options.services());
             String yaml = ComposeConfigRenderer.render(project, services, projectName);
@@ -629,7 +634,7 @@ public final class ComposeService implements IComposeService {
     public CompletableFuture<String> vizAsync(ComposeProjectContext context) {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
-            ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
+            ComposeProject project = loadComposeProject(context);
             List<ServiceDefinition> services = selectConfigurationServices(project, context.profiles(), null);
             StringBuilder graph = new StringBuilder("digraph ").append(quote(context.projectName())).append(" {\n  rankdir=LR;\n");
             for (ServiceDefinition service : services) {
@@ -685,7 +690,7 @@ public final class ComposeService implements IComposeService {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
             if (context.offline()) throw new IllegalStateException("Cannot pull images when the Compose project context is offline.");
-            ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
+            ComposeProject project = loadComposeProject(context);
             List<ServiceDefinition> selected = selectConfigurationServices(project, context.profiles(),
                     options == null ? null : options.services());
             if (options != null && options.includeDeps())
@@ -720,7 +725,7 @@ public final class ComposeService implements IComposeService {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
             if (context.offline()) throw new IllegalStateException("Cannot push images when the Compose project context is offline.");
-            ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
+            ComposeProject project = loadComposeProject(context);
             List<ServiceDefinition> selected = selectConfigurationServices(project, context.profiles(),
                     options == null ? null : options.services());
             try (DockerClient client = createDockerClient(context)) {
@@ -1066,7 +1071,7 @@ public final class ComposeService implements IComposeService {
     private ExistingServiceSelection selectExistingServices(ComposeProjectContext context, List<String> explicitServices) {
         List<String> requestedServices = explicitServices == null || explicitServices.isEmpty() ? null : explicitServices;
         if (loader.hasComposeFile(context.workingDirectory(), context.composeFileName())) {
-            ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
+            ComposeProject project = loadComposeProject(context);
             List<ServiceDefinition> selected = selectConfigurationServices(project, context.profiles(), requestedServices);
             boolean includesAllDefinedServices = requestedServices == null && selected.size() == project.services().size();
             return new ExistingServiceSelection(selected.stream().map(ServiceDefinition::name).toList(), includesAllDefinedServices);
@@ -3127,7 +3132,7 @@ public final class ComposeService implements IComposeService {
             java.util.Set<String> services = null;
             if (loader.hasComposeFile(context.workingDirectory(), context.composeFileName())
                     || context.profiles() != null && !context.profiles().isEmpty()) {
-                ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
+                ComposeProject project = loadComposeProject(context);
                 services = selectConfigurationServices(project, context.profiles(), options.services()).stream()
                         .map(ServiceDefinition::name).collect(java.util.stream.Collectors.toSet());
                 List<String> declaredNetworks = project.networks().isEmpty() ? List.of("default") : project.networks();
@@ -3204,7 +3209,7 @@ public final class ComposeService implements IComposeService {
     public CompletableFuture<Void> buildAsync(ComposeProjectContext context, ComposeBuildOptions options) {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
-            ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
+            ComposeProject project = loadComposeProject(context);
             List<ServiceDefinition> selected = selectConfigurationServices(project, context.profiles(),
                     options == null ? null : options.services());
             selected.forEach(ComposeService::validateBuildLabels);
@@ -3307,7 +3312,7 @@ public final class ComposeService implements IComposeService {
                 throw new IllegalArgumentException("forceRecreate and noRecreate cannot both be enabled.");
             if (effective.alwaysRecreateDeps() && effective.noRecreate())
                 throw new IllegalArgumentException("alwaysRecreateDeps cannot be enabled with noRecreate.");
-            ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
+            ComposeProject project = loadComposeProject(context);
             List<ServiceDefinition> requested = selectConfigurationServices(project, context.profiles(), effective.services());
             List<String> effectiveProfiles = effectiveProfiles(requested, context.profiles());
             List<ServiceDefinition> selected = dependencyOrderedServices(project, requested, effectiveProfiles);
@@ -3398,7 +3403,7 @@ public final class ComposeService implements IComposeService {
             java.util.Objects.requireNonNull(context, "context");
             if (effective.forceRecreate() && effective.noRecreate())
                 throw new IllegalArgumentException("forceRecreate and noRecreate cannot both be enabled.");
-            ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
+            ComposeProject project = loadComposeProject(context);
             List<ServiceDefinition> requested = selectConfigurationServices(project, context.profiles(), effective.services());
             List<ServiceDefinition> selected = dependencyOrderedServices(project, requested,
                     effectiveProfiles(requested, context.profiles()));
@@ -3441,7 +3446,7 @@ public final class ComposeService implements IComposeService {
         ComposeRunOptions effective = options == null ? ComposeRunOptions.builder().build() : options;
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
-            ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
+            ComposeProject project = loadComposeProject(context);
             ServiceDefinition service = selectConfigurationServices(project, context.profiles(), List.of(serviceName))
                     .stream().findFirst().orElseThrow(() -> new IllegalArgumentException("Service '" + serviceName + "' not found."));
             List<String> effectiveProfiles = effectiveProfiles(List.of(service), context.profiles());
@@ -3718,7 +3723,7 @@ public final class ComposeService implements IComposeService {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
             java.util.Objects.requireNonNull(options, "options");
-            ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
+            ComposeProject project = loadComposeProject(context);
             List<String> requested = List.copyOf(options.services().keySet());
             List<ServiceDefinition> selected = selectConfigurationServices(project, context.profiles(), requested);
             Map<String, ServiceDefinition> definitions = new LinkedHashMap<>();
@@ -3802,7 +3807,7 @@ public final class ComposeService implements IComposeService {
         java.util.Objects.requireNonNull(context, "context");
         ComposeWatchOptions effective = options == null ? ComposeWatchOptions.builder().build() : options;
         if (effective.prune()) throw new UnsupportedOperationException("Pruning build artifacts is not supported by watch.");
-        ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
+        ComposeProject project = loadComposeProject(context);
         Path projectDirectory = project.sourceFile().getParent();
         List<BuildContextWatcher.Registration> registrations = new ArrayList<>();
         for (ServiceDefinition service : selectConfigurationServices(project, context.profiles(), effective.services())) {
@@ -3906,7 +3911,7 @@ public final class ComposeService implements IComposeService {
             if (options != null && (options.resolveImageDigests() || options.withEnvironment()
                     || options.ocIVersion() != null && !options.ocIVersion().isBlank() || options.insecureRegistry()))
                 throw new UnsupportedOperationException("Digest resolution, environment packaging, OCI version selection, and insecure registries are not supported by this publish implementation.");
-            ComposeProject project = loader.loadProject(context.workingDirectory(), context.composeFileName());
+            ComposeProject project = loadComposeProject(context);
             List<ServiceDefinition> selected = selectConfigurationServices(project, context.profiles(), null);
             try (DockerClient client = createDockerClient(context)) {
                 List<PublishResult> results = new ArrayList<>();

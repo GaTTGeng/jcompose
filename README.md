@@ -94,7 +94,7 @@ The loader reads Compose YAML, `.env`, and service `env_file` inputs, performs v
 
 ### Variable interpolation and environment files
 
-The loader supports `$NAME`, `${NAME}`, `$$`, and the `:-`, `-`, `:?`, `?`, `:+`, and `+` interpolation operators. The process environment takes precedence over project `.env` values. Service `env_file` values contribute to that service's container environment; they are not an interpolation source. Inline environment values take precedence over values from those files.
+The loader supports `$NAME`, `${NAME}`, `$$`, and the `:-`, `-`, `:?`, `?`, `:+`, and `+` interpolation operators. The process environment takes precedence over project `.env` values. Engine operations expose the project name from `ComposeProjectContext` as `COMPOSE_PROJECT_NAME` for interpolation, taking precedence over process and `.env` values. Service `env_file` values contribute to that service's container environment; they are not an interpolation source. Inline environment values take precedence over values from those files.
 
 `ComposeFileMerger.mergeWithEnv` applies explicit environment overrides to that merge only, ahead of process environment and `.env` values. It does not modify process-wide environment variables, so concurrent merges remain isolated.
 
