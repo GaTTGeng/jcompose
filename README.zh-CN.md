@@ -58,7 +58,7 @@ import java.nio.file.Path;
 var compose = new ComposeService();
 var project = new ComposeProjectContext("inventory-dev", Path.of("C:/src/inventory"));
 
-var config = compose.loadProject(project).join();
+var config = compose.loadProject(project);
 System.out.println(config.services().keySet());
 ```
 
@@ -81,7 +81,7 @@ class InventoryCompose {
 
     void load(Path workingDirectory) {
         var project = contexts.create("inventory-dev", workingDirectory);
-        compose.loadProject(project).join();
+        compose.loadProject(project);
     }
 }
 ```

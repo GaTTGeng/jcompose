@@ -91,12 +91,17 @@ public final class ComposeService implements IComposeService {
     }
 
     @Override
-    public CompletableFuture<ComposeProjectConfig> loadProject(ComposeProjectContext context) {
+    public ComposeProjectConfig loadProject(ComposeProjectContext context) {
+        java.util.Objects.requireNonNull(context, "context");
+        ComposeProject project = loadComposeProject(context);
+        List<ServiceDefinition> services = selectConfigurationServices(project, context.profiles(), null);
+        return projectConfig(project, services, context.projectName(), context.composeFiles(), null);
+    }
+
+    @Override
+    public CompletableFuture<ComposeProjectConfig> loadProjectAsync(ComposeProjectContext context) {
         return supply(() -> {
-            java.util.Objects.requireNonNull(context, "context");
-            ComposeProject project = loadComposeProject(context);
-            List<ServiceDefinition> services = selectConfigurationServices(project, context.profiles(), null);
-            return projectConfig(project, services, context.projectName(), context.composeFiles(), null);
+            return loadProject(context);
         });
     }
 

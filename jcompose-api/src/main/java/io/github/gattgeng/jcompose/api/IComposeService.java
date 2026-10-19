@@ -5,13 +5,17 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Flow;
 
 /**
- * Asynchronous in-process operations over project-labeled Docker Engine resources.
+ * In-process configuration and asynchronous operations over project-labeled Docker Engine resources.
  * Cancelling an operation future with {@code cancel(true)} interrupts its worker and closes
  * Docker clients owned by that operation. Cancellation of a Docker request already in progress
  * depends on the configured transport responding to client closure or thread interruption.
  */
 public interface IComposeService {
-    CompletableFuture<ComposeProjectConfig> loadProject(ComposeProjectContext context);
+    /** Loads the selected Compose configuration without connecting to Docker. */
+    ComposeProjectConfig loadProject(ComposeProjectContext context);
+
+    /** Loads the selected Compose configuration asynchronously without connecting to Docker. */
+    CompletableFuture<ComposeProjectConfig> loadProjectAsync(ComposeProjectContext context);
     CompletableFuture<Void> buildAsync(ComposeProjectContext c, ComposeBuildOptions o);
     CompletableFuture<Void> upAsync(ComposeProjectContext c, ComposeUpOptions o);
     CompletableFuture<Void> downAsync(ComposeProjectContext c, ComposeDownOptions o);
