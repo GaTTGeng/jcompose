@@ -42,4 +42,29 @@ class ComposeGenerateEnvironmentTest {
         assertEquals("context-project", config.environment().get("COMPOSE_PROJECT_NAME"));
         org.junit.jupiter.api.Assertions.assertTrue(config.renderedYaml().contains("echo context-project"));
     }
+
+    @Test
+    void generatesConfigurationFromOrderedComposeFiles() throws Exception {
+        Files.writeString(directory.resolve("base.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    command: base
+                """);
+        Files.writeString(directory.resolve("local.yaml"), """
+                services:
+                  app:
+                    command: local
+                  worker:
+                    image: busybox
+                """);
+        var context = new ComposeProjectContext("test", directory, "base.yaml", null,
+                null, null, false, false, java.util.List.of("base.yaml", "local.yaml"));
+
+        var config = new ComposeService().generateAsync(context, null).join();
+
+        assertEquals(java.util.List.of("base.yaml", "local.yaml"), config.configFiles());
+        assertEquals(java.util.Set.of("app", "worker"), java.util.Set.copyOf(config.services()));
+        org.junit.jupiter.api.Assertions.assertTrue(config.renderedYaml().contains("command: local"));
+    }
 }

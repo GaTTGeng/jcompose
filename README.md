@@ -86,7 +86,7 @@ class InventoryCompose {
 }
 ```
 
-Configure optional defaults with `jcompose.default-project-name` and `jcompose.default-socket-path`. The socket path accepts the Docker endpoint syntax supported by docker-java; leave it unset to use docker-java discovery. The project factory prefers Docker Compose's canonical `compose.yaml` filename and falls back to other conventional Compose filenames when it is absent. Each caller can provide profiles or a different Compose file.
+Configure optional defaults with `jcompose.default-project-name` and `jcompose.default-socket-path`. The socket path accepts the Docker endpoint syntax supported by docker-java; leave it unset to use docker-java discovery. The project factory prefers Docker Compose's canonical `compose.yaml` filename and falls back to other conventional Compose filenames when it is absent. Each caller can provide profiles, one Compose file, or an ordered list of Compose files through `ComposeProjectContext.composeFiles`; overlays are merged in order using the loader's documented rules.
 
 ## What the loader understands
 

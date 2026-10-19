@@ -79,8 +79,15 @@ public final class ComposeService implements IComposeService {
     }
 
     private ComposeProject loadComposeProject(ComposeProjectContext context) {
-        return loader.loadProject(context.workingDirectory(), context.composeFileName(),
-                Map.of("COMPOSE_PROJECT_NAME", context.projectName()));
+        Map<String, String> environment = Map.of("COMPOSE_PROJECT_NAME", context.projectName());
+        if (context.composeFiles().size() == 1) {
+            return loader.loadProject(context.workingDirectory(), context.composeFiles().getFirst(), environment);
+        }
+        return loader.loadMerged(context.workingDirectory(), context.composeFiles(), environment);
+    }
+
+    private boolean hasComposeFile(ComposeProjectContext context) {
+        return context.composeFiles().stream().anyMatch(file -> loader.hasComposeFile(context.workingDirectory(), file));
     }
 
     @Override
@@ -89,7 +96,7 @@ public final class ComposeService implements IComposeService {
             java.util.Objects.requireNonNull(context, "context");
             ComposeProject project = loadComposeProject(context);
             List<ServiceDefinition> services = selectConfigurationServices(project, context.profiles(), null);
-            return projectConfig(project, services, context.projectName(), context.composeFileName(), null);
+            return projectConfig(project, services, context.projectName(), context.composeFiles(), null);
         });
     }
 
@@ -98,7 +105,7 @@ public final class ComposeService implements IComposeService {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
             ComposeProject project = null;
-            if (loader.hasComposeFile(context.workingDirectory(), context.composeFileName())) {
+            if (hasComposeFile(context)) {
                 project = loadComposeProject(context);
             } else if (context.profiles() != null && !context.profiles().isEmpty()) {
                 throw new IllegalArgumentException("Cannot select profiles because no Compose file exists under "
@@ -216,7 +223,7 @@ public final class ComposeService implements IComposeService {
             List<String> requestedServices = options == null ? null : options.services();
             ExistingServiceSelection selection = selectExistingServices(context, requestedServices);
             List<String> selectedServices = selection.serviceNames();
-            if ((options == null || !options.noDeps()) && loader.hasComposeFile(context.workingDirectory(), context.composeFileName())) {
+            if ((options == null || !options.noDeps()) && hasComposeFile(context)) {
                 ComposeProject project = loadComposeProject(context);
                 java.util.LinkedHashSet<String> restartServices = new java.util.LinkedHashSet<>(selectedServices);
                 Set<String> enabledProfiles = Set.copyOf(effectiveProfiles(selectedServices.stream()
@@ -330,7 +337,7 @@ public final class ComposeService implements IComposeService {
             if (removeImages != null && !removeImages.equals("all") && !removeImages.equals("local"))
                 throw new IllegalArgumentException("Invalid image removal policy '" + removeImages + "'; expected 'local' or 'all'.");
             ExistingServiceSelection selection = selectExistingServices(context, options == null ? null : options.services());
-            ComposeProject project = loader.hasComposeFile(context.workingDirectory(), context.composeFileName())
+            ComposeProject project = hasComposeFile(context)
                     ? loadComposeProject(context) : null;
             List<Container> containers = new ArrayList<>(projectContainers(client, context.projectName(), selection.serviceNames()));
             if (options != null && options.removeOrphans() && project != null) {
@@ -655,21 +662,23 @@ public final class ComposeService implements IComposeService {
             List<ServiceDefinition> services = selectConfigurationServices(project, context.profiles(),
                     options == null ? null : options.services());
             String yaml = ComposeConfigRenderer.render(project, services, projectName);
-            return projectConfig(project, services, projectName, context.composeFileName(), yaml);
+            return projectConfig(project, services, projectName, context.composeFiles(), yaml);
         });
     }
 
     private static ComposeProjectConfig projectConfig(ComposeProject project, List<ServiceDefinition> services,
                                                        String projectName,
-                                                       String composeFileName,
+                                                       List<String> composeFiles,
                                                        String renderedYaml) {
         return new ComposeProjectConfig(projectName, project.sourceFile().getParent().toString(),
-                projectConfigFiles(project, composeFileName), services.stream().map(ServiceDefinition::name).toList(),
+                projectConfigFiles(project, composeFiles), services.stream().map(ServiceDefinition::name).toList(),
                 project.networks(), project.volumes(), project.secrets(), project.configs(), project.environment(), renderedYaml);
     }
 
-    private static List<String> projectConfigFiles(ComposeProject project, String composeFileName) {
-        List<String> files = new ArrayList<>(List.of(composeFileName));
+    private static List<String> projectConfigFiles(ComposeProject project, List<String> composeFiles) {
+        if (composeFiles.size() != 1) return List.copyOf(composeFiles);
+        String composeFileName = composeFiles.getFirst();
+        List<String> files = new ArrayList<>(composeFiles);
         Path requested = Path.of(composeFileName);
         if (requested.isAbsolute() || requested.getNameCount() != 1) return List.copyOf(files);
         String baseName = project.sourceFile().getFileName().toString();
@@ -1134,7 +1143,7 @@ public final class ComposeService implements IComposeService {
 
     private ExistingServiceSelection selectExistingServices(ComposeProjectContext context, List<String> explicitServices) {
         List<String> requestedServices = explicitServices == null || explicitServices.isEmpty() ? null : explicitServices;
-        if (loader.hasComposeFile(context.workingDirectory(), context.composeFileName())) {
+        if (hasComposeFile(context)) {
             ComposeProject project = loadComposeProject(context);
             List<ServiceDefinition> selected = selectConfigurationServices(project, context.profiles(), requestedServices);
             boolean includesAllDefinedServices = requestedServices == null && selected.size() == project.services().size();
@@ -3225,7 +3234,7 @@ public final class ComposeService implements IComposeService {
             java.util.Set<String> networks = new java.util.HashSet<>();
             java.util.Set<String> volumes = new java.util.HashSet<>();
             java.util.Set<String> services = null;
-            if (loader.hasComposeFile(context.workingDirectory(), context.composeFileName())
+            if (hasComposeFile(context)
                     || context.profiles() != null && !context.profiles().isEmpty()) {
                 ComposeProject project = loadComposeProject(context);
                 services = selectConfigurationServices(project, context.profiles(), options.services()).stream()
@@ -4052,7 +4061,10 @@ public final class ComposeService implements IComposeService {
                     || effectiveOptions.ocIVersion() != null) {
                 throw new UnsupportedOperationException("Image digest resolution, environment layers, and custom OCI versions are not supported yet.");
             }
-            java.nio.file.Path composeFile = context.workingDirectory().resolve(context.composeFileName()).normalize();
+            if (context.composeFiles().size() != 1) {
+                throw new UnsupportedOperationException("Publishing multiple Compose files as one OCI artifact is not supported yet.");
+            }
+            java.nio.file.Path composeFile = context.workingDirectory().resolve(context.composeFiles().getFirst()).normalize();
             if (!composeFile.startsWith(context.workingDirectory()) || !java.nio.file.Files.isRegularFile(composeFile)) {
                 throw new IllegalArgumentException("Compose file does not exist: " + composeFile);
             }
