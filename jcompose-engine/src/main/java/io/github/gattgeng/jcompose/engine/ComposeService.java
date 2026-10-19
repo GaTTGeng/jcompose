@@ -3401,7 +3401,8 @@ public final class ComposeService implements IComposeService {
             ComposeProject project = loadComposeProject(context);
             List<ServiceDefinition> requested = selectConfigurationServices(project, context.profiles(), effective.services());
             List<String> effectiveProfiles = effectiveProfiles(requested, context.profiles());
-            List<ServiceDefinition> selected = dependencyOrderedServices(project, requested, effectiveProfiles);
+            List<ServiceDefinition> selected = effective.noDeps() ? requested
+                    : dependencyOrderedServices(project, requested, effectiveProfiles);
             selected.forEach(ComposeService::validateServiceLabelConfiguration);
             for (ServiceDefinition service : selected) {
                 validateRunnableService(service);
@@ -3423,7 +3424,7 @@ public final class ComposeService implements IComposeService {
                 if (effective.removeOrphans()) removeOrphanContainers(client, context.projectName(), project);
                 Set<String> updatedServices = new java.util.LinkedHashSet<>();
                 for (ServiceDefinition service : selected) {
-                    if (!effective.noStart()) awaitDependencies(client, project, context.projectName(), service,
+                    if (!effective.noStart() && !effective.noDeps()) awaitDependencies(client, project, context.projectName(), service,
                             effective.dependencyWaitTimeoutSeconds(), effectiveProfiles);
                     List<String> previousContainerIds = serviceContainerIds(client, context.projectName(), service.name());
                     String image = service.image() == null || service.image().isBlank()
