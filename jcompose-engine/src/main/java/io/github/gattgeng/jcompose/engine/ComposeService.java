@@ -4120,9 +4120,8 @@ public final class ComposeService implements IComposeService {
                     String taggedImage = repository + ":" + service.name();
                     try {
                         client.tagImageCmd(service.image(), repository, service.name()).exec();
-                    } catch (java.util.concurrent.CancellationException failure) {
-                        throw failure;
                     } catch (RuntimeException failure) {
+                        if (!isImageTagFailure(failure)) throw failure;
                         results.add(new ImagePublishResult(service.name(), service.image(), taggedImage,
                                 false, false, "Tag failed: " + failure.getMessage()));
                         continue;
@@ -4132,9 +4131,8 @@ public final class ComposeService implements IComposeService {
                         pushImage(client, context.registryAuth(), taggedImage);
                         results.add(new ImagePublishResult(service.name(), service.image(), taggedImage,
                                 true, true, null));
-                    } catch (java.util.concurrent.CancellationException failure) {
-                        throw failure;
                     } catch (RuntimeException failure) {
+                        if (!isImagePushFailure(failure)) throw failure;
                         results.add(new ImagePublishResult(service.name(), service.image(), taggedImage,
                                 true, false, "Push failed: " + failure.getMessage()));
                     }
@@ -4144,6 +4142,15 @@ public final class ComposeService implements IComposeService {
             }
             return List.copyOf(results);
         });
+    }
+
+    static boolean isImageTagFailure(Throwable failure) {
+        return failure instanceof DockerException;
+    }
+
+    static boolean isImagePushFailure(Throwable failure) {
+        return !(failure instanceof java.util.concurrent.CancellationException)
+                && (failure instanceof DockerException || failure instanceof IllegalStateException);
     }
 
     String publishComposeYaml(ComposeProjectContext context) {

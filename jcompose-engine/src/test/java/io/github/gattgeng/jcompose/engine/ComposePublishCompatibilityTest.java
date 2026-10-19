@@ -12,10 +12,27 @@ import java.util.List;
 import java.util.concurrent.CompletionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ComposePublishCompatibilityTest {
+    @Test
+    void convertsOnlyDockerAndRegistryPushFailuresIntoPerServiceResults() {
+        RuntimeException dockerFailure = new com.github.dockerjava.api.exception.DockerException("Docker error", 500);
+        RuntimeException registryFailure = new IllegalStateException("registry rejected push");
+        RuntimeException unexpectedFailure = new IllegalArgumentException("invalid internal state");
+        RuntimeException cancellation = new java.util.concurrent.CancellationException();
+
+        assertTrue(ComposeService.isImageTagFailure(dockerFailure));
+        assertFalse(ComposeService.isImageTagFailure(registryFailure));
+        assertFalse(ComposeService.isImageTagFailure(cancellation));
+        assertTrue(ComposeService.isImagePushFailure(dockerFailure));
+        assertTrue(ComposeService.isImagePushFailure(registryFailure));
+        assertFalse(ComposeService.isImagePushFailure(unexpectedFailure));
+        assertFalse(ComposeService.isImagePushFailure(cancellation));
+    }
+
     @Test
     void rejectsOptionsThatWouldOtherwiseBeSilentlyIgnored() {
         ComposeProjectContext context = new ComposeProjectContext("publish-test", Path.of("."));
