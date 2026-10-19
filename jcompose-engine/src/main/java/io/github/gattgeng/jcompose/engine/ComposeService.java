@@ -4094,12 +4094,14 @@ public final class ComposeService implements IComposeService {
     static List<Path> collectWatchFiles(Path sourceRoot, Map<String, Object> rule,
                                        java.util.function.Predicate<Path> dockerIgnored) throws java.io.IOException {
         if (Files.isRegularFile(sourceRoot, java.nio.file.LinkOption.NOFOLLOW_LINKS))
-            return watchPathIncluded(rule, sourceRoot.getFileName()) && !dockerIgnored.test(sourceRoot)
+            return watchPathIncluded(rule, sourceRoot.getFileName()) && !BuildContextWatcher.isEphemeral(sourceRoot.getFileName())
+                    && !dockerIgnored.test(sourceRoot)
                     ? List.of(sourceRoot) : List.of();
         if (!Files.isDirectory(sourceRoot)) return List.of();
         try (var paths = Files.walk(sourceRoot)) {
             return paths.filter(file -> Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS))
                     .filter(file -> watchPathIncluded(rule, sourceRoot.relativize(file)))
+                    .filter(file -> !BuildContextWatcher.isEphemeral(sourceRoot.relativize(file)))
                     .filter(file -> !dockerIgnored.test(file))
                     .sorted().toList();
         }

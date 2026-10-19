@@ -105,14 +105,38 @@ class BuildContextWatcherTest {
     }
 
     @Test
+    void filtersEditorTemporaryFilesAndCoalescesRepeatedNotifications() throws Exception {
+        CountDownLatch registered = new CountDownLatch(1);
+        BuildContextWatcher watcher = new BuildContextWatcher(List.of(
+                new BuildContextWatcher.Registration("app", directory)), registered::countDown);
+        RecordingSubscriber subscriber = new RecordingSubscriber(Long.MAX_VALUE, 0);
+        watcher.subscribe(subscriber);
+        assertTrue(registered.await(5, TimeUnit.SECONDS));
+
+        Path ignored = Files.createFile(directory.resolve("Main.java___jb_tmp___"));
+        Path changed = directory.resolve("Main.java");
+        Files.writeString(changed, "one");
+        Files.writeString(changed, "two");
+        assertFalse(awaitPathEvents(subscriber, changed, 1).isEmpty());
+        Thread.sleep(700);
+
+        assertFalse(subscriber.snapshot().stream().anyMatch(event -> event.path().equals(ignored.toString())));
+        assertEquals(1, subscriber.snapshot().stream().filter(event -> event.path().equals(changed.toString())).count());
+        subscriber.subscription.get().cancel();
+    }
+
+    @Test
     void initialSyncCollectsOnlyIncludedNonIgnoredFiles() throws Exception {
         Files.createDirectories(directory.resolve("src/generated"));
         Files.createDirectories(directory.resolve(".git"));
+        Files.createDirectories(directory.resolve(".idea"));
         Path main = Files.createFile(directory.resolve("Main.java"));
         Path nested = Files.createFile(directory.resolve("src/App.java"));
         Files.createFile(directory.resolve("src/generated/Build.java"));
         Path gitFile = Files.createFile(directory.resolve(".git/config"));
         Files.createFile(directory.resolve("README.md"));
+        Files.createFile(directory.resolve(".idea/workspace.xml"));
+        Files.createFile(directory.resolve("Main.java~"));
         Files.writeString(directory.resolve(".dockerignore"), "src/App.java\n");
         Map<String, Object> rule = Map.of("include", List.of("**/*.java", "*.java"), "ignore", List.of("src/generated/**"));
 
@@ -121,6 +145,7 @@ class BuildContextWatcherTest {
 
         assertEquals(List.of(main), files);
         assertFalse(files.contains(gitFile));
+        assertFalse(files.stream().anyMatch(file -> file.toString().contains(".idea") || file.toString().endsWith("~")));
     }
 
     private static final class RecordingSubscriber implements Flow.Subscriber<WatchEvent> {

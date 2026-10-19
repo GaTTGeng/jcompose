@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardWatchEventKinds;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -16,11 +17,13 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Flow;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 /** Watches selected local build contexts and reports absolute changed paths. */
 final class BuildContextWatcher implements Flow.Publisher<WatchEvent> {
+    private static final long QUIET_PERIOD_NANOS = Duration.ofMillis(500).toNanos();
     record Registration(String service, Path directory, String action, Predicate<Path> includes) {
         Registration(String service, Path directory) { this(service, directory, "rebuild", path -> true); }
     }
@@ -120,29 +123,22 @@ final class BuildContextWatcher implements Flow.Publisher<WatchEvent> {
                 onRegistered.run();
                 while (!isCancelled()) {
                     WatchKey key = activeWatcher.take();
-                    DirectoryRegistration registration = keys.get(key);
-                    if (registration == null) {
-                        key.reset();
-                        continue;
+                    LinkedHashMap<WatchEvent, Path> pending = new LinkedHashMap<>();
+                    long quietUntil = System.nanoTime() + QUIET_PERIOD_NANOS;
+                    collectEvents(activeWatcher, keys, key, pending);
+                    while (!pending.isEmpty() && !isCancelled()) {
+                        long remaining = quietUntil - System.nanoTime();
+                        if (remaining <= 0) break;
+                        WatchKey next = activeWatcher.poll(remaining, TimeUnit.NANOSECONDS);
+                        if (next == null) break;
+                        collectEvents(activeWatcher, keys, next, pending);
+                        quietUntil = System.nanoTime() + QUIET_PERIOD_NANOS;
                     }
-                    for (java.nio.file.WatchEvent<?> event : key.pollEvents()) {
-                        if (event.kind() == StandardWatchEventKinds.OVERFLOW)
-                            throw new IOException("Build context watcher event buffer overflowed for '" + registration.root + "'.");
-                        Object context = event.context();
-                        if (!(context instanceof Path keyRelative)) continue;
-                        Path changed = registration.directory.resolve(keyRelative).toAbsolutePath().normalize();
-                        if (event.kind() == StandardWatchEventKinds.ENTRY_CREATE && Files.isDirectory(changed))
-                            registerTree(activeWatcher, keys, registration.root, registration.rules, changed);
-                        for (Registration rule : registration.rules) {
-                            Path relative = rule.directory().relativize(changed);
-                            if (!rule.includes().test(relative)) continue;
-                            WatchEvent change = new WatchEvent(rule.service(), rule.action(), changed.toString());
-                            onChange.accept(change);
-                            if (!events.offer(change))
-                                throw new IOException("Build context watcher event buffer overflowed for '" + registration.root + "'.");
-                        }
+                    for (WatchEvent change : pending.keySet()) {
+                        onChange.accept(change);
+                        if (!events.offer(change))
+                            throw new IOException("Build context watcher event buffer overflowed for '" + pending.get(change) + "'.");
                     }
-                    if (!key.reset()) keys.remove(key);
                 }
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
@@ -157,6 +153,31 @@ final class BuildContextWatcher implements Flow.Publisher<WatchEvent> {
                     lock.notifyAll();
                 }
             }
+        }
+
+        private void collectEvents(WatchService activeWatcher, Map<WatchKey, DirectoryRegistration> keys,
+                                   WatchKey key, Map<WatchEvent, Path> pending) throws IOException {
+            DirectoryRegistration registration = keys.get(key);
+            if (registration == null) {
+                key.reset();
+                return;
+            }
+            for (java.nio.file.WatchEvent<?> event : key.pollEvents()) {
+                if (event.kind() == StandardWatchEventKinds.OVERFLOW)
+                    throw new IOException("Build context watcher event buffer overflowed for '" + registration.root + "'.");
+                Object context = event.context();
+                if (!(context instanceof Path keyRelative)) continue;
+                Path changed = registration.directory.resolve(keyRelative).toAbsolutePath().normalize();
+                if (event.kind() == StandardWatchEventKinds.ENTRY_CREATE && Files.isDirectory(changed))
+                    registerTree(activeWatcher, keys, registration.root, registration.rules, changed);
+                for (Registration rule : registration.rules) {
+                    Path relative = rule.directory().relativize(changed);
+                    if (isEphemeral(relative) || !rule.includes().test(relative)) continue;
+                    WatchEvent change = new WatchEvent(rule.service(), rule.action(), changed.toString());
+                    pending.putIfAbsent(change, registration.root);
+                }
+            }
+            if (!key.reset()) keys.remove(key);
         }
 
         private void registerTree(WatchService activeWatcher, Map<WatchKey, DirectoryRegistration> keys,
@@ -238,4 +259,16 @@ final class BuildContextWatcher implements Flow.Publisher<WatchEvent> {
     }
 
     private record DirectoryRegistration(Path root, Path directory, List<Registration> rules) { }
+
+    static boolean isEphemeral(Path path) {
+        Path name = path.getFileName();
+        if (name == null) return false;
+        String fileName = name.toString();
+        for (Path segment : path) if (".idea".equals(segment.toString())) return true;
+        return fileName.endsWith("___jb_old___") || fileName.endsWith("___jb_tmp___")
+                || fileName.startsWith(".#") || fileName.startsWith("#") && fileName.endsWith("#")
+                || fileName.equals("4913") || fileName.endsWith("~")
+                || fileName.matches("\\..*\\.sw[ponx]")
+                || fileName.endsWith(".kate-swp") || fileName.endsWith("-go-tmp-umask");
+    }
 }
