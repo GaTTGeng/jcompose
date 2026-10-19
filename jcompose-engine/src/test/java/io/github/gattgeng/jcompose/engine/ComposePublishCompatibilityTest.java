@@ -69,6 +69,18 @@ class ComposePublishCompatibilityTest {
     }
 
     @Test
+    void rejectsPublishingFromAnOfflineProjectContext() {
+        ComposeProjectContext context = new ComposeProjectContext("publish-test", Path.of("."),
+                "compose.yaml", null, null, null, true, false);
+
+        CompletionException failure = assertThrows(CompletionException.class,
+                () -> new ComposeService().publishAsync(context, "example/application:latest", null).join());
+
+        assertEquals(IllegalStateException.class, failure.getCause().getClass());
+        assertEquals("Cannot publish when the Compose project context is offline.", failure.getCause().getMessage());
+    }
+
+    @Test
     void imagePublishRequiresTheComposeFileBeforeConnectingToDocker() {
         ComposeProjectContext context = new ComposeProjectContext("publish-test", Path.of("."));
 

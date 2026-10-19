@@ -4241,13 +4241,29 @@ public final class ComposeService implements IComposeService {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
             if (repository == null || repository.isBlank()) throw new IllegalArgumentException("Repository must not be blank.");
+            if (context.offline()) throw new IllegalStateException("Cannot publish when the Compose project context is offline.");
             ComposePublishOptions effectiveOptions = options == null
                     ? ComposePublishOptions.builder().build() : options;
             if (effectiveOptions.resolveImageDigests() || effectiveOptions.withEnvironment()
                     || effectiveOptions.ocIVersion() != null) {
                 throw new UnsupportedOperationException("Image digest resolution, environment layers, and custom OCI versions are not supported yet.");
             }
-            String composeYaml = publishComposeYaml(context);
+            ComposeProject project = loadComposeProject(context);
+            List<ServiceDefinition> services = selectConfigurationServices(project, context.profiles(), null);
+            String composeYaml = ComposeConfigRenderer.render(project, services, context.projectName());
+            try (DockerClient client = createDockerClient(context)) {
+                for (ServiceDefinition service : services) {
+                    String image = service.image();
+                    if (image == null || image.isBlank()) continue;
+                    try {
+                        pushImage(client, context.registryAuth(), image);
+                    } catch (RuntimeException failure) {
+                        if (!isImageTransferFailure(failure)) throw failure;
+                    }
+                }
+            } catch (java.io.IOException exception) {
+                throw new java.io.UncheckedIOException("Could not close Docker Engine client.", exception);
+            }
             java.nio.file.Path publishDirectory;
             try {
                 publishDirectory = java.nio.file.Files.createTempDirectory("jcompose-publish-");
