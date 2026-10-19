@@ -670,6 +670,7 @@ public final class ComposeFileLoader {
         validateScalarOrMap(file, service, configuration, "build", path + ".build");
         validateListOrMap(file, service, configuration, "environment", path + ".environment");
         validateLabelFiles(file, service, configuration.get("label_file"), path + ".label_file");
+        validateVolumeMounts(file, service, configuration.get("volumes"), path + ".volumes");
         validatePorts(file, service, configuration.get("ports"), path + ".ports");
         for (String key : List.of("deploy", "healthcheck", "logging"))
             validateOptionalMap(file, service, configuration, key, path + "." + key);
@@ -727,6 +728,19 @@ public final class ComposeFileLoader {
             }
             for (String key : List.of("privileged", "pull", "no_cache"))
                 validateBoolean(file, service, build, key, path + ".build." + key);
+        }
+    }
+
+    private static void validateVolumeMounts(Path file, String service, Object configured, String path) {
+        if (configured == null) return;
+        if (!(configured instanceof List<?> volumes))
+            throw new ComposeValidationException(file, path, service, "volumes must be a list.", null, null, null);
+        for (int index = 0; index < volumes.size(); index++) {
+            Object volume = volumes.get(index);
+            if (!(volume instanceof Map<?, ?> mount)) continue;
+            Object bind = mount.get("bind");
+            if (bind instanceof Map<?, ?> options)
+                validateBoolean(file, service, options, "create_host_path", path + "." + index + ".bind.create_host_path");
         }
     }
 

@@ -1,6 +1,10 @@
 package io.github.gattgeng.jcompose.engine;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -8,6 +12,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ComposeVolumeSpecTest {
+    @TempDir
+    Path temporaryDirectory;
+
     @Test
     void keepsWindowsDriveColonInsideBindSource() {
         ComposeService.VolumeSpec specification = ComposeService.parseVolumeSpec("C:\\data:/var/lib/app:ro");
@@ -54,5 +61,23 @@ class ComposeVolumeSpecTest {
                 () -> ComposeService.serviceBind("/host/data", "/data", false, "x", null));
         assertThrows(IllegalArgumentException.class,
                 () -> ComposeService.serviceBind("/host/data", "/data", false, null, "recursive"));
+    }
+
+    @Test
+    void createsMissingBindSourceDirectoriesByDefault() {
+        Path source = temporaryDirectory.resolve("nested/data");
+
+        ComposeService.prepareBindSource(source, true);
+
+        assertTrue(Files.isDirectory(source));
+    }
+
+    @Test
+    void doesNotCreateMissingBindSourceWhenDisabled() {
+        Path source = temporaryDirectory.resolve("must-exist");
+
+        assertThrows(IllegalArgumentException.class, () -> ComposeService.prepareBindSource(source, false));
+
+        assertTrue(Files.notExists(source));
     }
 }

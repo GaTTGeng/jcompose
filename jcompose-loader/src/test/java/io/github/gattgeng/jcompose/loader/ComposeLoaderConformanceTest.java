@@ -72,6 +72,27 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
+    void rejectsNonBooleanBindCreateHostPath() throws IOException {
+        Path file = temporaryDirectory.resolve("compose.yaml");
+        Files.writeString(file, """
+                services:
+                  app:
+                    image: busybox
+                    volumes:
+                      - type: bind
+                        source: ./data
+                        target: /data
+                        bind:
+                          create_host_path: sometimes
+                """);
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(temporaryDirectory, "compose.yaml"));
+
+        assertEquals("services.app.volumes.0.bind.create_host_path", exception.propertyPath());
+    }
+
+    @Test
     void rejectsUndefinedServiceSecret() throws IOException {
         Path file = temporaryDirectory.resolve("compose.yaml");
         Files.writeString(file, """

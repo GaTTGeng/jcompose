@@ -2398,6 +2398,8 @@ public final class ComposeService implements IComposeService {
                 Map<?, ?> bindOptions = bind && map.get("bind") instanceof Map<?, ?> options ? options : Map.of();
                 String propagation = stringValue(bindOptions.get("propagation"), null);
                 String selinux = stringValue(bindOptions.get("selinux"), null);
+                boolean createHostPath = !Boolean.FALSE.equals(bindOptions.get("create_host_path"));
+                if (bind && !sourceName.isBlank()) prepareBindSource(Path.of(resolved), createHostPath);
                 boolean readOnly = "ro".equalsIgnoreCase(String.valueOf(map.get("read_only"))) || Boolean.TRUE.equals(map.get("read_only"));
                 binds.add(serviceBind(resolved, String.valueOf(target), readOnly, selinux, propagation));
             } else {
@@ -2407,6 +2409,7 @@ public final class ComposeService implements IComposeService {
                 boolean bind = Path.of(source.isBlank() ? "." : source).isAbsolute() || source.startsWith(".") || source.startsWith("~");
                 String resolved = bind ? project.sourceFile().getParent().resolve(source).normalize().toString()
                         : source.isBlank() ? "" : engineVolumeName(projectName, project, source);
+                if (bind && !source.isBlank()) prepareBindSource(Path.of(resolved), true);
                 boolean readOnly = volumeIsReadOnly(specification.mode());
                 String selinux = bind ? volumeModeOption(specification.mode(), Set.of("z", "Z")) : null;
                 String propagation = bind ? volumeModeOption(specification.mode(), Set.of("shared", "rshared", "slave", "rslave", "private", "rprivate")) : null;
@@ -2416,6 +2419,19 @@ public final class ComposeService implements IComposeService {
         addFileResourceBinds(project, service, "secrets", project.secretDefinitions(), binds);
         addFileResourceBinds(project, service, "configs", project.configDefinitions(), binds);
         return binds;
+    }
+
+    static void prepareBindSource(Path source, boolean createHostPath) {
+        if (!createHostPath) {
+            if (!java.nio.file.Files.exists(source))
+                throw new IllegalArgumentException("Bind mount source does not exist and bind.create_host_path is false: " + source);
+            return;
+        }
+        try {
+            if (!java.nio.file.Files.exists(source)) java.nio.file.Files.createDirectories(source);
+        } catch (java.io.IOException exception) {
+            throw new java.io.UncheckedIOException("Could not create bind mount source directory: " + source, exception);
+        }
     }
 
     static com.github.dockerjava.api.model.Bind serviceBind(
