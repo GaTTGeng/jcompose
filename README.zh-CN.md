@@ -102,6 +102,8 @@ Loader 支持 `$NAME`、`${NAME}`、`$$` 以及 `:-`、`-`、`:?`、`?`、`:+`�
 
 服务 `extends` 支持引用同一文件或外部文件中的服务、递归继承和 Compose 对应的合并行为，并校验 `healthcheck.disable` 的继承约束。外部继承服务的 build、env_file 和 bind 路径会按项目 Compose 文件重新定位；依赖服务和顶层资源仍需由当前项目声明。具体边界见 [Loader 兼容性](docs/loader-compatibility.md)。
 
+本地 `include` 支持递归导入服务、网络、卷、secrets 和 configs；它在多文件覆盖合并之后处理，重名会报错而不会合并。被包含项目中的相对 build、env_file、bind mount、config 和 secret 文件路径会保留其原始项目位置。远程 OCI/Git 来源及完整 Compose include 规则尚未支持。具体行为和限制见 [Loader 兼容性](docs/loader-compatibility.md) 和[多文件合并规则](docs/merge-semantics.md)。
+
 ## Engine 当前实现
 
 jcompose 以 ComposeSharp 的功能范围作为同步路线，并为每一项记录边界和状态；兼容目标始终是 Docker Compose。当前快照包含基础服务协调、一次性 `run`、主机与容器间 `copy`、副本伸缩、容器退出等待、镜像构建、容器文件系统导出和容器提交为镜像等部分能力；这些操作有明确限制，不能等同于完整 Docker Compose 行为。
