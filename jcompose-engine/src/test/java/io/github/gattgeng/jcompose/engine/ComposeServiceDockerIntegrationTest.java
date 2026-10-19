@@ -1,9 +1,11 @@
 package io.github.gattgeng.jcompose.engine;
 
 import io.github.gattgeng.jcompose.api.ComposeExecOptions;
+import io.github.gattgeng.jcompose.api.ComposeListOptions;
 import io.github.gattgeng.jcompose.api.ComposeProjectContext;
 import io.github.gattgeng.jcompose.api.ComposeRestartOptions;
 import io.github.gattgeng.jcompose.api.ComposeRunOptions;
+import io.github.gattgeng.jcompose.api.ComposeStopOptions;
 import io.github.gattgeng.jcompose.api.ComposeTopOptions;
 import io.github.gattgeng.jcompose.api.IComposeService;
 import io.github.gattgeng.jcompose.api.ILogConsumer;
@@ -90,6 +92,46 @@ class ComposeServiceDockerIntegrationTest {
         }
 
         assertTrue(service.psAsync(context, null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS).isEmpty());
+    }
+
+    @Test
+    void listDerivesProjectStatusAndHonorsAll() throws Exception {
+        String projectName = "jcompose-list-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  first:
+                    image: busybox:1.36
+                    command: ["sleep", "300"]
+                  second:
+                    image: busybox:1.36
+                    command: ["sleep", "300"]
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            var running = service.listAsync(null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertEquals("running", running.stream().filter(stack -> projectName.equals(stack.name()))
+                    .findFirst().orElseThrow().status());
+
+            service.stopAsync(context, ComposeStopOptions.builder().services(java.util.List.of("first"))
+                            .timeoutSeconds(1).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            var partial = service.listAsync(null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertEquals("partial", partial.stream().filter(stack -> projectName.equals(stack.name()))
+                    .findFirst().orElseThrow().status());
+
+            service.stopAsync(context, null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            var defaultList = service.listAsync(null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertFalse(defaultList.stream().anyMatch(stack -> projectName.equals(stack.name())));
+            var all = service.listAsync(ComposeListOptions.builder().all(true).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertEquals("exited", all.stream().filter(stack -> projectName.equals(stack.name()))
+                    .findFirst().orElseThrow().status());
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
     }
 
     @Test
