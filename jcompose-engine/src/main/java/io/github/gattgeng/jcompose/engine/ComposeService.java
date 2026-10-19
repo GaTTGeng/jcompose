@@ -3340,11 +3340,13 @@ public final class ComposeService implements IComposeService {
                         } else {
                             command.withTarInputStream(archive.stream()).withDockerfilePath(archive.dockerfilePath());
                         }
+                        boolean quietProgress = options != null && isQuietBuildProgress(options.progress());
+                        boolean quietBuild = options != null && options.quiet() || quietProgress;
                         command
                                 .withTags(buildTags(image, build.get("tags")))
                                 .withNoCache(options != null && options.noCache() || Boolean.TRUE.equals(build.get("no_cache")))
                                 .withPull(!context.offline() && (options != null && options.pull() || Boolean.TRUE.equals(build.get("pull"))))
-                                .withQuiet(options != null && options.quiet())
+                                .withQuiet(quietBuild)
                                 .withTarget(options != null && options.target() != null
                                         ? options.target() : stringValue(build.get("target"), null));
                         String platform = options != null && options.platform() != null
@@ -3377,7 +3379,7 @@ public final class ComposeService implements IComposeService {
                                 String error = item.getError();
                                 if (error == null && item.getErrorDetail() != null) error = item.getErrorDetail().getMessage();
                                 if (error != null && !error.isBlank()) failure.compareAndSet(null, error);
-                                if (options != null && options.logConsumer() != null) {
+                                if (!quietBuild && options != null && options.logConsumer() != null) {
                                     String line = item.getStream() != null ? item.getStream() : item.getStatus();
                                     if (line != null && !line.isBlank()) options.logConsumer().onStatus(service.name(), line.stripTrailing());
                                 }
@@ -3393,6 +3395,16 @@ public final class ComposeService implements IComposeService {
             }
             return null;
         });
+    }
+
+    static boolean isQuietBuildProgress(String progress) {
+        if (progress == null || progress.isBlank()) return false;
+        return switch (progress.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "auto", "tty", "plain", "json" -> false;
+            case "quiet" -> true;
+            default -> throw new IllegalArgumentException(
+                    "Unsupported build progress format: " + progress + ". Expected auto, tty, plain, json, or quiet.");
+        };
     }
 
     static boolean isRemoteBuildContext(String context) {

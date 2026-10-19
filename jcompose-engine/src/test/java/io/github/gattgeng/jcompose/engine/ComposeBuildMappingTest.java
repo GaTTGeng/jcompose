@@ -10,6 +10,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ComposeBuildMappingTest {
     @Test
@@ -43,5 +44,14 @@ class ComposeBuildMappingTest {
         assertEquals(List.of("example/app:latest", "example/app:stable", "example/app:release"),
                 List.copyOf(ComposeService.buildTags("example/app:latest",
                         List.of("example/app:stable", "example/app:release", "example/app:latest"))));
+    }
+
+    @Test
+    void validatesBuildProgressAndRecognizesQuietMode() {
+        assertFalse(ComposeService.isQuietBuildProgress(null));
+        assertFalse(ComposeService.isQuietBuildProgress("plain"));
+        assertFalse(ComposeService.isQuietBuildProgress("JSON"));
+        assertTrue(ComposeService.isQuietBuildProgress(" quiet "));
+        assertThrows(IllegalArgumentException.class, () -> ComposeService.isQuietBuildProgress("compact"));
     }
 }
