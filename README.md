@@ -102,7 +102,7 @@ See [loader compatibility](docs/loader-compatibility.md) for precedence, operato
 
 Service `extends` supports same-file and external-file references, recursive inheritance, and Compose-specific merge behavior, including the `healthcheck.disable` inheritance constraint. External inherited build, env-file, and bind paths are rebased to the project file. Dependencies and top-level resources still need to be declared by the project; see [loader compatibility](docs/loader-compatibility.md) for the current boundary.
 
-Local `include` files recursively import services, networks, volumes, secrets, and configs after multi-file overlays have been merged. Name collisions fail instead of merging, and relative build, env-file, bind, config, and secret file paths keep their included-project locations. Remote OCI/Git sources and the full Compose include schema are not supported. See [loader compatibility](docs/loader-compatibility.md) and [merge semantics](docs/merge-semantics.md) for details.
+Local `include` files recursively import services, networks, volumes, secrets, and configs after multi-file overlays have been merged. An include path list is merged in order into one included project before import; collisions with other projects fail instead of merging. Relative build, env-file, bind, config, and secret file paths keep their included-project locations. Remote OCI/Git sources and the rest of the full Compose include schema are not supported. See [loader compatibility](docs/loader-compatibility.md) and [merge semantics](docs/merge-semantics.md) for details.
 
 ## What the engine does today
 

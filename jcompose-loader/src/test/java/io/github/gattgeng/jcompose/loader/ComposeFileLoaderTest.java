@@ -95,6 +95,96 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void mergesIncludedComposeFileListBeforeImportingResources() throws Exception {
+        Path includedDirectory = Files.createDirectories(directory.resolve("backend"));
+        Files.writeString(directory.resolve("compose.yaml"), """
+                include:
+                  - path:
+                      - ./backend/compose.yaml
+                      - ./backend/compose.override.yaml
+                """);
+        Files.writeString(includedDirectory.resolve("compose.yaml"), """
+                services:
+                  api:
+                    build: .
+                    environment:
+                      BASE: kept
+                    volumes:
+                      - ./data:/data
+                networks:
+                  internal:
+                    labels:
+                      owner: backend
+                """);
+        Files.writeString(includedDirectory.resolve("compose.override.yaml"), """
+                services:
+                  api:
+                    environment:
+                      OVERLAY: merged
+                    volumes:
+                      - ./cache:/cache
+                networks:
+                  internal:
+                    labels:
+                      tier: private
+                """);
+
+        var project = new ComposeFileLoader().load(directory, "compose.yaml");
+
+        var api = project.services().get("api").configuration();
+        assertEquals("backend", api.get("build"));
+        assertEquals(Map.of("BASE", "kept", "OVERLAY", "merged"), api.get("environment"));
+        assertEquals(List.of("./backend/data:/data", "./backend/cache:/cache"), api.get("volumes"));
+        assertEquals(Map.of("owner", "backend", "tier", "private"),
+                ((Map<?, ?>) project.networkDefinitions().get("internal")).get("labels"));
+    }
+
+    @Test
+    void shortIncludeUsesIncludedFileDirectoryForRelativePaths() throws Exception {
+        Path includedDirectory = Files.createDirectories(directory.resolve("backend"));
+        Files.writeString(directory.resolve("compose.yaml"), """
+                include: ./backend/compose.yaml
+                """);
+        Files.writeString(includedDirectory.resolve("compose.yaml"), """
+                services:
+                  api:
+                    build: .
+                    volumes:
+                      - ./data:/data
+                """);
+
+        var project = new ComposeFileLoader().load(directory, "compose.yaml");
+
+        var api = project.services().get("api").configuration();
+        assertEquals("backend", api.get("build"));
+        assertEquals(List.of("./backend/data:/data"), api.get("volumes"));
+    }
+
+    @Test
+    void includeProjectDirectoryOverridesIncludedFileDirectory() throws Exception {
+        Path includedDirectory = Files.createDirectories(directory.resolve("backend"));
+        Files.createDirectories(directory.resolve("assets"));
+        Files.writeString(directory.resolve("compose.yaml"), """
+                include:
+                  - path: ./backend/compose.yaml
+                    project_directory: ./assets
+                """);
+        Files.writeString(includedDirectory.resolve("compose.yaml"), """
+                services:
+                  api:
+                    build: .
+                    volumes:
+                      - ./data:/data
+                """);
+
+        var project = new ComposeFileLoader().load(directory, "compose.yaml");
+
+        var api = project.services().get("api").configuration();
+        assertEquals("assets", api.get("build"));
+        assertEquals(List.of("./assets/data:/data"), api.get("volumes"));
+    }
+
+    @Test
     void rejectsConflictingAndRemoteIncludesWithSourceContext() throws Exception {
         Path composeFile = directory.resolve("compose.yaml");
         Files.writeString(composeFile, """

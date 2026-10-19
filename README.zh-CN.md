@@ -102,7 +102,7 @@ Loader 支持 `$NAME`、`${NAME}`、`$$` 以及 `:-`、`-`、`:?`、`?`、`:+`�
 
 服务 `extends` 支持引用同一文件或外部文件中的服务、递归继承和 Compose 对应的合并行为，并校验 `healthcheck.disable` 的继承约束。外部继承服务的 build、env_file 和 bind 路径会按项目 Compose 文件重新定位；依赖服务和顶层资源仍需由当前项目声明。具体边界见 [Loader 兼容性](docs/loader-compatibility.md)。
 
-本地 `include` 支持递归导入服务、网络、卷、secrets 和 configs；它在多文件覆盖合并之后处理，重名会报错而不会合并。被包含项目中的相对 build、env_file、bind mount、config 和 secret 文件路径会保留其原始项目位置。远程 OCI/Git 来源及完整 Compose include 规则尚未支持。具体行为和限制见 [Loader 兼容性](docs/loader-compatibility.md) 和[多文件合并规则](docs/merge-semantics.md)。
+本地 `include` 支持递归导入服务、网络、卷、secrets 和 configs；它在多文件覆盖合并之后处理。mapping 中的 `path` 文件列表会先按顺序合并成一个被包含项目，再导入；只有它与主项目或其他 include 冲突时才报错。被包含项目中的相对 build、env_file、bind mount、config 和 secret 文件路径会保留其原始项目位置。远程 OCI/Git 来源及其余完整 Compose include 规则尚未支持。具体行为和限制见 [Loader 兼容性](docs/loader-compatibility.md) 和[多文件合并规则](docs/merge-semantics.md)。
 
 ## Engine 当前实现
 
