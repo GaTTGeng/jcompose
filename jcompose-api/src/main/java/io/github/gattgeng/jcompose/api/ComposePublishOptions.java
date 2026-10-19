@@ -3,7 +3,7 @@ package io.github.gattgeng.jcompose.api;
 import java.util.Objects;
 
 /**
- * Options for tagging project images under a repository.
+ * Options for publishing a Compose application as an OCI artifact.
  * @param resolveImageDigests Prefer content digests when resolving image references.
  * @param withEnvironment Include service environment configuration alongside the tagged image.
  * @param ocIVersion OCI image-spec version the published artifacts should target.

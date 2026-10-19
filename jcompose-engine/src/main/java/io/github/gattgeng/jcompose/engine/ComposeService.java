@@ -4045,48 +4045,9 @@ public final class ComposeService implements IComposeService {
             ComposeProjectContext context, String repository, ComposePublishOptions options) {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
-            if (context.offline()) throw new IllegalStateException("Cannot publish images when the Compose project context is offline.");
             if (repository == null || repository.isBlank()) throw new IllegalArgumentException("Repository must not be blank.");
-            if (options != null && (options.resolveImageDigests() || options.withEnvironment()
-                    || options.ocIVersion() != null && !options.ocIVersion().isBlank() || options.insecureRegistry()))
-                throw new UnsupportedOperationException("Digest resolution, environment packaging, OCI version selection, and insecure registries are not supported by this publish implementation.");
-            ComposeProject project = loadComposeProject(context);
-            List<ServiceDefinition> selected = selectConfigurationServices(project, context.profiles(), null);
-            try (DockerClient client = createDockerClient(context)) {
-                List<PublishResult> results = new ArrayList<>();
-                for (ServiceDefinition service : selected) {
-                    String sourceImage = service.image();
-                    if (sourceImage == null || sourceImage.isBlank()) {
-                        results.add(new PublishResult(service.name(), null, null, false, false,
-                                "Service does not define an image reference."));
-                        continue;
-                    }
-                    String taggedImage = repository + ":" + service.name();
-                    try {
-                        client.tagImageCmd(sourceImage, repository, service.name()).exec();
-                    } catch (RuntimeException failure) {
-                        results.add(publishResult(service.name(), sourceImage, taggedImage, false, false,
-                                "Tag failed: " + failure.getMessage()));
-                        continue;
-                    }
-                    try {
-                        pushImage(client, context.registryAuth(), taggedImage);
-                        results.add(publishResult(service.name(), sourceImage, taggedImage, true, true, null));
-                    } catch (RuntimeException failure) {
-                        if (failure instanceof java.util.concurrent.CancellationException) throw failure;
-                        results.add(publishResult(service.name(), sourceImage, taggedImage, true, false,
-                                "Push failed: " + failure.getMessage()));
-                    }
-                }
-                return List.copyOf(results);
-            } catch (java.io.IOException exception) {
-                throw new java.io.UncheckedIOException("Could not close Docker Engine client.", exception);
-            }
+            throw new UnsupportedOperationException(
+                    "Compose application publishing as an OCI artifact is not implemented yet.");
         });
-    }
-
-    private static PublishResult publishResult(String service, String sourceImage, String taggedImage,
-                                                boolean tagged, boolean pushed, String error) {
-        return new PublishResult(service, sourceImage, taggedImage, tagged, pushed, error);
     }
 }
