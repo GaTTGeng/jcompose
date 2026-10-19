@@ -461,4 +461,37 @@ class ComposeServiceDockerIntegrationTest {
             service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
         }
     }
+
+    @Test
+    void upWaitUsesHealthcheckInheritedFromImage() throws Exception {
+        String projectName = "jcompose-wait-image-health-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("Dockerfile"), """
+                FROM busybox:1.36
+                HEALTHCHECK --interval=1s --timeout=5s --retries=10 CMD ["sh", "-c", "sleep 3; exit 0"]
+                CMD ["sh", "-c", "sleep 60"]
+                """);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    build: .
+                    pull_policy: build
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            service.upAsync(context, io.github.gattgeng.jcompose.api.ComposeUpOptions.builder()
+                            .waitForCompletion(true).dependencyWaitTimeoutSeconds(30).build())
+                    .get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+
+            try (var client = DockerClientFactory.create(context)) {
+                var container = service.psAsync(context, null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS)
+                        .getFirst();
+                var health = client.inspectContainerCmd(container.id()).exec().getState().getHealth();
+                assertTrue(health != null && "healthy".equalsIgnoreCase(health.getStatus()));
+            }
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
 }

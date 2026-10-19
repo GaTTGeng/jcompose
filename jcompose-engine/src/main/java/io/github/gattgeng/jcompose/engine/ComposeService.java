@@ -2703,15 +2703,16 @@ public final class ComposeService implements IComposeService {
                 .filter(container -> !"true".equalsIgnoreCase(label(container, ComposeConstants.ONE_OFF_LABEL)))
                 .toList();
         if (containers.isEmpty()) throw new IllegalStateException("Service '" + service.name() + "' has no containers to wait for.");
-        var healthcheck = serviceHealthcheck(service);
-        boolean healthyRequired = healthcheck != null && healthcheck.getTest() != null
-                && !healthcheck.getTest().isEmpty() && !"NONE".equalsIgnoreCase(healthcheck.getTest().getFirst());
         long deadline = timeoutSeconds == null ? Long.MAX_VALUE
                 : System.nanoTime() + TimeUnit.SECONDS.toNanos(positiveTimeout(timeoutSeconds));
         while (true) {
             boolean ready = true;
             for (Container container : containers) {
-                var state = client.inspectContainerCmd(container.getId()).exec().getState();
+                var inspect = client.inspectContainerCmd(container.getId()).exec();
+                var state = inspect.getState();
+                var healthcheck = inspect.getConfig() == null ? null : inspect.getConfig().getHealthcheck();
+                boolean healthyRequired = healthcheck != null && healthcheck.getTest() != null
+                        && !healthcheck.getTest().isEmpty() && !"NONE".equalsIgnoreCase(healthcheck.getTest().getFirst());
                 if (state == null || !isRunning(state)) {
                     if (state != null && ("exited".equalsIgnoreCase(state.getStatus()) || "dead".equalsIgnoreCase(state.getStatus())))
                         throw new IllegalStateException("Service '" + service.name() + "' container exited before becoming ready.");
