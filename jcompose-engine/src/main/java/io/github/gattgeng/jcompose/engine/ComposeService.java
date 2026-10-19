@@ -814,6 +814,11 @@ public final class ComposeService implements IComposeService {
             ServiceDefinition service = servicesByName.get(name);
             for (String dependency : dependencyNames(service.configuration().get("depends_on"))) {
                 if (!servicesByName.containsKey(dependency)) {
+                    if (!dependencyRequired(service, dependency)) {
+                        LOGGER.warning("Optional dependency '" + dependency + "' of service '" + name
+                                + "' is not defined; continuing.");
+                        continue;
+                    }
                     throw new IllegalArgumentException("Service '" + name + "' depends on unknown service '" + dependency + "'.");
                 }
                 ServiceDefinition definition = servicesByName.get(dependency);
@@ -1159,8 +1164,15 @@ public final class ComposeService implements IComposeService {
             ServiceDefinition service = pending.get(index);
             for (String name : dependencyNames(service.configuration().get("depends_on"))) {
                 ServiceDefinition dependency = byName.get(name);
-                if (dependency == null) throw new IllegalArgumentException("Service '" + service.name()
-                        + "' depends on unknown service '" + name + "'.");
+                if (dependency == null) {
+                    if (!dependencyRequired(service, name)) {
+                        LOGGER.warning("Optional dependency '" + name + "' of service '" + service.name()
+                                + "' is not defined; continuing.");
+                        continue;
+                    }
+                    throw new IllegalArgumentException("Service '" + service.name()
+                            + "' depends on unknown service '" + name + "'.");
+                }
                 if (!dependency.profiles().isEmpty()
                         && dependency.profiles().stream().noneMatch(enabledProfiles::contains)) {
                     if (dependencyRequired(service, name))
@@ -1231,6 +1243,7 @@ public final class ComposeService implements IComposeService {
         java.util.LinkedHashSet<String> dependencies = new java.util.LinkedHashSet<>();
         for (String name : dependencyNames(service.configuration().get("depends_on"))) {
             ServiceDefinition dependency = project.services().get(name);
+            if (dependency == null && !dependencyRequired(service, name)) continue;
             if (!dependencyRequired(service, name) && dependency != null
                     && !dependency.profiles().isEmpty()
                     && dependency.profiles().stream().noneMatch(enabledProfiles::contains)) continue;
@@ -2234,8 +2247,15 @@ public final class ComposeService implements IComposeService {
         Map<String, ServiceDefinition> definitions = project.services();
         for (String dependencyName : dependencyNames(rawDependencies)) {
             ServiceDefinition dependency = definitions.get(dependencyName);
-            if (dependency == null) throw new IllegalArgumentException("Service '" + service.name()
-                    + "' depends on unknown service '" + dependencyName + "'.");
+            if (dependency == null) {
+                if (!dependencyRequired(service, dependencyName)) {
+                    LOGGER.warning("Optional dependency '" + dependencyName + "' of service '" + service.name()
+                            + "' is not defined; continuing.");
+                    continue;
+                }
+                throw new IllegalArgumentException("Service '" + service.name()
+                        + "' depends on unknown service '" + dependencyName + "'.");
+            }
             if (!dependencyRequired(service, dependencyName)
                     && !dependency.profiles().isEmpty()
                     && dependency.profiles().stream().noneMatch(activeProfiles::contains)) continue;

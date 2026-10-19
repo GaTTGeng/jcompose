@@ -61,6 +61,24 @@ class ComposeProfileDependencyTest {
     }
 
     @Test
+    void skipsUndefinedOptionalDependency() throws IOException {
+        ComposeProject project = load("""
+                services:
+                  app:
+                    image: busybox
+                    depends_on:
+                      optional-helper:
+                        condition: service_started
+                        required: false
+                """);
+
+        List<ServiceDefinition> ordered = ComposeService.dependencyOrderedServices(project,
+                List.of(project.services().get("app")), List.of());
+
+        assertEquals(List.of("app"), ordered.stream().map(ServiceDefinition::name).toList());
+    }
+
+    @Test
     void explicitProfileServiceEnablesItsProfileForDependencies() throws IOException {
         ComposeProject project = load("""
                 services:

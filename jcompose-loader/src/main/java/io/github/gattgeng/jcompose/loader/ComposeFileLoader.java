@@ -1343,7 +1343,10 @@ public final class ComposeFileLoader {
                     "depends_on must be an array or mapping.", null, null, null);
         }
         for (String dependency : references) {
-            if (!services.containsKey(dependency))
+            boolean required = !(configured instanceof Map<?, ?> map)
+                    || !(map.get(dependency) instanceof Map<?, ?> options)
+                    || !Boolean.FALSE.equals(options.get("required"));
+            if (required && !services.containsKey(dependency))
                 throw new ComposeValidationException(file, "services." + service + ".depends_on." + dependency,
                         service, "service depends on undefined service '" + dependency + "'.", null, null, null);
         }
