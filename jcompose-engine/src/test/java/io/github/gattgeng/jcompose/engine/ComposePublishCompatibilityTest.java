@@ -112,6 +112,20 @@ class ComposePublishCompatibilityTest {
     }
 
     @Test
+    void publishIncludesServicesFromInactiveProfiles() {
+        ServiceDefinition defaultService = new ServiceDefinition("default", Map.of("image", "example/default:latest"));
+        ServiceDefinition profiledService = new ServiceDefinition("debug", Map.of(
+                "image", "example/debug:latest", "profiles", List.of("debug")));
+        io.github.gattgeng.jcompose.api.ComposeProject project = new io.github.gattgeng.jcompose.api.ComposeProject(
+                Path.of("compose.yaml"), Map.of("debug", profiledService, "default", defaultService),
+                List.of(), List.of(), List.of(), List.of(), Map.of());
+
+        List<ServiceDefinition> services = ComposeService.allConfigurationServices(project);
+
+        assertEquals(List.of("debug", "default"), services.stream().map(ServiceDefinition::name).toList());
+    }
+
+    @Test
     void replacesOnlyTheImageTagWhenPinningAResolvedDigest() {
         assertEquals("nginx@sha256:0123", ComposeService.imageReferenceWithDigest("nginx:latest", "sha256:0123"));
         assertEquals("registry.example:5000/team/app@sha256:abcd",

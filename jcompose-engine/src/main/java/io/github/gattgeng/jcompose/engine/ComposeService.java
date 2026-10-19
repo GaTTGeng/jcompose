@@ -4263,7 +4263,7 @@ public final class ComposeService implements IComposeService {
                         "Custom OCI versions are not supported yet.");
             }
             ComposeProject project = loadComposeProject(context);
-            List<ServiceDefinition> services = selectConfigurationServices(project, context.profiles(), null);
+            List<ServiceDefinition> services = allConfigurationServices(project);
             validatePublishServices(services);
             try (DockerClient client = createDockerClient(context)) {
                 for (ServiceDefinition service : services) {
@@ -4403,6 +4403,12 @@ public final class ComposeService implements IComposeService {
                         + "' uses a bind mount and cannot be published.");
             }
         }
+    }
+
+    static List<ServiceDefinition> allConfigurationServices(ComposeProject project) {
+        return project.services().values().stream()
+                .sorted(java.util.Comparator.comparing(ServiceDefinition::name))
+                .toList();
     }
 
     private static boolean isBindMount(Object volume) {
