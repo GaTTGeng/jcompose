@@ -614,6 +614,42 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void labelFilesMergeInOrderAndInlineLabelsTakePrecedence() throws Exception {
+        Files.writeString(directory.resolve("base.labels"), "SHARED=base\nFILE_ONLY=one\n");
+        Files.writeString(directory.resolve("override.labels"), "SHARED=override\nINTERPOLATED=${LABEL_VALUE}\n");
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: example/app
+                    label_file: [base.labels, override.labels]
+                    labels:
+                      SHARED: inline
+                      INLINE: "yes"
+                """);
+
+        Map<?, ?> labels = (Map<?, ?>) new ComposeFileLoader().load(directory, null,
+                Map.of("LABEL_VALUE", "resolved")).services().get("app").configuration().get("labels");
+
+        assertEquals(Map.of("SHARED", "inline", "FILE_ONLY", "one", "INTERPOLATED", "resolved", "INLINE", "yes"), labels);
+    }
+
+    @Test
+    void missingLabelFileFailsWithServicePropertyContext() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: example/app
+                    label_file: missing.labels
+                """);
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, null));
+
+        assertEquals("services.app.label_file", exception.propertyPath());
+        assertEquals("app", exception.serviceName());
+    }
+
+    @Test
     void inlineEnvironmentOverridesEnvFiles() throws Exception {
         Files.writeString(directory.resolve("app.env"), String.join("\n",
                 "MODE=from-file",

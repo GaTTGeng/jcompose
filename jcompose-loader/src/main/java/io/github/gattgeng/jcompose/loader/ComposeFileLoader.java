@@ -440,6 +440,7 @@ public final class ComposeFileLoader {
             validateServiceResources(file, name, service.get("secrets"), root.get("secrets"), "secrets");
             validateServiceResources(file, name, service.get("configs"), root.get("configs"), "configs");
             resolveEnvFiles(file.getParent(), service, file, name, environmentOverrides);
+            resolveLabelFiles(file.getParent(), service, file, name, environmentOverrides);
             services.put(name, new ServiceDefinition(name, service));
         }
         return new ComposeProject(file, services, names(root.get("volumes")), names(root.get("networks")),
@@ -545,6 +546,14 @@ public final class ComposeFileLoader {
                 } else rebased.add(item);
             }
             service.put("env_file", rebased);
+        }
+        Object labelFile = service.get("label_file");
+        if (labelFile instanceof String path) service.put("label_file", rebasePath(path, sourceDirectory, baseDirectory));
+        else if (labelFile instanceof List<?> files) {
+            List<Object> rebased = new ArrayList<>();
+            for (Object item : files)
+                rebased.add(item instanceof String path ? rebasePath(path, sourceDirectory, baseDirectory) : item);
+            service.put("label_file", rebased);
         }
         Object volumes = service.get("volumes");
         if (volumes instanceof List<?> list) {
@@ -658,6 +667,7 @@ public final class ComposeFileLoader {
             throw shapeFailure(file, service, path + ".image", "a scalar", image);
         validateScalarOrMap(file, service, configuration, "build", path + ".build");
         validateListOrMap(file, service, configuration, "environment", path + ".environment");
+        validateLabelFiles(file, service, configuration.get("label_file"), path + ".label_file");
         validatePorts(file, service, configuration.get("ports"), path + ".ports");
         for (String key : List.of("deploy", "healthcheck", "logging"))
             validateOptionalMap(file, service, configuration, key, path + "." + key);
@@ -705,6 +715,21 @@ public final class ComposeFileLoader {
             for (String key : List.of("privileged", "pull", "no_cache"))
                 validateBoolean(file, service, build, key, path + ".build." + key);
         }
+    }
+
+    private static void validateLabelFiles(Path file, String service, Object configured, String path) {
+        if (configured == null) return;
+        if (configured instanceof String value && !value.isBlank()) return;
+        if (configured instanceof List<?> files) {
+            for (int index = 0; index < files.size(); index++) {
+                if (!(files.get(index) instanceof String value) || value.isBlank())
+                    throw new ComposeValidationException(file, path + "." + index, service,
+                            "label_file entries must be non-empty paths.", null, null, null);
+            }
+            return;
+        }
+        throw new ComposeValidationException(file, path, service,
+                "label_file must be a path or list of paths.", null, null, null);
     }
 
     private static void validateDevelop(Path file, String service, Object configured, String path) {
@@ -1508,6 +1533,35 @@ public final class ComposeFileLoader {
             result.put(key, interpolate(value, dotenv, process));
         }
         return result;
+    }
+
+    private static void resolveLabelFiles(Path base, Map<String, Object> service, Path source, String name,
+                                          Map<String, String> environmentOverrides) {
+        Object labelFile = service.get("label_file");
+        if (labelFile == null) return;
+        List<?> files = labelFile instanceof List<?> list ? list : List.of(labelFile);
+        Map<String, String> labels = new LinkedHashMap<>();
+        Map<String, String> process = environmentWithOverrides(environmentOverrides);
+        try {
+            Map<String, String> dotenv = parseEnvFile(base.resolve(".env"), process);
+            for (Object item : files) {
+                Path path = base.resolve(String.valueOf(item)).normalize();
+                if (!Files.isRegularFile(path)) throw new IOException("label_file not found: " + path);
+                labels.putAll(parseServiceEnvFile(path, dotenv, process));
+            }
+        } catch (IOException | RuntimeException exception) {
+            throw new ComposeValidationException(source, "services." + name + ".label_file", name,
+                    exception.getMessage(), null, null, exception);
+        }
+        Object inline = service.get("labels");
+        if (inline instanceof Map<?, ?> map) map.forEach((key, value) -> labels.put(String.valueOf(key), String.valueOf(value)));
+        else if (inline instanceof List<?> list) for (Object item : list) {
+            String pair = String.valueOf(item);
+            int separator = pair.indexOf('=');
+            if (separator < 0) labels.put(pair, "");
+            else labels.put(pair.substring(0, separator), pair.substring(separator + 1));
+        }
+        service.put("labels", Collections.unmodifiableMap(labels));
     }
 
     private static int findClosingQuote(String value, char quote) {
