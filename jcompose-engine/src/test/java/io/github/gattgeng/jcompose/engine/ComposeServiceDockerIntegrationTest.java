@@ -444,6 +444,50 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void externalLinksResolveOnAnExplicitlySharedNetwork() throws Exception {
+        String projectName = "jcompose-external-links-" + UUID.randomUUID().toString().substring(0, 8);
+        String networkName = projectName + "_shared";
+        String externalName = projectName + "_legacy";
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        String externalContainerId;
+        String networkId;
+        try (var client = DockerClientFactory.create(context)) {
+            networkId = client.createNetworkCmd().withName(networkName).withDriver("bridge").exec().getId();
+            externalContainerId = client.createContainerCmd("busybox:1.36").withName(externalName)
+                    .withCmd("sh", "-c", "sleep 300").exec().getId();
+            client.startContainerCmd(externalContainerId).exec();
+            client.connectToNetworkCmd().withNetworkId(networkId).withContainerId(externalContainerId).exec();
+        }
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: ["sh", "-c", "sleep 300"]
+                    external_links: ["%s:legacy"]
+                    networks: [shared]
+                networks:
+                  shared:
+                    external: true
+                    name: %s
+                """.formatted(externalName, networkName));
+
+        IComposeService service = new ComposeService();
+        try {
+            service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            var result = service.execAsync(context, "app", ComposeExecOptions.builder()
+                            .command(java.util.List.of("ping", "-c", "1", "-W", "1", "legacy")).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertTrue(result.succeeded(), result.standardError());
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+            try (var client = DockerClientFactory.create(context)) {
+                client.removeContainerCmd(externalContainerId).withForce(true).exec();
+                client.removeNetworkCmd(networkId).exec();
+            }
+        }
+    }
+
+    @Test
     void topReturnsDockerProcessRowsForSelectedService() throws Exception {
         String projectName = "jcompose-top-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);

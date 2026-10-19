@@ -940,6 +940,20 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void externalLinksRequireContainerNamesAndOptionalAliases() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: example/app
+                    external_links: ["legacy:"]
+                """);
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, "compose.yaml"));
+        assertEquals("services.app.external_links.0", exception.propertyPath());
+    }
+
+    @Test
     void portsMergeAcrossShortAndLongSyntaxByComposeUniqueKey() throws Exception {
         Files.writeString(directory.resolve("base.yaml"), """
                 services:

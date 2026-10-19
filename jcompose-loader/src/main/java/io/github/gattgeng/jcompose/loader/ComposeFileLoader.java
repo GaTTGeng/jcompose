@@ -434,6 +434,8 @@ public final class ComposeFileLoader {
                 validateServiceDependencies(file, name, service.get("depends_on"), serviceMap);
             if (service.containsKey("links"))
                 validateServiceLinks(file, name, service.get("links"), serviceMap);
+            if (service.containsKey("external_links"))
+                validateExternalLinks(file, name, service.get("external_links"));
             validateServiceNetworks(file, name, service.get("networks"), root.get("networks"));
             validateServiceResources(file, name, serviceVolumeReferences(service.get("volumes")),
                     root.get("volumes"), "volumes");
@@ -1367,6 +1369,21 @@ public final class ComposeFileLoader {
             if (!services.containsKey(parts[0]))
                 throw new ComposeValidationException(file, path + "." + index, service,
                         "link refers to undefined service '" + parts[0] + "'.", null, null, null);
+        }
+    }
+
+    private static void validateExternalLinks(Path file, String service, Object configured) {
+        String path = "services." + service + ".external_links";
+        if (!(configured instanceof List<?> links))
+            throw new ComposeValidationException(file, path, service, "external_links must be an array.", null, null, null);
+        for (int index = 0; index < links.size(); index++) {
+            if (!(links.get(index) instanceof String link))
+                throw new ComposeValidationException(file, path + "." + index, service,
+                        "external link entries must be strings.", null, null, null);
+            String[] parts = link.split(":", -1);
+            if (parts.length > 2 || parts[0].isBlank() || parts.length == 2 && parts[1].isBlank())
+                throw new ComposeValidationException(file, path + "." + index, service,
+                        "external link entries must be a container name or container:alias.", null, null, null);
         }
     }
 

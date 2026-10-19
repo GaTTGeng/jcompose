@@ -965,6 +965,10 @@ public final class ComposeService implements IComposeService {
                 .toList();
     }
 
+    private static List<com.github.dockerjava.api.model.Link> externalLinkEntries(Object value) {
+        return asStringList(value).stream().map(com.github.dockerjava.api.model.Link::parse).toList();
+    }
+
     private static List<String> orderingDependencyNames(ServiceDefinition service) {
         java.util.LinkedHashSet<String> dependencies = new java.util.LinkedHashSet<>(
                 dependencyNames(service.configuration().get("depends_on")));
@@ -1762,6 +1766,8 @@ public final class ComposeService implements IComposeService {
                                                                                 ServiceDefinition service, Map<String, String> anonymousVolumes) {
         Map<String, Object> config = service.configuration();
         var host = com.github.dockerjava.api.model.HostConfig.newHostConfig();
+        List<com.github.dockerjava.api.model.Link> externalLinks = externalLinkEntries(config.get("external_links"));
+        if (!externalLinks.isEmpty()) host.withLinks(externalLinks);
         String configuredNetworkMode = stringValue(config.get("network_mode"), "");
         host.withNetworkMode(configuredNetworkMode.isBlank() ? primaryNetwork(projectName, project, service)
                 : dockerNamespaceMode(client, projectName, service, "network_mode"));
@@ -3602,6 +3608,8 @@ public final class ComposeService implements IComposeService {
                 labels.putAll(runLabels);
 
                 var host = com.github.dockerjava.api.model.HostConfig.newHostConfig();
+                List<com.github.dockerjava.api.model.Link> externalLinks = externalLinkEntries(service.configuration().get("external_links"));
+                if (!externalLinks.isEmpty()) host.withLinks(externalLinks);
                 String configuredNetworkMode = stringValue(service.configuration().get("network_mode"), "");
                 host.withNetworkMode(configuredNetworkMode.isBlank() ? primaryNetwork(context.projectName(), project, service)
                         : dockerNamespaceMode(client, context.projectName(), service, "network_mode"));
