@@ -213,7 +213,7 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
-    void appendsDuplicateEntriesInOrdinaryOverlaySequences() throws IOException {
+    void deduplicatesComposeUniqueOverlaySequencesAndAppendsOrdinarySequences() throws IOException {
         Path directory = temporaryDirectory.resolve("overlay-sequences");
         Files.createDirectories(directory);
         Files.writeString(directory.resolve("compose.yaml"), """
@@ -223,6 +223,7 @@ class ComposeLoaderConformanceTest {
                     cap_add: [SYS_ADMIN, CHOWN]
                     expose: [80, 443]
                     security_opt: [label=role:ROLE]
+                    dns: [1.1.1.1, 8.8.8.8]
                 """);
         Files.writeString(directory.resolve("compose.override.yaml"), """
                 services:
@@ -230,15 +231,17 @@ class ComposeLoaderConformanceTest {
                     cap_add: [CHOWN, NET_ADMIN]
                     expose: [443, 8080]
                     security_opt: [label=role:ROLE, no-new-privileges:true]
+                    dns: [8.8.8.8, 9.9.9.9]
                 """);
 
         ServiceDefinition app = new ComposeFileLoader().loadMerged(directory,
                 List.of("compose.yaml", "compose.override.yaml")).services().get("app");
 
-        assertEquals(List.of("SYS_ADMIN", "CHOWN", "CHOWN", "NET_ADMIN"), app.configuration().get("cap_add"));
-        assertEquals(List.of(80, 443, 443, 8080), app.configuration().get("expose"));
-        assertEquals(List.of("label=role:ROLE", "label=role:ROLE", "no-new-privileges:true"),
+        assertEquals(List.of("SYS_ADMIN", "CHOWN", "NET_ADMIN"), app.configuration().get("cap_add"));
+        assertEquals(List.of(80, 443, 8080), app.configuration().get("expose"));
+        assertEquals(List.of("label=role:ROLE", "no-new-privileges:true"),
                 app.configuration().get("security_opt"));
+        assertEquals(List.of("1.1.1.1", "8.8.8.8", "8.8.8.8", "9.9.9.9"), app.configuration().get("dns"));
     }
 
     @Test

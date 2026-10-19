@@ -804,6 +804,59 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void overlayMergesDeduplicateComposeServiceSequenceFields() throws Exception {
+        Files.writeString(directory.resolve("base.yaml"), """
+                services:
+                  app:
+                    image: example/app
+                    cap_add: [NET_ADMIN, SYS_TIME]
+                    cap_drop: [MKNOD]
+                    device_cgroup_rules: ["c 1:3 mr"]
+                    expose: [8080, 9090]
+                    external_links: [db, "cache:redis"]
+                    security_opt: [no-new-privileges:true]
+                    deploy:
+                      placement:
+                        constraints: [node.platform.os == linux]
+                        preferences: ["spread: node.labels.zone"]
+                      reservations:
+                        generic_resources: [{discrete_resource_spec: {kind: gpu, value: 1}}]
+                """);
+        Files.writeString(directory.resolve("override.yaml"), """
+                services:
+                  app:
+                    cap_add: [SYS_TIME, SYS_PTRACE, SYS_PTRACE]
+                    cap_drop: [MKNOD, SYS_ADMIN]
+                    device_cgroup_rules: ["c 1:3 mr", "c 1:5 rwm"]
+                    expose: [9090, 7070]
+                    external_links: ["cache:redis", "legacy:legacy"]
+                    security_opt: [no-new-privileges:true, seccomp:unconfined]
+                    deploy:
+                      placement:
+                        constraints: [node.platform.os == linux, node.arch == amd64]
+                        preferences: ["spread: node.labels.zone"]
+                      reservations:
+                        generic_resources: [{discrete_resource_spec: {kind: gpu, value: 1}}]
+                """);
+
+        var project = new ComposeFileLoader().loadMerged(directory, List.of("base.yaml", "override.yaml"));
+        Map<?, ?> app = project.services().get("app").configuration();
+        assertEquals(List.of("NET_ADMIN", "SYS_TIME", "SYS_PTRACE"), app.get("cap_add"));
+        assertEquals(List.of("MKNOD", "SYS_ADMIN"), app.get("cap_drop"));
+        assertEquals(List.of("c 1:3 mr", "c 1:5 rwm"), app.get("device_cgroup_rules"));
+        assertEquals(List.of(8080, 9090, 7070), app.get("expose"));
+        assertEquals(List.of("db", "cache:redis", "legacy:legacy"), app.get("external_links"));
+        assertEquals(List.of("no-new-privileges:true", "seccomp:unconfined"), app.get("security_opt"));
+
+        Map<?, ?> deploy = (Map<?, ?>) app.get("deploy");
+        Map<?, ?> placement = (Map<?, ?>) deploy.get("placement");
+        assertEquals(List.of("node.platform.os == linux", "node.arch == amd64"), placement.get("constraints"));
+        assertEquals(List.of("spread: node.labels.zone"), placement.get("preferences"));
+        Map<?, ?> reservations = (Map<?, ?>) deploy.get("reservations");
+        assertEquals(1, ((List<?>) reservations.get("generic_resources")).size());
+    }
+
+    @Test
     void portsMergeAcrossShortAndLongSyntaxByComposeUniqueKey() throws Exception {
         Files.writeString(directory.resolve("base.yaml"), """
                 services:

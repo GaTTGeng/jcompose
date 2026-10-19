@@ -31,6 +31,10 @@ Process environment values take precedence over values in the project `.env` fil
 
 The parser is intentionally smaller than the full Compose interpolation and dotenv grammars. The `.env` reader does not implement all quoting, escape, multiline, or format variants. Unsupported shell expressions are not evaluated. An unset variable without an operator becomes empty text, without Docker Compose's warning.
 
+## Multi-file overlays
+
+The loader merges mappings recursively and appends ordinary service sequences. Docker Compose's duplicate-removal sequence fields (`cap_add`, `cap_drop`, placement constraints/preferences, generic resources, `device_cgroup_rules`, `expose`, `external_links`, and `security_opt`) preserve first-seen order and omit exact duplicate entries. Ports and target-keyed mounts/resources use their dedicated merge keys. See [merge semantics](merge-semantics.md) for the supported rules and gaps.
+
 ## Service `extends`
 
 Services can extend another service in the same Compose file or in a separate file. The loader resolves nested references, merges maps recursively, appends ordinary sequences, removes duplicate entries from Compose's unique `extends` sequences, merges `volumes` and `devices` by container target, and merges block-I/O device limits by device path. Values declared by the extending service override inherited mapping entries. Enabling `healthcheck.disable` in the extending service is rejected unless the base service also disables its healthcheck. Missing references and circular inheritance fail with service/property context. The external file path is resolved relative to the main Compose file; inherited build contexts, `env_file` paths, and relative bind sources are rebased so they continue to point to their original locations. Referenced services' dependencies and top-level resources are not imported automatically and must be declared by the project using the extended service.

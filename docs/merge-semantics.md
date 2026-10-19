@@ -8,7 +8,7 @@ The current implementation is an incremental subset, not full Docker Compose mer
 | --- | --- |
 | Scalars, `null`, or a change between YAML shapes | The later value replaces the earlier value. |
 | Mappings | Recursively merges keys; later values replace matching scalar leaves. |
-| Standard lists | Appends every overlay entry, preserving duplicates and order. |
+| Standard lists | Appends overlay entries, preserving order. Exact duplicate entries are removed for `cap_add`, `cap_drop`, `deploy.placement.constraints`, `deploy.placement.preferences`, `deploy.reservations.generic_resources`, `device_cgroup_rules`, `expose`, `external_links`, and `security_opt`. |
 | Service `ports` lists | Replaces entries with the same parsed `ip`, `target`, `published`, and `protocol` key for short and long entries, including ranges and Docker Compose's unbracketed IPv6 short form; other entries are retained. |
 | `environment` and `labels` list form | Replaces an earlier entry with the same key (the text before `=` or `:`). |
 | Service `volumes`, `secrets`, and `configs` lists | Replaces an earlier entry with the same target when the short or long form can be identified. Short volume syntax accounts for drive-letter colons in the covered Windows source and target forms; all path and syntax combinations are not verified. |
