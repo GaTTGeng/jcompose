@@ -4098,6 +4098,54 @@ public final class ComposeService implements IComposeService {
         });
     }
 
+    @Override public CompletableFuture<List<ImagePublishResult>> publishImagesAsync(
+            ComposeProjectContext context, String repository, ComposePublishOptions options) {
+        return supply(() -> {
+            java.util.Objects.requireNonNull(context, "context");
+            if (repository == null || repository.isBlank())
+                throw new IllegalArgumentException("Repository must not be blank.");
+            ComposeProject project = loadComposeProject(context);
+            List<ServiceDefinition> services = selectConfigurationServices(project, context.profiles(), null);
+            List<ImagePublishResult> results = new ArrayList<>();
+            try (DockerClient client = createDockerClient(context)) {
+                for (ServiceDefinition service : services) {
+                    if (Thread.currentThread().isInterrupted())
+                        throw new java.util.concurrent.CancellationException("Compose operation was interrupted.");
+                    if (service.image() == null) {
+                        results.add(new ImagePublishResult(service.name(), null, null, false, false,
+                                "Service does not define an image reference."));
+                        continue;
+                    }
+
+                    String taggedImage = repository + ":" + service.name();
+                    try {
+                        client.tagImageCmd(service.image(), repository, service.name()).exec();
+                    } catch (java.util.concurrent.CancellationException failure) {
+                        throw failure;
+                    } catch (RuntimeException failure) {
+                        results.add(new ImagePublishResult(service.name(), service.image(), taggedImage,
+                                false, false, "Tag failed: " + failure.getMessage()));
+                        continue;
+                    }
+
+                    try {
+                        pushImage(client, context.registryAuth(), taggedImage);
+                        results.add(new ImagePublishResult(service.name(), service.image(), taggedImage,
+                                true, true, null));
+                    } catch (java.util.concurrent.CancellationException failure) {
+                        throw failure;
+                    } catch (RuntimeException failure) {
+                        results.add(new ImagePublishResult(service.name(), service.image(), taggedImage,
+                                true, false, "Push failed: " + failure.getMessage()));
+                    }
+                }
+            } catch (java.io.IOException exception) {
+                throw new java.io.UncheckedIOException("Could not close Docker Engine client.", exception);
+            }
+            return List.copyOf(results);
+        });
+    }
+
     String publishComposeYaml(ComposeProjectContext context) {
         ComposeProject project = loadComposeProject(context);
         List<ServiceDefinition> services = selectConfigurationServices(project, context.profiles(), null);

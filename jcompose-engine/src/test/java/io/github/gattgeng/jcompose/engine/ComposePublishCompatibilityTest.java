@@ -42,6 +42,18 @@ class ComposePublishCompatibilityTest {
     }
 
     @Test
+    void imagePublishRequiresTheComposeFileBeforeConnectingToDocker() {
+        ComposeProjectContext context = new ComposeProjectContext("publish-test", Path.of("."));
+
+        CompletionException failure = assertThrows(CompletionException.class,
+                () -> new ComposeService().publishImagesAsync(context, "example/application", null).join());
+
+        assertEquals(IllegalArgumentException.class, failure.getCause().getClass());
+        assertEquals("Compose file not found from " + context.workingDirectory() + ": compose.yaml",
+                failure.getCause().getMessage());
+    }
+
+    @Test
     void rendersMergedComposeFilesAsOnePublishableConfiguration(@TempDir Path directory) throws IOException {
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:

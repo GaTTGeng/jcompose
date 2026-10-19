@@ -49,4 +49,9 @@ public interface IComposeService {
     CompletableFuture<ComposeProjectConfig> generateAsync(ComposeProjectContext c, ComposeGenerateOptions o);
     CompletableFuture<List<VolumesSummary>> volumesAsync(ComposeProjectContext c, ComposeVolumesOptions o);
     CompletableFuture<PublishResult> publishAsync(ComposeProjectContext c, String repository, ComposePublishOptions o);
+    /**
+     * Tags each selected service image as {@code repository:service} and pushes it, returning one outcome per service.
+     * The ComposeSharp 3.0.0 option flags are currently not applied, matching that source implementation.
+     */
+    CompletableFuture<List<ImagePublishResult>> publishImagesAsync(ComposeProjectContext c, String repository, ComposePublishOptions o);
 }
