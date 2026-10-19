@@ -52,8 +52,19 @@ class ComposePublishCompatibilityTest {
                         ComposePublishOptions.builder().withEnvironment(true).build()).join());
 
         assertEquals(UnsupportedOperationException.class, failure.getCause().getClass());
-        assertEquals("Image digest resolution, environment layers, and custom OCI versions are not supported yet.",
+        assertEquals("Environment layers and custom OCI versions are not supported yet.",
                 failure.getCause().getMessage());
+    }
+
+    @Test
+    void replacesOnlyTheImageTagWhenPinningAResolvedDigest() {
+        assertEquals("nginx@sha256:0123", ComposeService.imageReferenceWithDigest("nginx:latest", "sha256:0123"));
+        assertEquals("registry.example:5000/team/app@sha256:abcd",
+                ComposeService.imageReferenceWithDigest("registry.example:5000/team/app:v2", "sha256:abcd"));
+        assertEquals("team/app@sha256:abcd",
+                ComposeService.imageReferenceWithDigest("team/app", "sha256:abcd"));
+        assertEquals("team/app@sha256:existing",
+                ComposeService.imageReferenceWithDigest("team/app@sha256:existing", "sha256:resolved"));
     }
 
     @Test

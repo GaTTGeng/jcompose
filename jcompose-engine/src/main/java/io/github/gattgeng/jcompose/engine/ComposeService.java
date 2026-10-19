@@ -4244,13 +4244,11 @@ public final class ComposeService implements IComposeService {
             if (context.offline()) throw new IllegalStateException("Cannot publish when the Compose project context is offline.");
             ComposePublishOptions effectiveOptions = options == null
                     ? ComposePublishOptions.builder().build() : options;
-            if (effectiveOptions.resolveImageDigests() || effectiveOptions.withEnvironment()
-                    || effectiveOptions.ocIVersion() != null) {
-                throw new UnsupportedOperationException("Image digest resolution, environment layers, and custom OCI versions are not supported yet.");
+            if (effectiveOptions.withEnvironment() || effectiveOptions.ocIVersion() != null) {
+                throw new UnsupportedOperationException("Environment layers and custom OCI versions are not supported yet.");
             }
             ComposeProject project = loadComposeProject(context);
             List<ServiceDefinition> services = selectConfigurationServices(project, context.profiles(), null);
-            String composeYaml = ComposeConfigRenderer.render(project, services, context.projectName());
             try (DockerClient client = createDockerClient(context)) {
                 for (ServiceDefinition service : services) {
                     String image = service.image();
@@ -4264,6 +4262,13 @@ public final class ComposeService implements IComposeService {
             } catch (java.io.IOException exception) {
                 throw new java.io.UncheckedIOException("Could not close Docker Engine client.", exception);
             }
+            land.oras.Registry.Builder registryBuilder = land.oras.Registry.builder().defaults();
+            if (effectiveOptions.insecureRegistry()) registryBuilder.insecure();
+            land.oras.Registry registry = registryBuilder.build();
+            if (effectiveOptions.resolveImageDigests()) {
+                services = resolvePublishedImageDigests(services, registry);
+            }
+            String composeYaml = ComposeConfigRenderer.render(project, services, context.projectName());
             java.nio.file.Path publishDirectory;
             try {
                 publishDirectory = java.nio.file.Files.createTempDirectory("jcompose-publish-");
@@ -4273,9 +4278,6 @@ public final class ComposeService implements IComposeService {
             java.nio.file.Path composeFile = publishDirectory.resolve("compose.yaml");
             try {
                 java.nio.file.Files.writeString(composeFile, composeYaml, StandardCharsets.UTF_8);
-                land.oras.Registry.Builder registryBuilder = land.oras.Registry.builder().defaults();
-                if (effectiveOptions.insecureRegistry()) registryBuilder.insecure();
-                land.oras.Registry registry = registryBuilder.build();
                 land.oras.ContainerRef target = land.oras.ContainerRef.parse(repository);
                 land.oras.Manifest manifest = registry.pushArtifact(target,
                         land.oras.ArtifactType.from("application/vnd.docker.compose.application"),
@@ -4293,6 +4295,31 @@ public final class ComposeService implements IComposeService {
                 }
             }
         });
+    }
+
+    private static List<ServiceDefinition> resolvePublishedImageDigests(
+            List<ServiceDefinition> services, land.oras.Registry registry) {
+        List<ServiceDefinition> resolved = new ArrayList<>(services.size());
+        for (ServiceDefinition service : services) {
+            String image = service.image();
+            if (image == null || image.isBlank() || image.contains("@")) {
+                resolved.add(service);
+                continue;
+            }
+            String digest = registry.getManifest(land.oras.ContainerRef.parse(image))
+                    .getDescriptor().getDigest();
+            Map<String, Object> configuration = new LinkedHashMap<>(service.configuration());
+            configuration.put("image", imageReferenceWithDigest(image, digest));
+            resolved.add(new ServiceDefinition(service.name(), configuration));
+        }
+        return List.copyOf(resolved);
+    }
+
+    static String imageReferenceWithDigest(String image, String digest) {
+        if (image == null || image.isBlank()) throw new IllegalArgumentException("image must not be blank");
+        if (digest == null || digest.isBlank()) throw new IllegalArgumentException("digest must not be blank");
+        if (image.contains("@")) return image;
+        return splitImageReference(image)[0] + "@" + digest;
     }
 
     @Override public CompletableFuture<List<ImagePublishResult>> publishImagesAsync(
