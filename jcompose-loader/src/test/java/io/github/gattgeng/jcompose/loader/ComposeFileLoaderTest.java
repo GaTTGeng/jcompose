@@ -185,6 +185,34 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void includeEnvFilesMergeInOrderAndParentEnvironmentWins() throws Exception {
+        Path includedDirectory = Files.createDirectories(directory.resolve("backend"));
+        Files.writeString(directory.resolve("compose.yaml"), """
+                include:
+                  - path: ./backend/compose.yaml
+                    env_file:
+                      - ./backend/first.env
+                      - ./backend/second.env
+                """);
+        Files.writeString(directory.resolve(".env"), "JC_TEST_INCLUDE_PARENT_WINS=parent\n");
+        Files.writeString(includedDirectory.resolve("first.env"), """
+                JC_TEST_INCLUDE_BASE=first
+                JC_TEST_INCLUDE_OVERRIDE=first
+                JC_TEST_INCLUDE_PARENT_WINS=included
+                """);
+        Files.writeString(includedDirectory.resolve("second.env"), "JC_TEST_INCLUDE_OVERRIDE=second\n");
+        Files.writeString(includedDirectory.resolve("compose.yaml"), """
+                services:
+                  api:
+                    image: "${JC_TEST_INCLUDE_BASE}:${JC_TEST_INCLUDE_OVERRIDE}:${JC_TEST_INCLUDE_PARENT_WINS}"
+                """);
+
+        var project = new ComposeFileLoader().load(directory, "compose.yaml", Map.of());
+
+        assertEquals("first:second:parent", project.services().get("api").image());
+    }
+
+    @Test
     void rejectsConflictingAndRemoteIncludesWithSourceContext() throws Exception {
         Path composeFile = directory.resolve("compose.yaml");
         Files.writeString(composeFile, """
