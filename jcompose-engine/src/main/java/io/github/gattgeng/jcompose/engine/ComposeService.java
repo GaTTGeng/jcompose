@@ -831,6 +831,23 @@ public final class ComposeService implements IComposeService {
         }
     }
 
+    private static void awaitRunAttach(DockerClient client, String containerId, ResultCallback.Adapter<?> callback) {
+        try {
+            await(callback);
+        } catch (RuntimeException exception) {
+            if (!hasCause(exception, java.io.IOException.class)
+                    || Boolean.TRUE.equals(client.inspectContainerCmd(containerId).exec().getState().getRunning()))
+                throw exception;
+            // Docker closes the attach pipe when the container exits, including on Windows named pipes.
+        }
+    }
+
+    private static boolean hasCause(Throwable throwable, Class<? extends Throwable> type) {
+        for (Throwable current = throwable; current != null; current = current.getCause())
+            if (type.isInstance(current)) return true;
+        return false;
+    }
+
     private static List<String> dependencyNames(Object value) {
         if (value instanceof List<?> list) return list.stream().map(String::valueOf).toList();
         if (value instanceof Map<?, ?> map) return map.keySet().stream().map(String::valueOf).toList();
@@ -3530,19 +3547,30 @@ public final class ComposeService implements IComposeService {
                 }
                 String containerId = command.exec().getId();
             connectAdditionalNetworks(client, context.projectName(), project, service, containerId, effective.useNetworkAliases());
-                client.startContainerCmd(containerId).exec();
-
                 if (!effective.detach()) {
-                    var callback = client.logContainerCmd(containerId).withFollowStream(true).withStdOut(true).withStdErr(true)
-                            .withTailAll().exec(new ResultCallback.Adapter<Frame>() {
-                                @Override public void onNext(Frame frame) {
-                                    if (frame.getStreamType() == StreamType.STDERR) System.err.print(new String(frame.getPayload(), StandardCharsets.UTF_8));
-                                    else System.out.print(new String(frame.getPayload(), StandardCharsets.UTF_8));
-                                }
-                            });
-                    await(callback);
+                    if (effective.interactive()) {
+                        var callback = client.attachContainerCmd(containerId).withLogs(false).withFollowStream(true)
+                                .withStdOut(true).withStdErr(true).withStdIn(System.in).exec(new ResultCallback.Adapter<Frame>() {
+                                    @Override public void onNext(Frame frame) {
+                                        if (frame.getStreamType() == StreamType.STDERR) System.err.print(new String(frame.getPayload(), StandardCharsets.UTF_8));
+                                        else System.out.print(new String(frame.getPayload(), StandardCharsets.UTF_8));
+                                    }
+                                });
+                        client.startContainerCmd(containerId).exec();
+                        awaitRunAttach(client, containerId, callback);
+                    } else {
+                        client.startContainerCmd(containerId).exec();
+                        var callback = client.logContainerCmd(containerId).withFollowStream(true).withStdOut(true).withStdErr(true)
+                                .withTailAll().exec(new ResultCallback.Adapter<Frame>() {
+                                    @Override public void onNext(Frame frame) {
+                                        if (frame.getStreamType() == StreamType.STDERR) System.err.print(new String(frame.getPayload(), StandardCharsets.UTF_8));
+                                        else System.out.print(new String(frame.getPayload(), StandardCharsets.UTF_8));
+                                    }
+                                });
+                        await(callback);
+                    }
                     if (options == null || effective.remove()) client.removeContainerCmd(containerId).withForce(true).withRemoveVolumes(false).exec();
-                }
+                } else client.startContainerCmd(containerId).exec();
                 return containerId;
             } catch (java.io.IOException exception) {
                 throw new java.io.UncheckedIOException("Could not close Docker Engine client.", exception);

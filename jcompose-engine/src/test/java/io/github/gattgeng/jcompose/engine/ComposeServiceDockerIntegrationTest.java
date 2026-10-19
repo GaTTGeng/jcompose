@@ -12,6 +12,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -130,6 +133,41 @@ class ComposeServiceDockerIntegrationTest {
                 if (defaultRun != null) client.removeContainerCmd(defaultRun).withForce(true).withRemoveVolumes(false).exec();
                 if (servicePortsRun != null) client.removeContainerCmd(servicePortsRun).withForce(true).withRemoveVolumes(false).exec();
                 if (explicitPublishRun != null) client.removeContainerCmd(explicitPublishRun).withForce(true).withRemoveVolumes(false).exec();
+            }
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
+    void runForwardsStandardInputWhenInteractive() throws Exception {
+        String projectName = "jcompose-run-stdin-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: ["sleep", "60"]
+                """);
+
+        IComposeService service = new ComposeService();
+        InputStream originalInput = System.in;
+        String containerId = null;
+        try {
+            System.setIn(new ByteArrayInputStream("input-from-stdin\n".getBytes(StandardCharsets.UTF_8)));
+            containerId = service.runAsync(context, "app", ComposeRunOptions.builder()
+                    .command(java.util.List.of("sh", "-c", "read value && test \"$value\" = input-from-stdin"))
+                    .noDeps(true).detach(false).tty(false).interactive(true).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+
+            try (var client = DockerClientFactory.create(context)) {
+                var state = client.inspectContainerCmd(containerId).exec().getState();
+                assertEquals("exited", state.getStatus());
+                assertEquals(0L, state.getExitCodeLong());
+            }
+        } finally {
+            System.setIn(originalInput);
+            try (var client = DockerClientFactory.create(context)) {
+                if (containerId != null) client.removeContainerCmd(containerId).withForce(true).withRemoveVolumes(false).exec();
             }
             service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
         }
