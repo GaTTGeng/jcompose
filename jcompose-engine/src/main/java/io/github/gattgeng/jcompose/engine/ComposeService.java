@@ -3459,7 +3459,7 @@ public final class ComposeService implements IComposeService {
                 }
                 if (effective.waitForCompletion() && !effective.noStart()) {
                     for (ServiceDefinition service : selected) awaitServiceRunning(client, context.projectName(), service,
-                            effective.dependencyWaitTimeoutSeconds());
+                            effective.waitTimeoutSeconds());
                 }
             } catch (java.io.IOException exception) {
                 throw new java.io.UncheckedIOException("Could not close Docker Engine client.", exception);

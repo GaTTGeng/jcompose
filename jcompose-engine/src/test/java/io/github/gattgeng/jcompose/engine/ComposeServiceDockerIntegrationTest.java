@@ -791,6 +791,38 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void upWaitTimeoutBoundsSelectedServiceReadinessSeparatelyFromDependencyTimeout() throws Exception {
+        String projectName = "jcompose-up-wait-timeout-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: ["sleep", "60"]
+                    healthcheck:
+                      test: ["CMD-SHELL", "sleep 10"]
+                      interval: 30s
+                      timeout: 15s
+                      retries: 5
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            ExecutionException failure = assertThrows(ExecutionException.class,
+                    () -> service.upAsync(context, ComposeUpOptions.builder().waitForCompletion(true)
+                                    .waitTimeoutSeconds(2).dependencyWaitTimeoutSeconds(30).build())
+                            .get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS));
+            Throwable cause = failure.getCause();
+            while (cause.getCause() != null) cause = cause.getCause();
+
+            assertTrue(cause instanceof TimeoutException, "Expected timeout, got: " + cause);
+            assertTrue(cause.getMessage().contains("app"));
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
     void upDoesNotCollectLogsForServicesWithAttachDisabled() throws Exception {
         String projectName = "jcompose-attach-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);

@@ -17,6 +17,7 @@ import java.util.Objects;
  * @param services Restricts the up to these service names (plus their dependencies unless {@code noDeps} is true); null targets every service.
  * @param timeoutSeconds Grace period in seconds when stopping containers during recreation.
  * @param waitForCompletion Block until the started containers are running (or healthy) before returning.
+ * @param waitTimeoutSeconds Maximum seconds to wait for selected services to become ready; null waits until readiness, failure, or cancellation.
  * @param dependencyWaitTimeoutSeconds Maximum seconds to wait for each dependency to become ready; null waits until readiness, failure, or cancellation.
  * @param noBuild Never build images, failing when a required image is missing.
  * @param quietPull Suppress pull progress output.
@@ -37,6 +38,7 @@ public record ComposeUpOptions(
         List<String> services,
         Integer timeoutSeconds,
         boolean waitForCompletion,
+        Integer waitTimeoutSeconds,
         Integer dependencyWaitTimeoutSeconds,
         boolean noBuild,
         boolean quietPull,
@@ -56,8 +58,19 @@ public record ComposeUpOptions(
                             boolean noBuild, boolean quietPull, boolean renewAnonVolumes, boolean alwaysRecreateDeps,
                             ILogConsumer logConsumer) {
         this(detach, build, forceRecreate, noRecreate, noStart, pull, removeOrphans, scale, services, timeoutSeconds,
-                waitForCompletion, dependencyWaitTimeoutSeconds, noBuild, quietPull, renewAnonVolumes,
+                waitForCompletion, null, dependencyWaitTimeoutSeconds, noBuild, quietPull, renewAnonVolumes,
                 alwaysRecreateDeps, false, logConsumer);
+    }
+
+    /** Preserves the constructor signature that includes {@code noDeps}. */
+    public ComposeUpOptions(boolean detach, boolean build, boolean forceRecreate, boolean noRecreate, boolean noStart,
+                            String pull, boolean removeOrphans, Map<String, Integer> scale, List<String> services,
+                            Integer timeoutSeconds, boolean waitForCompletion, Integer dependencyWaitTimeoutSeconds,
+                            boolean noBuild, boolean quietPull, boolean renewAnonVolumes, boolean alwaysRecreateDeps,
+                            boolean noDeps, ILogConsumer logConsumer) {
+        this(detach, build, forceRecreate, noRecreate, noStart, pull, removeOrphans, scale, services, timeoutSeconds,
+                waitForCompletion, null, dependencyWaitTimeoutSeconds, noBuild, quietPull, renewAnonVolumes,
+                alwaysRecreateDeps, noDeps, logConsumer);
     }
 
     public static Builder builder() { return new Builder(); }
@@ -75,6 +88,7 @@ public record ComposeUpOptions(
         private List<String> services;
         private Integer timeoutSeconds;
         private boolean waitForCompletion;
+        private Integer waitTimeoutSeconds;
         private Integer dependencyWaitTimeoutSeconds;
         private boolean noBuild;
         private boolean quietPull;
@@ -161,6 +175,13 @@ public record ComposeUpOptions(
         public Builder waitForCompletion(boolean value) { this.waitForCompletion = value; return this; }
 
         /**
+         * Maximum seconds to wait for selected services to become ready; null waits until readiness, failure, or cancellation.
+         * @param value Maximum seconds to wait for selected services to become ready; null waits until readiness, failure, or cancellation.
+         * @return this builder
+         */
+        public Builder waitTimeoutSeconds(Integer value) { this.waitTimeoutSeconds = value; return this; }
+
+        /**
          * Maximum seconds to wait for each dependency to become ready; null waits until readiness, failure, or cancellation.
          * @param value Maximum seconds to wait for each dependency to become ready; null waits until readiness, failure, or cancellation.
          * @return this builder
@@ -210,6 +231,6 @@ public record ComposeUpOptions(
         public Builder logConsumer(ILogConsumer value) { this.logConsumer = value; return this; }
 
         /** @return the immutable operation options */
-        public ComposeUpOptions build() { return new ComposeUpOptions(detach, build, forceRecreate, noRecreate, noStart, pull, removeOrphans, scale, services, timeoutSeconds, waitForCompletion, dependencyWaitTimeoutSeconds, noBuild, quietPull, renewAnonVolumes, alwaysRecreateDeps, noDeps, logConsumer); }
+        public ComposeUpOptions build() { return new ComposeUpOptions(detach, build, forceRecreate, noRecreate, noStart, pull, removeOrphans, scale, services, timeoutSeconds, waitForCompletion, waitTimeoutSeconds, dependencyWaitTimeoutSeconds, noBuild, quietPull, renewAnonVolumes, alwaysRecreateDeps, noDeps, logConsumer); }
     }
 }
