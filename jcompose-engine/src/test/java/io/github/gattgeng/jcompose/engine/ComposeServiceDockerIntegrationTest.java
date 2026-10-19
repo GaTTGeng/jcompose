@@ -2,6 +2,7 @@ package io.github.gattgeng.jcompose.engine;
 
 import io.github.gattgeng.jcompose.api.ComposeExecOptions;
 import io.github.gattgeng.jcompose.api.ComposeListOptions;
+import io.github.gattgeng.jcompose.api.ComposePauseOptions;
 import io.github.gattgeng.jcompose.api.ComposeProjectContext;
 import io.github.gattgeng.jcompose.api.ComposeRestartOptions;
 import io.github.gattgeng.jcompose.api.ComposeRunOptions;
@@ -114,6 +115,14 @@ class ComposeServiceDockerIntegrationTest {
             var running = service.listAsync(null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
             assertEquals("running", running.stream().filter(stack -> projectName.equals(stack.name()))
                     .findFirst().orElseThrow().status());
+
+            service.pauseAsync(context, ComposePauseOptions.builder().services(java.util.List.of("first")).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            var paused = service.listAsync(null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertEquals("unknown", paused.stream().filter(stack -> projectName.equals(stack.name()))
+                    .findFirst().orElseThrow().status());
+            service.unpauseAsync(context, ComposePauseOptions.builder().services(java.util.List.of("first")).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
 
             service.stopAsync(context, ComposeStopOptions.builder().services(java.util.List.of("first"))
                             .timeoutSeconds(1).build())

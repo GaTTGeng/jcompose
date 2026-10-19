@@ -111,7 +111,7 @@ jcompose 以 ComposeSharp 的功能范围作为同步路线，并为每一项记
 | 范围 | 当前边界 |
 | --- | --- |
 | 项目生命周期 | 部分 start、stop、restart、pause、unpause、kill、remove、down、up、create 和 scale 操作可处理带项目标签的资源或协调服务。 |
-| 检查与查询 | `ps` 和 `list` 查询带项目标签的容器；`list` 默认省略没有运行中容器的项目，设置 `all` 后会包含这些项目；`top`、`images`、`port` 和 `volumes` 提供有限的 Docker 检查能力。`logsAsync` 会把容器输出流式传给 `ILogConsumer`。仅声明 API 方法或选项类型不代表功能已完整实现。 |
+| 检查与查询 | `ps` 和 `list` 查询带项目标签的容器；`list` 按 Docker 默认容器列表决定项目可见性，因此暂停或重启中的项目仍可能显示，而仅有已停止容器的项目会省略；设置 `all` 会包含 Docker 默认列表排除的项目。`top`、`images`、`port` 和 `volumes` 提供有限的 Docker 检查能力。`logsAsync` 会把容器输出流式传给 `ILogConsumer`。仅声明 API 方法或选项类型不代表功能已完整实现。 |
 | 配置生成 | `generateAsync` 从 Loader 保留的配置渲染规范化 YAML 快照；不连接 Docker，也不写文件。 |
 | 服务编排 | 已实现基础服务协调、一次性 `run`、主机与容器间 `copy`、副本伸缩、容器退出等待、部分依赖条件、健康检查、网络/卷资源定义、项目网络附件、DNS 设置、CPU/内存限制、镜像构建与推送、`exec`/`attach`、构建目录变更流、文件系统导出和容器提交等子集；完整 Compose 生命周期行为仍在开发中。 |
 
