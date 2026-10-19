@@ -3320,14 +3320,20 @@ public final class ComposeService implements IComposeService {
                     Path buildContext = remoteContext ? null : projectDirectory.resolve(configuredContext).normalize();
                     if (!remoteContext && !Files.isDirectory(buildContext))
                         throw new IllegalArgumentException("Build context for service '" + service.name() + "' does not exist: " + buildContext);
-                    String dockerfile = stringValue(build.get("dockerfile"), "Dockerfile");
-                    Path dockerfilePath = remoteContext ? null : buildContext.resolve(dockerfile).normalize();
-                    if (!remoteContext && !Files.isRegularFile(dockerfilePath))
+                    String inlineDockerfile = stringValue(build.get("dockerfile_inline"), null);
+                    if (remoteContext && inlineDockerfile != null)
+                        throw new IllegalArgumentException("Inline Dockerfiles require a local build context for service '" + service.name() + "'.");
+                    String dockerfile = inlineDockerfile == null ? stringValue(build.get("dockerfile"), "Dockerfile") : null;
+                    Path dockerfilePath = remoteContext || inlineDockerfile != null
+                            ? null : buildContext.resolve(dockerfile).normalize();
+                    if (!remoteContext && inlineDockerfile == null && !Files.isRegularFile(dockerfilePath))
                         throw new IllegalArgumentException("Dockerfile for service '" + service.name() + "' does not exist: " + dockerfilePath);
 
                     String image = service.image() == null || service.image().isBlank()
                             ? context.projectName() + "-" + service.name() : service.image();
-                    try (DockerBuildContextArchive archive = remoteContext ? null : DockerBuildContextArchive.create(buildContext, dockerfilePath)) {
+                    try (DockerBuildContextArchive archive = remoteContext ? null : inlineDockerfile == null
+                            ? DockerBuildContextArchive.create(buildContext, dockerfilePath)
+                            : DockerBuildContextArchive.createInline(buildContext, inlineDockerfile)) {
                         var command = client.buildImageCmd();
                         if (remoteContext) {
                             command.withRemote(URI.create(configuredContext)).withDockerfilePath(dockerfile);

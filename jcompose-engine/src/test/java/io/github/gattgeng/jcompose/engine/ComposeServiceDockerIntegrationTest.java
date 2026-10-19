@@ -934,4 +934,34 @@ class ComposeServiceDockerIntegrationTest {
             service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
         }
     }
+
+    @Test
+    void buildUsesInlineDockerfileAndLocalContext() throws Exception {
+        String projectName = "jcompose-inline-build-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("payload.txt"), "inline-build-context");
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: %s-app
+                    build:
+                      context: .
+                      dockerfile_inline: |
+                        FROM busybox:1.36
+                        COPY payload.txt /payload.txt
+                """.formatted(projectName));
+
+        IComposeService service = new ComposeService();
+        try {
+            service.buildAsync(context, null).get(Duration.ofMinutes(3).toMillis(), TimeUnit.MILLISECONDS);
+            try (var client = DockerClientFactory.create(context)) {
+                var image = client.inspectImageCmd(projectName + "-app").exec();
+                assertTrue(image.getId() != null && !image.getId().isBlank());
+            }
+        } finally {
+            try (var client = DockerClientFactory.create(context)) {
+                client.removeImageCmd(projectName + "-app").withForce(true).exec();
+            }
+        }
+    }
 }

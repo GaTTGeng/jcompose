@@ -716,6 +716,15 @@ public final class ComposeFileLoader {
 
         Object buildValue = configuration.get("build");
         if (buildValue instanceof Map<?, ?> build) {
+            if (build.containsKey("dockerfile_inline")) {
+                Object inlineDockerfile = build.get("dockerfile_inline");
+                if (!(inlineDockerfile instanceof String))
+                    throw new ComposeValidationException(file, path + ".build.dockerfile_inline", service,
+                            "dockerfile_inline must be a string.", null, null, null);
+                if (build.containsKey("dockerfile"))
+                    throw new ComposeValidationException(file, path + ".build.dockerfile_inline", service,
+                            "dockerfile_inline cannot be combined with dockerfile.", null, null, null);
+            }
             for (String key : List.of("privileged", "pull", "no_cache"))
                 validateBoolean(file, service, build, key, path + ".build." + key);
         }

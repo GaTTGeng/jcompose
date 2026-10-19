@@ -57,6 +57,26 @@ final class DockerBuildContextArchive implements AutoCloseable {
         }
     }
 
+    static DockerBuildContextArchive createInline(Path contextDirectory, String dockerfileContents) throws IOException {
+        Path context = contextDirectory.toRealPath();
+        String archiveDockerfile = EXTERNAL_DOCKERFILE_PREFIX + UUID.randomUUID();
+        List<IgnoreRule> ignoreRules = readIgnoreRules(context, null);
+        Path archive = Files.createTempFile("jcompose-build-context-", ".tar");
+        try {
+            try (TarArchiveOutputStream tar = new TarArchiveOutputStream(Files.newOutputStream(archive))) {
+                tar.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX);
+                tar.setBigNumberMode(TarArchiveOutputStream.BIGNUMBER_POSIX);
+                addDirectory(context, context, archive, tar, ignoreRules, archiveDockerfile, null);
+                addInlineFile(dockerfileContents, archiveDockerfile, tar);
+                tar.finish();
+            }
+            return new DockerBuildContextArchive(archive, archiveDockerfile);
+        } catch (IOException | RuntimeException | Error failure) {
+            Files.deleteIfExists(archive);
+            throw failure;
+        }
+    }
+
     String dockerfilePath() { return dockerfilePath; }
     InputStream stream() { return stream; }
 
@@ -136,6 +156,16 @@ final class DockerBuildContextArchive implements AutoCloseable {
         tar.closeArchiveEntry();
     }
 
+    private static void addInlineFile(String contents, String archivePath, TarArchiveOutputStream tar) throws IOException {
+        byte[] bytes = contents.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        TarArchiveEntry entry = new TarArchiveEntry(archivePath);
+        entry.setSize(bytes.length);
+        entry.setMode(0644);
+        tar.putArchiveEntry(entry);
+        tar.write(bytes);
+        tar.closeArchiveEntry();
+    }
+
     private static void addSymlink(Path path, String archivePath, TarArchiveOutputStream tar) throws IOException {
         TarArchiveEntry entry = new TarArchiveEntry(archivePath, TarArchiveEntry.LF_SYMLINK);
         entry.setLinkName(Files.readSymbolicLink(path).toString().replace('\\', '/'));
@@ -154,8 +184,10 @@ final class DockerBuildContextArchive implements AutoCloseable {
     }
 
     private static List<IgnoreRule> readIgnoreRules(Path context, Path dockerfile) throws IOException {
-        Path dockerfileIgnore = dockerfile.resolveSibling(dockerfile.getFileName() + ".dockerignore");
-        Path dockerignore = Files.isRegularFile(dockerfileIgnore) ? dockerfileIgnore : context.resolve(".dockerignore");
+        Path dockerfileIgnore = dockerfile == null ? null
+                : dockerfile.resolveSibling(dockerfile.getFileName() + ".dockerignore");
+        Path dockerignore = dockerfileIgnore != null && Files.isRegularFile(dockerfileIgnore)
+                ? dockerfileIgnore : context.resolve(".dockerignore");
         if (!Files.isRegularFile(dockerignore)) return List.of();
         List<IgnoreRule> rules = new ArrayList<>();
         List<String> lines = Files.readAllLines(dockerignore);

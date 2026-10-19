@@ -18,6 +18,35 @@ class DockerBuildContextArchiveTest {
     Path temporaryDirectory;
 
     @Test
+    void addsInlineDockerfileToBuildContextArchive() throws Exception {
+        Path context = Files.createDirectory(temporaryDirectory.resolve("inline-context"));
+        Files.writeString(context.resolve("source.txt"), "build input");
+        Files.writeString(context.resolve(".dockerignore"), "secret.txt\n");
+        Files.writeString(context.resolve("secret.txt"), "excluded");
+        String dockerfile = "FROM scratch\nCOPY source.txt /source.txt\n";
+
+        try (DockerBuildContextArchive archive = DockerBuildContextArchive.createInline(context, dockerfile);
+             TarArchiveInputStream tar = new TarArchiveInputStream(archive.stream())) {
+            boolean foundDockerfile = false;
+            boolean foundSource = false;
+            boolean foundSecret = false;
+            for (var entry = tar.getNextEntry(); entry != null; entry = tar.getNextEntry()) {
+                if (entry.getName().startsWith("__external_dockerfile__")) {
+                    assertEquals(dockerfile, new String(tar.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+                    foundDockerfile = true;
+                } else if (entry.getName().equals("source.txt")) {
+                    foundSource = true;
+                } else if (entry.getName().equals("secret.txt")) {
+                    foundSecret = true;
+                }
+            }
+            assertTrue(foundDockerfile);
+            assertTrue(foundSource);
+            assertTrue(!foundSecret);
+        }
+    }
+
+    @Test
     void bracketClassTreatsExclamationMarkAsLiteral() throws Exception {
         Path context = Files.createDirectory(temporaryDirectory.resolve("context"));
         Path dockerfile = Files.writeString(context.resolve("Dockerfile"), "FROM scratch\n");

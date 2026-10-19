@@ -43,6 +43,35 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
+    void acceptsInlineDockerfileAndRejectsDockerfilePathCombination() throws IOException {
+        Path file = temporaryDirectory.resolve("compose.yaml");
+        Files.writeString(file, """
+                services:
+                  app:
+                    build:
+                      context: .
+                      dockerfile_inline: |-
+                        FROM scratch
+                """);
+
+        Map<?, ?> build = (Map<?, ?>) new ComposeFileLoader().load(temporaryDirectory, "compose.yaml")
+                .services().get("app").build();
+        assertEquals("FROM scratch", build.get("dockerfile_inline"));
+
+        Files.writeString(file, """
+                services:
+                  app:
+                    build:
+                      context: .
+                      dockerfile: Dockerfile
+                      dockerfile_inline: FROM scratch
+                """);
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(temporaryDirectory, "compose.yaml"));
+        assertEquals("services.app.build.dockerfile_inline", exception.propertyPath());
+    }
+
+    @Test
     void rejectsUndefinedServiceSecret() throws IOException {
         Path file = temporaryDirectory.resolve("compose.yaml");
         Files.writeString(file, """
