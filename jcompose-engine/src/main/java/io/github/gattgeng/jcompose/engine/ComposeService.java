@@ -111,13 +111,13 @@ public final class ComposeService implements IComposeService {
                     : dependencyOrderedServices(project, requested, effectiveProfiles);
             try (DockerClient client = createDockerClient(context)) {
                 if (project == null) {
-                    startExistingContainers(client, context.projectName(), options == null ? null : options.services());
+                    startExistingContainers(client, context.projectName(), options == null ? null : options.services(), null);
                     return null;
                 }
                 Integer dependencyTimeout = options == null ? null : options.dependencyWaitTimeoutSeconds();
                 for (ServiceDefinition service : ordered) {
                     awaitDependencies(client, project, context.projectName(), service, dependencyTimeout, effectiveProfiles);
-                    startExistingContainers(client, context.projectName(), List.of(service.name()));
+                    startExistingContainers(client, context.projectName(), List.of(service.name()), project);
                     if (options != null && options.waitForCompletion()) {
                         awaitServiceRunning(client, context.projectName(), service, options.waitTimeoutSeconds());
                     }
@@ -129,7 +129,8 @@ public final class ComposeService implements IComposeService {
         });
     }
 
-    private static void startExistingContainers(DockerClient client, String projectName, List<String> selectedServices) {
+    private static void startExistingContainers(DockerClient client, String projectName, List<String> selectedServices,
+                                                ComposeProject project) {
         for (Container container : projectContainers(client, projectName, selectedServices, true)) {
             if ("true".equalsIgnoreCase(label(container, ComposeConstants.ONE_OFF_LABEL))) continue;
             if (!isRunning(container)) {
@@ -138,7 +139,53 @@ public final class ComposeService implements IComposeService {
                 } catch (DockerException exception) {
                     if (!isAlreadyStartedResponse(exception)) throw exception;
                 }
+                runLifecycleHooks(client, container, project, "post_start");
             }
+        }
+    }
+
+    private static void runLifecycleHooks(DockerClient client, Container container, ComposeProject project, String hookName) {
+        if (project == null) return;
+        String serviceName = label(container, ComposeConstants.SERVICE_LABEL);
+        if (serviceName == null) return;
+        ServiceDefinition service = project.services().get(serviceName);
+        runLifecycleHooks(client, container.getId(), service, hookName);
+    }
+
+    private static void runLifecycleHooks(DockerClient client, String containerId, ServiceDefinition service, String hookName) {
+        if (service == null || !(service.configuration().get(hookName) instanceof List<?> hooks)) return;
+        for (Object value : hooks) {
+            if (!(value instanceof Map<?, ?> hook)) continue;
+            Object configuredCommand = hook.get("command");
+            List<String> command = configuredCommand instanceof String shell
+                    ? List.of("/bin/sh", "-c", shell) : asStringList(configuredCommand);
+            Map<String, String> environment = new LinkedHashMap<>(stringMap(service.configuration().get("environment")));
+            Object hookEnvironment = hook.get("environment");
+            if (hookEnvironment instanceof Map<?, ?>) environment.putAll(stringMap(hookEnvironment));
+            else if (hookEnvironment instanceof List<?> list) {
+                for (Object entry : list) {
+                    String variable = String.valueOf(entry);
+                    int separator = variable.indexOf('=');
+                    if (separator < 0) environment.remove(variable);
+                    else environment.put(variable.substring(0, separator), variable.substring(separator + 1));
+                }
+            }
+            var create = client.execCreateCmd(containerId).withCmd(command.toArray(String[]::new))
+                    .withAttachStdout(true).withAttachStderr(true)
+                    .withPrivileged(Boolean.TRUE.equals(hook.get("privileged")));
+            if (!environment.isEmpty()) create.withEnv(environment.entrySet().stream().map(entry -> entry.getKey() + "=" + entry.getValue()).toList());
+            Object user = hook.containsKey("user") ? hook.get("user") : service.configuration().get("user");
+            if (user != null) create.withUser(String.valueOf(user));
+            Object workingDirectory = hook.containsKey("working_dir") ? hook.get("working_dir") : service.configuration().get("working_dir");
+            if (workingDirectory != null) create.withWorkingDir(String.valueOf(workingDirectory));
+            String execId = create.exec().getId();
+            ExecOutput output = new ExecOutput();
+            client.execStartCmd(execId).withDetach(false).withTty(false).exec(output);
+            await(output);
+            Integer exitCode = client.inspectExecCmd(execId).exec().getExitCode();
+            if (exitCode == null || exitCode != 0)
+                throw new IllegalStateException("Lifecycle hook '" + hookName + "' failed for service '" + service.name()
+                        + "' with exit code " + exitCode + ". " + output.stderr);
         }
     }
 
@@ -146,8 +193,9 @@ public final class ComposeService implements IComposeService {
     public CompletableFuture<Void> stopAsync(ComposeProjectContext context, ComposeStopOptions options) {
         Integer timeout = options == null ? null : options.timeoutSeconds();
         return execute(context, client -> {
-            List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
-            for (Container container : projectContainers(client, context.projectName(), selectedServices)) {
+            ExistingServiceSelection selection = selectExistingServices(context, options == null ? null : options.services());
+            for (Container container : projectContainers(client, context.projectName(), selection.serviceNames())) {
+                if (isRunning(container)) runLifecycleHooks(client, container, selection.project(), "pre_stop");
                 try {
                     var stop = client.stopContainerCmd(container.getId());
                     if (timeout != null) stop.withTimeout(timeout);
@@ -165,7 +213,8 @@ public final class ComposeService implements IComposeService {
         Integer timeout = options == null ? null : options.timeoutSeconds();
         return execute(context, client -> {
             List<String> requestedServices = options == null ? null : options.services();
-            List<String> selectedServices = selectExistingServices(context, requestedServices).serviceNames();
+            ExistingServiceSelection selection = selectExistingServices(context, requestedServices);
+            List<String> selectedServices = selection.serviceNames();
             if ((options == null || !options.noDeps()) && loader.hasComposeFile(context.workingDirectory(), context.composeFileName())) {
                 ComposeProject project = loadComposeProject(context);
                 java.util.LinkedHashSet<String> restartServices = new java.util.LinkedHashSet<>(selectedServices);
@@ -185,20 +234,22 @@ public final class ComposeService implements IComposeService {
                 selectedServices = restartOrder(project, restartServices);
             }
             if (selectedServices == null) {
-                restartContainers(client, projectContainers(client, context.projectName(), null), timeout);
+                restartContainers(client, projectContainers(client, context.projectName(), null), timeout, selection.project());
                 return;
             }
             for (String service : selectedServices) {
-                restartContainers(client, projectContainers(client, context.projectName(), List.of(service)), timeout);
+                restartContainers(client, projectContainers(client, context.projectName(), List.of(service)), timeout, selection.project());
             }
         });
     }
 
-    private static void restartContainers(DockerClient client, List<Container> containers, Integer timeout) {
+    private static void restartContainers(DockerClient client, List<Container> containers, Integer timeout, ComposeProject project) {
         for (Container container : containers) {
+            if (isRunning(container)) runLifecycleHooks(client, container, project, "pre_stop");
             var restart = client.restartContainerCmd(container.getId());
             if (timeout != null) restart.withTimeout(timeout);
             restart.exec();
+            runLifecycleHooks(client, container, project, "post_start");
         }
     }
 
@@ -241,12 +292,14 @@ public final class ComposeService implements IComposeService {
     @Override
     public CompletableFuture<Void> removeAsync(ComposeProjectContext context, ComposeRemoveOptions options) {
         return execute(context, client -> {
-            List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
+            ExistingServiceSelection selection = selectExistingServices(context, options == null ? null : options.services());
+            List<String> selectedServices = selection.serviceNames();
             List<Container> containers = projectContainers(client, context.projectName(), selectedServices);
             if (options != null && options.stop()) {
                 for (Container container : containers) {
                     boolean stopAccepted = true;
                     try {
+                        if (isRunning(container)) runLifecycleHooks(client, container, selection.project(), "pre_stop");
                         client.stopContainerCmd(container.getId()).exec();
                     } catch (DockerException ignored) {
                         stopAccepted = false;
@@ -290,6 +343,7 @@ public final class ComposeService implements IComposeService {
             List<String> imagesToRemove = removeImages == null ? List.of()
                     : downImageReferences(context, selection, removeImages, project, containers, options != null && options.removeOrphans());
             for (Container container : containers) {
+                if (isRunning(container)) runLifecycleHooks(client, container, project, "pre_stop");
                 try {
                     var stop = client.stopContainerCmd(container.getId());
                     if (timeout != null) stop.withTimeout(timeout);
@@ -1074,14 +1128,15 @@ public final class ComposeService implements IComposeService {
             ComposeProject project = loadComposeProject(context);
             List<ServiceDefinition> selected = selectConfigurationServices(project, context.profiles(), requestedServices);
             boolean includesAllDefinedServices = requestedServices == null && selected.size() == project.services().size();
-            return new ExistingServiceSelection(selected.stream().map(ServiceDefinition::name).toList(), includesAllDefinedServices);
+            return new ExistingServiceSelection(selected.stream().map(ServiceDefinition::name).toList(), includesAllDefinedServices, project);
         }
         if (context.profiles() != null && !context.profiles().isEmpty())
             throw new IllegalArgumentException("Cannot select profiles because no Compose file exists under " + context.workingDirectory());
-        return new ExistingServiceSelection(requestedServices, requestedServices == null);
+        return new ExistingServiceSelection(requestedServices, requestedServices == null, null);
     }
 
-    private record ExistingServiceSelection(List<String> serviceNames, boolean includesAllDefinedServices) { }
+    private record ExistingServiceSelection(List<String> serviceNames, boolean includesAllDefinedServices,
+                                            ComposeProject project) { }
 
     static List<String> effectiveProfiles(List<ServiceDefinition> selected, List<String> activeProfiles) {
         java.util.LinkedHashSet<String> profiles = new java.util.LinkedHashSet<>();
@@ -1439,20 +1494,29 @@ public final class ComposeService implements IComposeService {
                 }
             }
             for (Container container : existing) {
-                if (isRunning(container)) client.stopContainerCmd(container.getId()).withTimeout(effectiveStopTimeout).exec();
+                if (isRunning(container)) {
+                    runLifecycleHooks(client, container, project, "pre_stop");
+                    client.stopContainerCmd(container.getId()).withTimeout(effectiveStopTimeout).exec();
+                }
                 client.removeContainerCmd(container.getId()).withForce(false).withRemoveVolumes(false).exec();
             }
             existing = List.of();
         } else {
             if (existing.size() > replicas) {
                 for (Container container : existing.subList(replicas, existing.size())) {
-                    if (isRunning(container)) client.stopContainerCmd(container.getId()).withTimeout(effectiveStopTimeout).exec();
+                    if (isRunning(container)) {
+                        runLifecycleHooks(client, container, project, "pre_stop");
+                        client.stopContainerCmd(container.getId()).withTimeout(effectiveStopTimeout).exec();
+                    }
                     client.removeContainerCmd(container.getId()).withForce(false).withRemoveVolumes(false).exec();
                 }
                 existing = existing.subList(0, replicas);
             }
             if (start) existing.forEach(container -> {
-                if (!isRunning(container)) client.startContainerCmd(container.getId()).exec();
+                if (!isRunning(container)) {
+                    client.startContainerCmd(container.getId()).exec();
+                    runLifecycleHooks(client, container, project, "post_start");
+                }
             });
         }
         if (existing.size() == replicas) return;
@@ -1504,7 +1568,10 @@ public final class ComposeService implements IComposeService {
             if (!exposed.isEmpty()) command.withExposedPorts(exposed);
             String id = command.exec().getId();
             connectAdditionalNetworks(client, context.projectName(), project, service, id, true);
-            if (start) client.startContainerCmd(id).exec();
+            if (start) {
+                client.startContainerCmd(id).exec();
+                runLifecycleHooks(client, id, service, "post_start");
+            }
             if (logConsumer != null) logConsumer.onStatus(service.name(), (start ? "Started " : "Created ") + containerName(context.projectName(), service, replicas, index));
         }
     }
@@ -3366,7 +3433,7 @@ public final class ComposeService implements IComposeService {
                                     .filter(container -> !"true".equalsIgnoreCase(label(container, ComposeConstants.ONE_OFF_LABEL)))
                                     .toList(), service.configuration().get("stop_grace_period") == null
                                     ? DEFAULT_STOP_TIMEOUT_SECONDS
-                                    : parseDurationSeconds(String.valueOf(service.configuration().get("stop_grace_period"))));
+                                    : parseDurationSeconds(String.valueOf(service.configuration().get("stop_grace_period"))), project);
                         }
                         if (recreated || dependencyUpdated) updatedServices.add(service.name());
                     }

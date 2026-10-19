@@ -55,6 +55,41 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void executesPostStartAndPreStopHooks() throws Exception {
+        String projectName = "jcompose-hooks-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Path hookDirectory = Files.createDirectories(directory.resolve("hooks"));
+        Path events = hookDirectory.resolve("events");
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: [sh, -c, 'sleep 300']
+                    volumes: ["./hooks:/hooks"]
+                    environment:
+                      BASE: inherited
+                    post_start:
+                      - command: [sh, -c, 'echo post:$HOOK:$BASE > /hooks/events']
+                        environment: [HOOK=started, BASE]
+                    pre_stop:
+                      - command: [sh, -c, 'echo pre:$HOOK >> /hooks/events']
+                        environment:
+                          HOOK: stopped
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            assertEquals("post:started:inherited\n", Files.readString(events));
+
+            service.stopAsync(context, null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertEquals("post:started:inherited\npre:stopped\n", Files.readString(events));
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
     void upPsAndDownManageAComposeServiceAndItsNetwork() throws Exception {
         String projectName = "jcompose-it-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
