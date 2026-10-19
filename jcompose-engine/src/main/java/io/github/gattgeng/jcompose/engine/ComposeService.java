@@ -4061,22 +4061,41 @@ public final class ComposeService implements IComposeService {
                     || effectiveOptions.ocIVersion() != null) {
                 throw new UnsupportedOperationException("Image digest resolution, environment layers, and custom OCI versions are not supported yet.");
             }
-            if (context.composeFiles().size() != 1) {
-                throw new UnsupportedOperationException("Publishing multiple Compose files as one OCI artifact is not supported yet.");
+            String composeYaml = publishComposeYaml(context);
+            java.nio.file.Path publishDirectory;
+            try {
+                publishDirectory = java.nio.file.Files.createTempDirectory("jcompose-publish-");
+            } catch (java.io.IOException exception) {
+                throw new java.io.UncheckedIOException(exception);
             }
-            java.nio.file.Path composeFile = context.workingDirectory().resolve(context.composeFiles().getFirst()).normalize();
-            if (!composeFile.startsWith(context.workingDirectory()) || !java.nio.file.Files.isRegularFile(composeFile)) {
-                throw new IllegalArgumentException("Compose file does not exist: " + composeFile);
+            java.nio.file.Path composeFile = publishDirectory.resolve("compose.yaml");
+            try {
+                java.nio.file.Files.writeString(composeFile, composeYaml, StandardCharsets.UTF_8);
+                land.oras.Registry.Builder registryBuilder = land.oras.Registry.builder().defaults();
+                if (effectiveOptions.insecureRegistry()) registryBuilder.insecure();
+                land.oras.Registry registry = registryBuilder.build();
+                land.oras.ContainerRef target = land.oras.ContainerRef.parse(repository);
+                land.oras.Manifest manifest = registry.pushArtifact(target,
+                        land.oras.ArtifactType.from("application/vnd.docker.compose.application"),
+                        land.oras.Annotations.empty(),
+                        land.oras.LocalPath.of(composeFile, "application/vnd.docker.compose.file+yaml"));
+                return new PublishResult(repository, manifest.getDescriptor().getDigest().toString());
+            } catch (java.io.IOException exception) {
+                throw new java.io.UncheckedIOException(exception);
+            } finally {
+                try {
+                    java.nio.file.Files.deleteIfExists(composeFile);
+                    java.nio.file.Files.deleteIfExists(publishDirectory);
+                } catch (java.io.IOException exception) {
+                    throw new java.io.UncheckedIOException(exception);
+                }
             }
-            land.oras.Registry.Builder registryBuilder = land.oras.Registry.builder().defaults();
-            if (effectiveOptions.insecureRegistry()) registryBuilder.insecure();
-            land.oras.Registry registry = registryBuilder.build();
-            land.oras.ContainerRef target = land.oras.ContainerRef.parse(repository);
-            land.oras.Manifest manifest = registry.pushArtifact(target,
-                    land.oras.ArtifactType.from("application/vnd.docker.compose.application"),
-                    land.oras.Annotations.empty(),
-                    land.oras.LocalPath.of(composeFile, "application/vnd.docker.compose.file+yaml"));
-            return new PublishResult(repository, manifest.getDescriptor().getDigest().toString());
         });
+    }
+
+    String publishComposeYaml(ComposeProjectContext context) {
+        ComposeProject project = loadComposeProject(context);
+        List<ServiceDefinition> services = selectConfigurationServices(project, context.profiles(), null);
+        return ComposeConfigRenderer.render(project, services, context.projectName());
     }
 }

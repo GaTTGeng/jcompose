@@ -3,12 +3,17 @@ package io.github.gattgeng.jcompose.engine;
 import io.github.gattgeng.jcompose.api.ComposeProjectContext;
 import io.github.gattgeng.jcompose.api.ComposePublishOptions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.CompletionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ComposePublishCompatibilityTest {
     @Test
@@ -32,7 +37,34 @@ class ComposePublishCompatibilityTest {
                 () -> new ComposeService().publishAsync(context, "example/application:latest", null).join());
 
         assertEquals(IllegalArgumentException.class, failure.getCause().getClass());
-        assertEquals("Compose file does not exist: " + context.workingDirectory().resolve("compose.yaml"),
+        assertEquals("Compose file not found from " + context.workingDirectory() + ": compose.yaml",
                 failure.getCause().getMessage());
+    }
+
+    @Test
+    void rendersMergedComposeFilesAsOnePublishableConfiguration(@TempDir Path directory) throws IOException {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  web:
+                    image: nginx:latest
+                """);
+        Files.writeString(directory.resolve("compose.prod.yaml"), """
+                services:
+                  web:
+                    environment:
+                      MODE: production
+                  worker:
+                    image: busybox:latest
+                """);
+        ComposeProjectContext context = new ComposeProjectContext("publish-test", directory,
+                "compose.yaml", List.of(), null, null, false, false,
+                List.of("compose.yaml", "compose.prod.yaml"));
+
+        String yaml = new ComposeService().publishComposeYaml(context);
+
+        assertTrue(yaml.contains("image: nginx:latest"));
+        assertTrue(yaml.contains("MODE: production"));
+        assertTrue(yaml.contains("worker:"));
+        assertTrue(yaml.contains("image: busybox:latest"));
     }
 }
