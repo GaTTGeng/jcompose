@@ -23,11 +23,11 @@ The rendered document is available from `ComposeProjectConfig.renderedYaml()`.
 
 ## `watchAsync`
 
-`watchAsync` returns a JDK `Flow.Publisher<WatchEvent>` that recursively watches the selected services' local `build.context` directories. Create, modify, and delete notifications are reported with the service name, absolute changed path, and action `rebuild`. It reports filesystem changes only; it does not build images, start services, or apply a Compose `develop.watch` action.
+`watchAsync` returns a JDK `Flow.Publisher<WatchEvent>`. For a selected service with `develop.watch` rules, it recursively watches each rule's local `path`, applies `include` and `ignore` glob filters, performs the configured `rebuild`, `restart`, `sync`, `sync+restart`, or `sync+exec` action, then publishes the event. Unless `noUp` is set, it first builds and starts the selected services. Services without rules retain the SDK behavior of watching their local build contexts and publishing `rebuild` notifications without performing a rebuild.
 
 The publisher honors subscriber demand and cancellation. Projects with no selected local build contexts complete without notifications. A watcher registration or queue-overflow failure is delivered to the subscriber as `onError`. Notifications can repeat for one logical editor save, and services sharing a context each receive an event. `prune` is currently rejected.
 
-Docker Compose `develop.watch` remains a separate compatibility target: rebuild, sync, restart, and sync+restart actions have additional behavior. This JDK publisher is an SDK-level filesystem stream and must not be treated as implementing those actions.
+The implementation is still a subset of Docker Compose Watch. `initial_sync` is not applied. Sync uses the project copy operation for changed paths; delete propagation, Docker-specific ignore processing, event coalescing, and platform-specific command-shell behavior for string `sync+exec` commands are not implemented. `prune` is unsupported. See [Compose Watch](https://docs.docker.com/compose/how-tos/file-watch/) for the compatibility target.
 
 ## Conformance evidence
 

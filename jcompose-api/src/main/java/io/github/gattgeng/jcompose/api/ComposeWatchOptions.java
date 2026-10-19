@@ -4,11 +4,11 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Options for observing build-context changes of selected project services.
+ * Options for watching selected project services and applying their configured develop watch actions.
  * @param services Restricts observation to these service names. Null uses active-profile selection, an empty list observes nothing, and unknown names are rejected. Explicit names bypass profile filtering.
- * @param noUp Compatibility option with no effect because observation never starts the project.
+ * @param noUp Skips the initial build and start of selected services.
  * @param quiet Compatibility option with no effect because observation writes no progress output.
- * @param prune Requests pruning, which is unsupported by the notification-only observer.
+ * @param prune Requests image pruning, which is currently unsupported.
  */
 public record ComposeWatchOptions(
         List<String> services,
@@ -36,8 +36,8 @@ public record ComposeWatchOptions(
         public Builder services(List<String> value) { this.services = value; return this; }
 
         /**
-         * Compatibility option with no effect because observation never starts the project.
-         * @param value Compatibility option with no effect because observation never starts the project.
+         * Skips the initial build and start of selected services.
+         * @param value Whether to skip the initial build and start of selected services.
          * @return this builder
          */
         public Builder noUp(boolean value) { this.noUp = value; return this; }
@@ -50,8 +50,8 @@ public record ComposeWatchOptions(
         public Builder quiet(boolean value) { this.quiet = value; return this; }
 
         /**
-         * Requests pruning, which is unsupported by the notification-only observer.
-         * @param value Requests pruning, which is unsupported by the notification-only observer.
+         * Requests image pruning, which is currently unsupported.
+         * @param value Whether to request image pruning.
          * @return this builder
          */
         public Builder prune(boolean value) { this.prune = value; return this; }

@@ -3961,7 +3961,37 @@ public final class ComposeService implements IComposeService {
         ComposeProject project = loadComposeProject(context);
         Path projectDirectory = project.sourceFile().getParent();
         List<BuildContextWatcher.Registration> registrations = new ArrayList<>();
+        Map<String, List<Map<String, Object>>> rulesByService = new LinkedHashMap<>();
         for (ServiceDefinition service : selectConfigurationServices(project, context.profiles(), effective.services())) {
+            Object developValue = service.configuration().get("develop");
+            Map<String, Object> develop = developValue instanceof Map<?, ?> raw ? stringKeyMap(raw) : Map.of();
+            Object watchValue = develop.get("watch");
+            if (watchValue instanceof List<?> rules && !rules.isEmpty()) {
+                List<Map<String, Object>> normalizedRules = new ArrayList<>();
+                for (Object value : rules) {
+                    if (!(value instanceof Map<?, ?> rawRule)) continue;
+                    Map<String, Object> rule = stringKeyMap(rawRule);
+                    String source = stringValue(rule.get("path"), "");
+                    Path sourcePath = projectDirectory.resolve(source).normalize();
+                    Path root = Files.isDirectory(sourcePath) ? sourcePath : sourcePath.getParent();
+                    List<java.nio.file.PathMatcher> includes = watchMatchers(rule.get("include"));
+                    List<java.nio.file.PathMatcher> ignores = watchMatchers(rule.get("ignore"));
+                    java.util.function.Predicate<Path> filter = relative -> {
+                        Path changedPath = root.resolve(relative).normalize();
+                        if (!changedPath.startsWith(sourcePath)) return false;
+                        Path normalized = Files.isDirectory(sourcePath) ? sourcePath.relativize(changedPath)
+                                : sourcePath.getFileName();
+                        if (includes.isEmpty() || includes.stream().anyMatch(matcher -> matcher.matches(normalized)))
+                            return ignores.stream().noneMatch(matcher -> matcher.matches(normalized));
+                        return false;
+                    };
+                    String action = stringValue(rule.get("action"), "rebuild");
+                    registrations.add(new BuildContextWatcher.Registration(service.name(), root, action, filter));
+                    normalizedRules.add(rule);
+                }
+                rulesByService.put(service.name(), List.copyOf(normalizedRules));
+                continue;
+            }
             Object buildValue = service.build();
             if (buildValue == null || Boolean.FALSE.equals(buildValue)) continue;
             Map<String, Object> build = buildValue instanceof Map<?, ?> raw
@@ -3970,7 +4000,75 @@ public final class ComposeService implements IComposeService {
             Path buildDirectory = projectDirectory.resolve(directory).normalize();
             registrations.add(new BuildContextWatcher.Registration(service.name(), buildDirectory));
         }
-        return new BuildContextWatcher(registrations);
+        List<String> selectedServices = registrations.stream().map(BuildContextWatcher.Registration::service).distinct().toList();
+        return new BuildContextWatcher(registrations, () -> {
+            if (!effective.noUp() && !selectedServices.isEmpty()) await(upAsync(context, ComposeUpOptions.builder()
+                    .services(selectedServices).build(true).detach(true).build()));
+        }, change -> {
+            List<Map<String, Object>> serviceRules = rulesByService.get(change.serviceName());
+            if (serviceRules == null) return;
+            Path changed = Path.of(change.path()).toAbsolutePath().normalize();
+            Map<String, Object> rule = serviceRules.stream().filter(candidate ->
+                    change.action().equals(candidate.get("action"))
+                            && watchRuleMatches(projectDirectory, changed, candidate))
+                    .max(java.util.Comparator.comparingInt(candidate ->
+                            projectDirectory.resolve(stringValue(candidate.get("path"), "")).normalize().getNameCount())).orElse(null);
+            if (rule != null) applyDevelopWatchChange(context, projectDirectory, change.serviceName(), rule, changed);
+        });
+    }
+
+    private static boolean watchRuleMatches(Path projectDirectory, Path changed, Map<String, Object> rule) {
+        Path root = projectDirectory.resolve(stringValue(rule.get("path"), "")).normalize();
+        if (!changed.startsWith(root)) return false;
+        Path relative = root.relativize(changed);
+        Path matchPath = relative.toString().isEmpty() && !Files.isDirectory(root) ? root.getFileName() : relative;
+        List<java.nio.file.PathMatcher> includes = watchMatchers(rule.get("include"));
+        List<java.nio.file.PathMatcher> ignores = watchMatchers(rule.get("ignore"));
+        return (includes.isEmpty() || includes.stream().anyMatch(matcher -> matcher.matches(matchPath)))
+                && ignores.stream().noneMatch(matcher -> matcher.matches(matchPath));
+    }
+
+    private static List<java.nio.file.PathMatcher> watchMatchers(Object configured) {
+        List<String> patterns = configured instanceof String value ? List.of(value)
+                : configured instanceof List<?> values ? values.stream().filter(String.class::isInstance).map(String.class::cast).toList()
+                : List.of();
+        return patterns.stream().map(pattern -> java.nio.file.FileSystems.getDefault().getPathMatcher("glob:" + pattern)).toList();
+    }
+
+    private void applyDevelopWatchChange(ComposeProjectContext context, Path projectDirectory,
+                                        String service, Map<String, Object> rule, Path changed) {
+        String action = stringValue(rule.get("action"), "rebuild");
+        if ("rebuild".equals(action)) {
+            await(buildAsync(context, ComposeBuildOptions.builder().services(List.of(service)).build()));
+            await(upAsync(context, ComposeUpOptions.builder().services(List.of(service)).forceRecreate(true)
+                    .noDeps(true).noBuild(true).detach(true).build()));
+            return;
+        }
+        if ("restart".equals(action)) {
+            await(restartAsync(context, ComposeRestartOptions.builder().services(List.of(service)).noDeps(true).build()));
+            return;
+        }
+        Path sourceRoot = projectDirectory.resolve(stringValue(rule.get("path"), "")).normalize();
+        Path relative = sourceRoot.relativize(changed);
+        String target = stringValue(rule.get("target"), "");
+        Path parent = relative.getParent();
+        Path destination = parent == null ? Path.of(target) : Path.of(target).resolve(parent).normalize();
+        if (relative.toString().isEmpty() && Files.isDirectory(changed)) return;
+        await(copyAsync(context, ComposeCopyOptions.builder().source(changed.toString())
+                .destination(service + ":" + destination.toString().replace('\\', '/')).build()));
+        if ("sync+restart".equals(action)) {
+            await(restartAsync(context, ComposeRestartOptions.builder().services(List.of(service)).noDeps(true).build()));
+        } else if ("sync+exec".equals(action)) {
+            Map<String, Object> exec = rule.get("exec") instanceof Map<?, ?> raw ? stringKeyMap(raw) : Map.of();
+            Object command = exec.get("command");
+            List<String> args = command instanceof List<?> values ? values.stream().map(String::valueOf).toList()
+                    : List.of("/bin/sh", "-c", String.valueOf(command));
+            List<String> environment = stringMap(exec.get("environment")).entrySet().stream()
+                    .map(entry -> entry.getKey() + "=" + entry.getValue()).toList();
+            await(execAsync(context, service, ComposeExecOptions.builder().command(args).env(environment)
+                    .user(stringValue(exec.get("user"), null)).workdir(stringValue(exec.get("working_dir"), null))
+                    .privileged(Boolean.TRUE.equals(exec.get("privileged"))).build()));
+        }
     }
     @Override public CompletableFuture<Void> exportAsync(ComposeProjectContext context, ComposeExportOptions options) {
         return supply(() -> {

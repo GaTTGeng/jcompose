@@ -79,6 +79,26 @@ class BuildContextWatcherTest {
         assertTrue(exception.getMessage().contains(missing.toAbsolutePath().normalize().toString()));
     }
 
+    @Test
+    void appliesActionAndPathFilterBeforeReportingAChange() throws Exception {
+        CountDownLatch registered = new CountDownLatch(1);
+        List<WatchEvent> changes = java.util.Collections.synchronizedList(new ArrayList<>());
+        BuildContextWatcher watcher = new BuildContextWatcher(List.of(new BuildContextWatcher.Registration(
+                "app", directory, "sync", path -> path.toString().endsWith(".java"))),
+                registered::countDown, changes::add);
+        RecordingSubscriber subscriber = new RecordingSubscriber(Long.MAX_VALUE, 1);
+        watcher.subscribe(subscriber);
+        assertTrue(registered.await(5, TimeUnit.SECONDS));
+        Path ignored = Files.createFile(directory.resolve("notes.txt"));
+        Path included = Files.createFile(directory.resolve("Main.java"));
+
+        List<WatchEvent> events = awaitPathEvents(subscriber, included, 1);
+        assertTrue(events.stream().allMatch(event -> "sync".equals(event.action())));
+        assertFalse(subscriber.snapshot().stream().anyMatch(event -> event.path().equals(ignored.toAbsolutePath().normalize().toString())));
+        assertEquals(events, List.copyOf(changes));
+        subscriber.subscription.get().cancel();
+    }
+
     private static final class RecordingSubscriber implements Flow.Subscriber<WatchEvent> {
         private final long initialDemand;
         private final List<WatchEvent> events = java.util.Collections.synchronizedList(new ArrayList<>());

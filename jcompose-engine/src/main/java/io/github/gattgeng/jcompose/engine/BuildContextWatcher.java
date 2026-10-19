@@ -16,20 +16,29 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Flow;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 /** Watches selected local build contexts and reports absolute changed paths. */
 final class BuildContextWatcher implements Flow.Publisher<WatchEvent> {
-    record Registration(String service, Path directory) { }
+    record Registration(String service, Path directory, String action, Predicate<Path> includes) {
+        Registration(String service, Path directory) { this(service, directory, "rebuild", path -> true); }
+    }
 
-    private final Map<Path, List<String>> contexts;
+    private final Map<Path, List<Registration>> contexts;
     private final Runnable onRegistered;
+    private final Consumer<WatchEvent> onChange;
 
     BuildContextWatcher(List<Registration> registrations) {
         this(registrations, () -> { });
     }
 
     BuildContextWatcher(List<Registration> registrations, Runnable onRegistered) {
-        Map<Path, List<String>> grouped = new LinkedHashMap<>();
+        this(registrations, onRegistered, ignored -> { });
+    }
+
+    BuildContextWatcher(List<Registration> registrations, Runnable onRegistered, Consumer<WatchEvent> onChange) {
+        Map<Path, List<Registration>> grouped = new LinkedHashMap<>();
         for (Registration registration : registrations) {
             if (registration.service() == null || registration.service().isBlank())
                 throw new IllegalArgumentException("Build context service name must not be blank.");
@@ -38,12 +47,15 @@ final class BuildContextWatcher implements Flow.Publisher<WatchEvent> {
             Path directory = registration.directory().toAbsolutePath().normalize();
             if (!Files.isDirectory(directory))
                 throw new IllegalArgumentException("Build context for service '" + registration.service() + "' does not exist: " + directory);
-            List<String> services = grouped.computeIfAbsent(directory, ignored -> new ArrayList<>());
-            if (!services.contains(registration.service())) services.add(registration.service());
+            List<Registration> rules = grouped.computeIfAbsent(directory, ignored -> new ArrayList<>());
+            Registration normalized = new Registration(registration.service(), directory, registration.action(), registration.includes());
+            if (!rules.contains(normalized)) rules.add(normalized);
         }
-        grouped.values().forEach(services -> services.sort(String::compareTo));
+        grouped.values().forEach(rules -> rules.sort(java.util.Comparator.comparing(Registration::service)
+                .thenComparing(Registration::action)));
         this.contexts = Map.copyOf(grouped);
         this.onRegistered = java.util.Objects.requireNonNull(onRegistered, "onRegistered");
+        this.onChange = java.util.Objects.requireNonNull(onChange, "onChange");
     }
 
     @Override public void subscribe(Flow.Subscriber<? super WatchEvent> subscriber) {
@@ -104,7 +116,7 @@ final class BuildContextWatcher implements Flow.Publisher<WatchEvent> {
             try (WatchService activeWatcher = FileSystems.getDefault().newWatchService()) {
                 watcher = activeWatcher;
                 Map<WatchKey, DirectoryRegistration> keys = new java.util.concurrent.ConcurrentHashMap<>();
-                for (Map.Entry<Path, List<String>> context : contexts.entrySet()) registerTree(activeWatcher, keys, context.getKey(), context.getValue());
+                for (Map.Entry<Path, List<Registration>> context : contexts.entrySet()) registerTree(activeWatcher, keys, context.getKey(), context.getValue());
                 onRegistered.run();
                 while (!isCancelled()) {
                     WatchKey key = activeWatcher.take();
@@ -117,12 +129,16 @@ final class BuildContextWatcher implements Flow.Publisher<WatchEvent> {
                         if (event.kind() == StandardWatchEventKinds.OVERFLOW)
                             throw new IOException("Build context watcher event buffer overflowed for '" + registration.root + "'.");
                         Object context = event.context();
-                        if (!(context instanceof Path relative)) continue;
-                        Path changed = registration.directory.resolve(relative).toAbsolutePath().normalize();
+                        if (!(context instanceof Path keyRelative)) continue;
+                        Path changed = registration.directory.resolve(keyRelative).toAbsolutePath().normalize();
                         if (event.kind() == StandardWatchEventKinds.ENTRY_CREATE && Files.isDirectory(changed))
-                            registerTree(activeWatcher, keys, registration.root, registration.services, changed);
-                        for (String service : registration.services) {
-                            if (!events.offer(new WatchEvent(service, "rebuild", changed.toString())))
+                            registerTree(activeWatcher, keys, registration.root, registration.rules, changed);
+                        for (Registration rule : registration.rules) {
+                            Path relative = rule.directory().relativize(changed);
+                            if (!rule.includes().test(relative)) continue;
+                            WatchEvent change = new WatchEvent(rule.service(), rule.action(), changed.toString());
+                            onChange.accept(change);
+                            if (!events.offer(change))
                                 throw new IOException("Build context watcher event buffer overflowed for '" + registration.root + "'.");
                         }
                     }
@@ -144,19 +160,19 @@ final class BuildContextWatcher implements Flow.Publisher<WatchEvent> {
         }
 
         private void registerTree(WatchService activeWatcher, Map<WatchKey, DirectoryRegistration> keys,
-                                  Path root, List<String> services) throws IOException {
-            registerTree(activeWatcher, keys, root, services, root);
+                                  Path root, List<Registration> rules) throws IOException {
+            registerTree(activeWatcher, keys, root, rules, root);
         }
 
         private void registerTree(WatchService activeWatcher, Map<WatchKey, DirectoryRegistration> keys,
-                                  Path root, List<String> services, Path start) throws IOException {
+                                  Path root, List<Registration> rules, Path start) throws IOException {
             try (var paths = Files.walk(start)) {
                 for (Path directory : paths.filter(Files::isDirectory).toList()) {
                     WatchKey key = directory.register(activeWatcher,
                             StandardWatchEventKinds.ENTRY_CREATE,
                             StandardWatchEventKinds.ENTRY_DELETE,
                             StandardWatchEventKinds.ENTRY_MODIFY);
-                    keys.put(key, new DirectoryRegistration(root, directory, services));
+                    keys.put(key, new DirectoryRegistration(root, directory, rules));
                 }
             }
         }
@@ -221,5 +237,5 @@ final class BuildContextWatcher implements Flow.Publisher<WatchEvent> {
         }
     }
 
-    private record DirectoryRegistration(Path root, Path directory, List<String> services) { }
+    private record DirectoryRegistration(Path root, Path directory, List<Registration> rules) { }
 }
