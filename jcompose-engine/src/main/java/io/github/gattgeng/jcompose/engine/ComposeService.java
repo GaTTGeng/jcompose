@@ -3649,9 +3649,11 @@ public final class ComposeService implements IComposeService {
                                     }
                                 });
                         client.startContainerCmd(containerId).exec();
+                        runLifecycleHooks(client, containerId, service, "post_start");
                         awaitRunAttach(client, containerId, callback);
                     } else {
                         client.startContainerCmd(containerId).exec();
+                        runLifecycleHooks(client, containerId, service, "post_start");
                         var callback = client.logContainerCmd(containerId).withFollowStream(true).withStdOut(true).withStdErr(true)
                                 .withTailAll().exec(new ResultCallback.Adapter<Frame>() {
                                     @Override public void onNext(Frame frame) {
@@ -3662,7 +3664,10 @@ public final class ComposeService implements IComposeService {
                         await(callback);
                     }
                     if (options == null || effective.remove()) client.removeContainerCmd(containerId).withForce(true).withRemoveVolumes(false).exec();
-                } else client.startContainerCmd(containerId).exec();
+                } else {
+                    client.startContainerCmd(containerId).exec();
+                    runLifecycleHooks(client, containerId, service, "post_start");
+                }
                 return containerId;
             } catch (java.io.IOException exception) {
                 throw new java.io.UncheckedIOException("Could not close Docker Engine client.", exception);
