@@ -82,6 +82,11 @@ class ComposePublishCompatibilityTest {
                         Map.of("image", "example/app", "volumes", List.of("./data:/data"))))));
         assertEquals("Service 'app' uses a bind mount and cannot be published.", bindMount.getMessage());
 
+        IllegalArgumentException windowsBindMount = assertThrows(IllegalArgumentException.class,
+                () -> ComposeService.validatePublishServices(List.of(new ServiceDefinition("app",
+                        Map.of("image", "example/app", "volumes", List.of("C:\\data:/data"))))));
+        assertEquals("Service 'app' uses a bind mount and cannot be published.", windowsBindMount.getMessage());
+
         ComposeService.validatePublishServices(List.of(new ServiceDefinition("app",
                 Map.of("image", "example/app", "volumes", List.of("app-data:/data")))));
     }

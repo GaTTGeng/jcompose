@@ -4315,6 +4315,7 @@ public final class ComposeService implements IComposeService {
     private static boolean isBindMount(Object volume) {
         if (volume instanceof Map<?, ?> mapping) return "bind".equals(mapping.get("type"));
         if (!(volume instanceof String specification)) return false;
+        if (specification.matches("^[A-Za-z]:[\\\\/].*:.+$")) return true;
         String[] parts = specification.split(":", 3);
         if (parts.length < 2) return false;
         String source = parts[0];
