@@ -2399,13 +2399,13 @@ public final class ComposeService implements IComposeService {
                         "ro".equalsIgnoreCase(String.valueOf(map.get("read_only"))) || Boolean.TRUE.equals(map.get("read_only"))
                                 ? com.github.dockerjava.api.model.AccessMode.ro : com.github.dockerjava.api.model.AccessMode.rw));
             } else {
-                String[] parts = String.valueOf(volume).split(":", -1);
-                if (parts.length < 2) continue;
-                String source = parts[0], target = parts[1];
+                VolumeSpec specification = parseVolumeSpec(String.valueOf(volume));
+                if (specification == null) continue;
+                String source = specification.source(), target = specification.target();
                 boolean bind = Path.of(source.isBlank() ? "." : source).isAbsolute() || source.startsWith(".") || source.startsWith("~");
                 String resolved = bind ? project.sourceFile().getParent().resolve(source).normalize().toString()
                         : source.isBlank() ? "" : engineVolumeName(projectName, project, source);
-                boolean readOnly = parts.length > 2 && parts[2].toLowerCase(java.util.Locale.ROOT).contains("ro");
+                boolean readOnly = volumeIsReadOnly(specification.mode());
                 binds.add(new com.github.dockerjava.api.model.Bind(resolved, new com.github.dockerjava.api.model.Volume(target),
                         readOnly ? com.github.dockerjava.api.model.AccessMode.ro : com.github.dockerjava.api.model.AccessMode.rw));
             }
@@ -2480,17 +2480,31 @@ public final class ComposeService implements IComposeService {
     }
 
     private static com.github.dockerjava.api.model.Bind parseRunBind(String value) {
-        int first = value.matches("^[A-Za-z]:[\\\\/].*") ? value.indexOf(':', 2) : value.indexOf(':');
-        if (first <= 0 || first == value.length() - 1)
+        VolumeSpec specification = parseVolumeSpec(value);
+        if (specification == null || specification.source().isBlank() || specification.target().isBlank())
             throw new IllegalArgumentException("A run volume must use source:target[:mode] form: " + value);
-        int second = value.indexOf(':', first + 1);
-        String source = value.substring(0, first);
-        String target = second < 0 ? value.substring(first + 1) : value.substring(first + 1, second);
-        String mode = second < 0 ? "rw" : value.substring(second + 1);
-        if (source.isBlank() || target.isBlank()) throw new IllegalArgumentException("A run volume must specify source and target: " + value);
-        return new com.github.dockerjava.api.model.Bind(source, new com.github.dockerjava.api.model.Volume(target),
-                mode.toLowerCase(java.util.Locale.ROOT).contains("ro")
+        return new com.github.dockerjava.api.model.Bind(specification.source(),
+                new com.github.dockerjava.api.model.Volume(specification.target()),
+                volumeIsReadOnly(specification.mode())
                         ? com.github.dockerjava.api.model.AccessMode.ro : com.github.dockerjava.api.model.AccessMode.rw);
+    }
+
+    static record VolumeSpec(String source, String target, String mode) { }
+
+    static VolumeSpec parseVolumeSpec(String value) {
+        int separator = value.matches("^[A-Za-z]:[\\\\/].*") ? value.indexOf(':', 2) : value.indexOf(':');
+        if (separator < 0) return null;
+        String source = value.substring(0, separator);
+        String[] targetAndMode = value.substring(separator + 1).split(":", 2);
+        String target = targetAndMode[0];
+        String mode = targetAndMode.length == 2 ? targetAndMode[1] : "rw";
+        if (target.isBlank()) return null;
+        return new VolumeSpec(source, target, mode);
+    }
+
+    static boolean volumeIsReadOnly(String mode) {
+        return java.util.Arrays.stream(mode.split(","))
+                .anyMatch(option -> "ro".equalsIgnoreCase(option) || "readonly".equalsIgnoreCase(option));
     }
 
     private static List<Container> serviceArchiveContainers(DockerClient client, String projectName, String service, boolean includeOneOff) {
