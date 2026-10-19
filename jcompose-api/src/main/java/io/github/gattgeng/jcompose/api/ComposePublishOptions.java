@@ -5,7 +5,7 @@ import java.util.Objects;
 /**
  * Options for publishing a Compose application as an OCI artifact.
  * @param resolveImageDigests Pin referenced image tags to content digests.
- * @param withEnvironment Include service environment configuration in the published artifact.
+ * @param withEnvironment Request environment-file layers in the published artifact. Currently unsupported.
  * @param ocIVersion OCI image/artifact specification version to use.
  * @param insecureRegistry Allow insecure registry transport.
  */
@@ -34,8 +34,8 @@ public record ComposePublishOptions(
         public Builder resolveImageDigests(boolean value) { this.resolveImageDigests = value; return this; }
 
         /**
-         * Include service environment configuration in the published artifact.
-         * @param value Include service environment configuration in the published artifact.
+         * Request environment-file layers in the published artifact. Currently unsupported.
+         * @param value Request environment-file layers in the published artifact.
          * @return this builder
          */
         public Builder withEnvironment(boolean value) { this.withEnvironment = value; return this; }

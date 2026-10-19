@@ -46,16 +46,34 @@ class ComposePublishCompatibilityTest {
     }
 
     @Test
-    void rejectsOptionsThatWouldOtherwiseBeSilentlyIgnored() {
+    void rejectsUnsupportedEnvironmentLayersAndCustomOciVersion() {
         ComposeProjectContext context = new ComposeProjectContext("publish-test", Path.of("."));
 
-        CompletionException failure = assertThrows(CompletionException.class,
+        CompletionException environmentFailure = assertThrows(CompletionException.class,
                 () -> new ComposeService().publishAsync(context, "example/application",
                         ComposePublishOptions.builder().withEnvironment(true).build()).join());
+        CompletionException versionFailure = assertThrows(CompletionException.class,
+                () -> new ComposeService().publishAsync(context, "example/application",
+                        ComposePublishOptions.builder().ocIVersion("1.1").build()).join());
 
-        assertEquals(UnsupportedOperationException.class, failure.getCause().getClass());
-        assertEquals("Environment layers and custom OCI versions are not supported yet.",
-                failure.getCause().getMessage());
+        assertEquals(UnsupportedOperationException.class, environmentFailure.getCause().getClass());
+        assertEquals(UnsupportedOperationException.class, versionFailure.getCause().getClass());
+        assertEquals("Environment-file layers and custom OCI versions are not supported yet.",
+                environmentFailure.getCause().getMessage());
+        assertEquals(environmentFailure.getCause().getMessage(), versionFailure.getCause().getMessage());
+    }
+
+    @Test
+    void publishArtifactOmitsEnvironmentByDefault() {
+        ServiceDefinition service = new ServiceDefinition("app", Map.of(
+                "image", "example/app:latest", "environment", Map.of("TOKEN", "secret-value")));
+        io.github.gattgeng.jcompose.api.ComposeProject project = new io.github.gattgeng.jcompose.api.ComposeProject(
+                Path.of("compose.yaml"), Map.of("app", service), List.of(), List.of(), List.of(), List.of(), Map.of());
+
+        String withoutEnvironment = ComposeConfigRenderer.render(project, List.of(service), "publish-test", false);
+
+        assertFalse(withoutEnvironment.contains("TOKEN"));
+        assertFalse(withoutEnvironment.contains("secret-value"));
     }
 
     @Test

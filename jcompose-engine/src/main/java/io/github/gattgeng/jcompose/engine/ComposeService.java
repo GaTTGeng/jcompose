@@ -4259,7 +4259,8 @@ public final class ComposeService implements IComposeService {
             ComposePublishOptions effectiveOptions = options == null
                     ? ComposePublishOptions.builder().build() : options;
             if (effectiveOptions.withEnvironment() || effectiveOptions.ocIVersion() != null) {
-                throw new UnsupportedOperationException("Environment layers and custom OCI versions are not supported yet.");
+                throw new UnsupportedOperationException(
+                        "Environment-file layers and custom OCI versions are not supported yet.");
             }
             ComposeProject project = loadComposeProject(context);
             List<ServiceDefinition> services = selectConfigurationServices(project, context.profiles(), null);
@@ -4283,7 +4284,7 @@ public final class ComposeService implements IComposeService {
             if (effectiveOptions.resolveImageDigests()) {
                 services = resolvePublishedImageDigests(services, registry);
             }
-            String composeYaml = ComposeConfigRenderer.render(project, services, context.projectName());
+            String composeYaml = ComposeConfigRenderer.render(project, services, context.projectName(), false);
             java.nio.file.Path publishDirectory;
             try {
                 publishDirectory = java.nio.file.Files.createTempDirectory("jcompose-publish-");

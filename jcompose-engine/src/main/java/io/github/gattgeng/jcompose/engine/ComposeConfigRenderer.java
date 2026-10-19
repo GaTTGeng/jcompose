@@ -16,6 +16,11 @@ final class ComposeConfigRenderer {
     private ComposeConfigRenderer() { }
 
     static String render(ComposeProject project, List<ServiceDefinition> services, String projectName) {
+        return render(project, services, projectName, true);
+    }
+
+    static String render(ComposeProject project, List<ServiceDefinition> services, String projectName,
+                         boolean withEnvironment) {
         Map<String, Object> root = new LinkedHashMap<>();
         root.put("name", projectName);
 
@@ -25,6 +30,7 @@ final class ComposeConfigRenderer {
             // The loader has already resolved env_file values into environment. Keeping the file
             // reference would make the generated snapshot depend on the original local file.
             configuration.remove("env_file");
+            if (!withEnvironment) configuration.remove("environment");
             renderedServices.put(service.name(), configuration);
         }
         root.put("services", renderedServices);
