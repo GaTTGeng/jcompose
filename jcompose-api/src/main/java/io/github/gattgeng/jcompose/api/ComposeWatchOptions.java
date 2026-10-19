@@ -8,7 +8,7 @@ import java.util.Objects;
  * @param services Restricts observation to these service names. Null uses active-profile selection, an empty list observes nothing, and unknown names are rejected. Explicit names bypass profile filtering.
  * @param noUp Skips the initial build and start of selected services.
  * @param quiet Compatibility option with no effect because observation writes no progress output.
- * @param prune Requests image pruning, which is currently unsupported.
+ * @param prune Removes dangling images labeled for this project after a watched service is rebuilt.
  */
 public record ComposeWatchOptions(
         List<String> services,
@@ -50,7 +50,7 @@ public record ComposeWatchOptions(
         public Builder quiet(boolean value) { this.quiet = value; return this; }
 
         /**
-         * Requests image pruning, which is currently unsupported.
+         * Removes dangling images labeled for this project after a watched service is rebuilt.
          * @param value Whether to request image pruning.
          * @return this builder
          */

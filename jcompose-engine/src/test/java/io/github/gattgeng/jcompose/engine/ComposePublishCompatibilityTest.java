@@ -21,6 +21,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ComposePublishCompatibilityTest {
     @Test
+    void watchPruningIsLimitedToDanglingImagesOwnedByTheProject() {
+        Map<String, String> projectLabels = Map.of("com.docker.compose.project", "demo");
+
+        assertTrue(ComposeService.shouldPruneDanglingProjectImage(new String[]{"<none>:<none>"}, projectLabels, "demo"));
+        assertFalse(ComposeService.shouldPruneDanglingProjectImage(new String[]{"registry/app:latest"}, projectLabels, "demo"));
+        assertFalse(ComposeService.shouldPruneDanglingProjectImage(new String[]{"<none>:<none>"}, projectLabels, "other"));
+    }
+
+    @Test
     void convertsOnlyDockerAndRegistryPushFailuresIntoPerServiceResults() {
         RuntimeException dockerFailure = new com.github.dockerjava.api.exception.DockerException("Docker error", 500);
         RuntimeException registryFailure = new IllegalStateException("registry rejected push");

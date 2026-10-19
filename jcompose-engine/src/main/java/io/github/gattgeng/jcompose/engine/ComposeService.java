@@ -3384,6 +3384,8 @@ public final class ComposeService implements IComposeService {
                         Map<String, String> labels = new LinkedHashMap<>(stringMap(build.get("labels")));
                         if (options != null && options.labels() != null) labels.putAll(options.labels());
                         validateComposeLabels(labels);
+                        labels.put(ComposeConstants.PROJECT_LABEL, context.projectName());
+                        labels.put(ComposeConstants.SERVICE_LABEL, service.name());
                         if (!labels.isEmpty()) command.withLabels(labels);
                         if (build.get("network") != null) command.withNetworkMode(String.valueOf(build.get("network")));
                         String memory = options != null && options.memory() != null ? options.memory() : stringValue(build.get("memory"), null);
@@ -3971,7 +3973,6 @@ public final class ComposeService implements IComposeService {
     @Override public Flow.Publisher<WatchEvent> watchAsync(ComposeProjectContext context, ComposeWatchOptions options) {
         java.util.Objects.requireNonNull(context, "context");
         ComposeWatchOptions effective = options == null ? ComposeWatchOptions.builder().build() : options;
-        if (effective.prune()) throw new UnsupportedOperationException("Pruning build artifacts is not supported by watch.");
         ComposeProject project = loadComposeProject(context);
         Path projectDirectory = project.sourceFile().getParent();
         List<BuildContextWatcher.Registration> registrations = new ArrayList<>();
@@ -4053,7 +4054,7 @@ public final class ComposeService implements IComposeService {
                             projectDirectory.resolve(stringValue(candidate.get("path"), "")).normalize().getNameCount())).orElse(null);
             java.util.function.Predicate<Path> watchIgnore = watchIgnoresByService.getOrDefault(change.serviceName(), ignored -> false);
             if (rule != null && !watchIgnore.test(changed))
-                applyDevelopWatchChange(context, projectDirectory, change.serviceName(), rule, changed, watchIgnore);
+                applyDevelopWatchChange(context, projectDirectory, change.serviceName(), rule, changed, watchIgnore, effective.prune());
         });
     }
 
@@ -4130,12 +4131,13 @@ public final class ComposeService implements IComposeService {
 
     private void applyDevelopWatchChange(ComposeProjectContext context, Path projectDirectory,
                                         String service, Map<String, Object> rule, Path changed,
-                                        java.util.function.Predicate<Path> dockerIgnored) {
+                                        java.util.function.Predicate<Path> dockerIgnored, boolean watchPrune) {
         String action = stringValue(rule.get("action"), "rebuild");
         if ("rebuild".equals(action)) {
             await(buildAsync(context, ComposeBuildOptions.builder().services(List.of(service)).build()));
             await(upAsync(context, ComposeUpOptions.builder().services(List.of(service)).forceRecreate(true)
                     .noDeps(true).noBuild(true).detach(true).build()));
+            if (watchPrune) pruneDanglingProjectImages(context);
             return;
         }
         if ("restart".equals(action)) {
@@ -4168,6 +4170,31 @@ public final class ComposeService implements IComposeService {
                     .user(stringValue(exec.get("user"), null)).workdir(stringValue(exec.get("working_dir"), null))
                     .privileged(Boolean.TRUE.equals(exec.get("privileged"))).build()));
         }
+    }
+
+    private void pruneDanglingProjectImages(ComposeProjectContext context) {
+        try (DockerClient client = createDockerClient(context)) {
+            for (Image image : client.listImagesCmd().withShowAll(true).withDanglingFilter(true)
+                    .withLabelFilter(Map.of(ComposeConstants.PROJECT_LABEL, context.projectName())).exec()) {
+                Map<String, String> labels = image.getLabels();
+                String[] tags = image.getRepoTags();
+                if (shouldPruneDanglingProjectImage(tags, labels, context.projectName())) {
+                    try {
+                        client.removeImageCmd(image.getId()).exec();
+                    } catch (DockerException ignored) {
+                        // Keep images that Docker still considers in use.
+                    }
+                }
+            }
+        } catch (java.io.IOException exception) {
+            throw new java.io.UncheckedIOException("Could not close Docker Engine client after pruning images.", exception);
+        }
+    }
+
+    static boolean shouldPruneDanglingProjectImage(String[] tags, Map<String, String> labels, String projectName) {
+        boolean dangling = tags == null || tags.length == 0
+                || (tags.length == 1 && "<none>:<none>".equals(tags[0]));
+        return dangling && labels != null && projectName.equals(labels.get(ComposeConstants.PROJECT_LABEL));
     }
     @Override public CompletableFuture<Void> exportAsync(ComposeProjectContext context, ComposeExportOptions options) {
         return supply(() -> {
