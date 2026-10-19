@@ -57,6 +57,24 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
+    void validatesServiceNameCharacters() throws IOException {
+        Path file = temporaryDirectory.resolve("compose.yaml");
+        ComposeFileLoader loader = new ComposeFileLoader();
+        for (String name : List.of("bad name", "foo:bar", "abc@x", "abc/x", "ümlaut")) {
+            Files.writeString(file, "services:\n  \"" + name + "\":\n    image: busybox\n");
+            ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                    () -> loader.load(temporaryDirectory, "compose.yaml"), name);
+            assertEquals("services." + name, exception.propertyPath());
+            assertEquals(name, exception.serviceName());
+        }
+
+        for (String name : List.of("a", "UPPER", "my_service", ".hidden", "1abc", "_abc", "-abc", "a..b")) {
+            Files.writeString(file, "services:\n  \"" + name + "\":\n    image: busybox\n");
+            assertTrue(loader.load(temporaryDirectory, "compose.yaml").services().containsKey(name), name);
+        }
+    }
+
+    @Test
     void rejectsUndefinedServiceDependency() throws IOException {
         Path file = temporaryDirectory.resolve("compose.yaml");
         Files.writeString(file, """

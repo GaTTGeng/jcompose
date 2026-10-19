@@ -410,6 +410,9 @@ public final class ComposeFileLoader {
         Map<String, Map<String, Object>> resolvedServices = new LinkedHashMap<>();
         for (var entry : serviceMap.entrySet()) {
             String name = String.valueOf(entry.getKey());
+            if (!name.matches("[A-Za-z0-9_.-]+"))
+                throw new ComposeValidationException(file, "services." + name, name,
+                        "service name contains invalid characters.", null, null, null);
             if (!(entry.getValue() instanceof Map<?, ?> config))
                 throw new ComposeValidationException(file, "services." + name, name, "service configuration must be a mapping.", null, null, null);
             resolvedServices.put(name, resolveExtendedService(file, name, stringKeyMap(config, file, "services." + name),
