@@ -678,6 +678,10 @@ public final class ComposeFileLoader {
         for (String hook : List.of("post_start", "pre_stop"))
             validateLifecycleHooks(file, service, configuration.get(hook), path + "." + hook);
         validateScalarOrMap(file, service, configuration, "extends", path + ".extends");
+        Object uts = configuration.get("uts");
+        if (uts != null && (!(uts instanceof String mode) || !"host".equals(mode)))
+            throw new ComposeValidationException(file, path + ".uts", service,
+                    "uts must be 'host' when specified.", null, null, null);
 
         Object deployValue = configuration.get("deploy");
         if (deployValue instanceof Map<?, ?> deploy) {

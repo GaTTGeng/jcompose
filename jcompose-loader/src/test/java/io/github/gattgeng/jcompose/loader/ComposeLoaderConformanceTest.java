@@ -133,6 +133,22 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
+    void rejectsUnsupportedUtsMode() throws IOException {
+        Path file = temporaryDirectory.resolve("compose.yaml");
+        Files.writeString(file, """
+                services:
+                  app:
+                    image: busybox
+                    uts: container:other
+                """);
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(temporaryDirectory, "compose.yaml"));
+
+        assertEquals("services.app.uts", exception.propertyPath());
+    }
+
+    @Test
     void rejectsNonMappingLongSyntaxTmpfsOptions() throws IOException {
         Path file = temporaryDirectory.resolve("compose.yaml");
         Files.writeString(file, """

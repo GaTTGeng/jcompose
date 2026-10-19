@@ -219,6 +219,7 @@ class ComposeServiceDockerIntegrationTest {
                     image: busybox:1.36
                     command: ["sh", "-c", "sleep 60"]
                     init: true
+                    uts: host
                     networks: [frontend]
                     volumes: ["./data:/data:ro"]
                 networks:
@@ -243,8 +244,12 @@ class ComposeServiceDockerIntegrationTest {
                 try {
                     assertTrue(Boolean.TRUE.equals(client.inspectContainerCmd(containers.getFirst().id())
                             .exec().getHostConfig().getInit()));
+                    assertEquals("host", client.inspectContainerCmd(containers.getFirst().id())
+                            .exec().getHostConfig().getUtSMode());
                     assertTrue(Boolean.TRUE.equals(client.inspectContainerCmd(runContainer)
                             .exec().getHostConfig().getInit()));
+                    assertEquals("host", client.inspectContainerCmd(runContainer)
+                            .exec().getHostConfig().getUtSMode());
                 } finally {
                     client.removeContainerCmd(runContainer).withForce(true).withRemoveVolumes(false).exec();
                 }

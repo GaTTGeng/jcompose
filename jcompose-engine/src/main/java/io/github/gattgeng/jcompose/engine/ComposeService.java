@@ -1811,6 +1811,7 @@ public final class ComposeService implements IComposeService {
         if (config.get("read_only") instanceof Boolean value) host.withReadonlyRootfs(value);
         if (config.get("ipc") != null) host.withIpcMode(dockerNamespaceMode(client, projectName, service, "ipc"));
         if (config.get("pid") != null) host.withPidMode(dockerNamespaceMode(client, projectName, service, "pid"));
+        if (config.get("uts") != null) host.withUtSMode(String.valueOf(config.get("uts")));
         if (config.get("cgroup_parent") != null) host.withCgroupParent(String.valueOf(config.get("cgroup_parent")));
         if (config.get("shm_size") != null) host.withShmSize(parseByteSize(String.valueOf(config.get("shm_size"))));
         applyRuntimeOptions(host, config);
@@ -3751,6 +3752,8 @@ public final class ComposeService implements IComposeService {
                     host.withIpcMode(dockerNamespaceMode(client, context.projectName(), service, "ipc"));
                 if (service.configuration().get("pid") != null)
                     host.withPidMode(dockerNamespaceMode(client, context.projectName(), service, "pid"));
+                if (service.configuration().get("uts") != null)
+                    host.withUtSMode(String.valueOf(service.configuration().get("uts")));
                 if (service.configuration().get("init") instanceof Boolean init) host.withInit(init);
                 applyVolumesFrom(client, project, context.projectName(), service, host);
                 applyLoggingConfig(host, service.configuration());
