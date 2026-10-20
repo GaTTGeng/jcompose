@@ -193,7 +193,7 @@ public final class ComposeService implements IComposeService {
             labels.put(ComposeConstants.ONE_OFF_LABEL, "true");
             labels.put(ComposeConstants.VERSION_LABEL, "3.0.0");
             var host = serviceHostConfig(client, project, context.projectName(), service, Map.of())
-                    .withPortBindings((List<com.github.dockerjava.api.model.PortBinding>) null)
+                    .withPortBindings(List.of())
                     .withRestartPolicy(com.github.dockerjava.api.model.RestartPolicy.noRestart())
                     .withPrivileged(Boolean.TRUE.equals(hook.get("privileged")));
             String name = "jcompose-pre-start-" + java.util.UUID.randomUUID();
