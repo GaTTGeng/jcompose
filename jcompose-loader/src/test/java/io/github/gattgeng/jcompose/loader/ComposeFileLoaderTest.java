@@ -658,7 +658,9 @@ class ComposeFileLoaderTest {
                 "aliases: [1]", "services.app.networks.frontend.aliases.0",
                 "ipv4_address: 4", "services.app.networks.frontend.ipv4_address",
                 "ipv6_address: false", "services.app.networks.frontend.ipv6_address",
-                "mac_address: 1", "services.app.networks.frontend.mac_address").entrySet()) {
+                "mac_address: 1", "services.app.networks.frontend.mac_address",
+                "priority: invalid", "services.app.networks.frontend.priority",
+                "priority: 1.5", "services.app.networks.frontend.priority").entrySet()) {
             Files.writeString(composeFile, "services:\n  app:\n    image: alpine\n    networks:\n      frontend:\n        "
                     + invalid.getKey() + "\nnetworks:\n  frontend: {}\n");
 
@@ -679,6 +681,7 @@ class ComposeFileLoaderTest {
                         ipv4_address: "192.0.2.10"
                         ipv6_address: "2001:db8::10"
                         mac_address: "02:42:ac:11:00:02"
+                        priority: 100
                 networks:
                   frontend: {}
                 """);
@@ -688,6 +691,7 @@ class ComposeFileLoaderTest {
         assertEquals("192.0.2.10", options.get("ipv4_address"));
         assertEquals("2001:db8::10", options.get("ipv6_address"));
         assertEquals("02:42:ac:11:00:02", options.get("mac_address"));
+        assertEquals(100, options.get("priority"));
     }
 
     @Test

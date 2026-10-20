@@ -707,6 +707,13 @@ public final class ComposeFileLoader {
                 throw new ComposeValidationException(file, path + "." + key, service,
                         key + " must be a string.", null, null, null);
         }
+        Object priority = options.get("priority");
+        if (priority != null && !(priority instanceof Number))
+            throw new ComposeValidationException(file, path + ".priority", service,
+                    "priority must be an integer.", null, null, null);
+        if (priority instanceof Number number && number.doubleValue() != number.intValue())
+            throw new ComposeValidationException(file, path + ".priority", service,
+                    "priority must be an integer.", null, null, null);
     }
 
     private static void validateServiceProfiles(Path file, String service, Map<String, Object> configuration) {

@@ -1733,6 +1733,24 @@ public final class ComposeService implements IComposeService {
         return names.isEmpty() ? List.of("default") : List.copyOf(names);
     }
 
+    static String serviceMacAddressNetwork(ServiceDefinition service) {
+        List<String> networks = serviceNetworks(service);
+        Object configured = service.configuration().get("networks");
+        if (!(configured instanceof Map<?, ?> map)) return networks.getFirst();
+        String selected = networks.getFirst();
+        int highestPriority = Integer.MIN_VALUE;
+        for (String network : networks) {
+            Object options = map.get(network);
+            int priority = options instanceof Map<?, ?> values && values.get("priority") instanceof Number number
+                    ? number.intValue() : 0;
+            if (priority > highestPriority) {
+                selected = network;
+                highestPriority = priority;
+            }
+        }
+        return selected;
+    }
+
     private static Map<String, Object> networkDefinition(ComposeProject project, String name) {
         Object value = project.networkDefinitions().get(name);
         return value instanceof Map<?, ?> map ? stringKeyMap(map) : Map.of();
@@ -1847,7 +1865,7 @@ public final class ComposeService implements IComposeService {
         String ipv4 = stringValue(options.get("ipv4_address"), null);
         String ipv6 = stringValue(options.get("ipv6_address"), null);
         String mac = stringValue(options.get("mac_address"),
-                network.equals(serviceNetworks(service).getFirst())
+                network.equals(serviceMacAddressNetwork(service))
                         ? stringValue(service.configuration().get("mac_address"), null) : null);
         if (ipv4 != null) command.withIpv4Address(ipv4);
         if (ipv6 != null) command.withIpv6Address(ipv6);
@@ -1875,7 +1893,10 @@ public final class ComposeService implements IComposeService {
             var endpoint = new com.github.dockerjava.api.model.ContainerNetwork();
             List<String> aliases = networkAliases(project, service, logicalName, includeServiceName);
             if (!aliases.isEmpty()) endpoint.withAliases(aliases);
-            if (options.get("mac_address") != null) endpoint.withMacAddress(String.valueOf(options.get("mac_address")));
+            String mac = stringValue(options.get("mac_address"),
+                    logicalName.equals(serviceMacAddressNetwork(service))
+                            ? stringValue(service.configuration().get("mac_address"), null) : null);
+            if (mac != null) endpoint.withMacAddress(mac);
             String ipv4 = stringValue(options.get("ipv4_address"), null);
             String ipv6 = stringValue(options.get("ipv6_address"), null);
             if (ipv4 != null || ipv6 != null) {
