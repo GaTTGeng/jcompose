@@ -661,6 +661,8 @@ public final class ComposeFileLoader {
                 if (entry.getValue() != null && !(entry.getValue() instanceof Map<?, ?>))
                     throw new ComposeValidationException(file, path + "." + network, service,
                             "network configuration must be a mapping.", null, null, null);
+                if (entry.getValue() instanceof Map<?, ?> options)
+                    validateServiceNetworkOptions(file, service, network, options);
                 names.add(network);
             }
             references = names;
@@ -683,6 +685,27 @@ public final class ComposeFileLoader {
             if (!known.contains(network))
                 throw new ComposeValidationException(file, "services." + service + ".networks." + network, service,
                         "service refers to undefined network '" + network + "'.", null, null, null);
+        }
+    }
+
+    private static void validateServiceNetworkOptions(Path file, String service, String network, Map<?, ?> options) {
+        String path = "services." + service + ".networks." + network;
+        Object aliases = options.get("aliases");
+        if (aliases != null) {
+            if (!(aliases instanceof List<?> list))
+                throw new ComposeValidationException(file, path + ".aliases", service,
+                        "aliases must be a list of strings.", null, null, null);
+            for (int index = 0; index < list.size(); index++) {
+                if (!(list.get(index) instanceof String))
+                    throw new ComposeValidationException(file, path + ".aliases." + index, service,
+                            "network aliases must be strings.", null, null, null);
+            }
+        }
+        for (String key : List.of("ipv4_address", "ipv6_address", "mac_address")) {
+            Object value = options.get(key);
+            if (value != null && !(value instanceof String))
+                throw new ComposeValidationException(file, path + "." + key, service,
+                        key + " must be a string.", null, null, null);
         }
     }
 

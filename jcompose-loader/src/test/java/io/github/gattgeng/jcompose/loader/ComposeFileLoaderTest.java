@@ -651,6 +651,46 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void validatesMappedServiceNetworkOptionTypes() throws Exception {
+        Path composeFile = directory.resolve("compose.yaml");
+        for (Map.Entry<String, String> invalid : Map.of(
+                "aliases: app", "services.app.networks.frontend.aliases",
+                "aliases: [1]", "services.app.networks.frontend.aliases.0",
+                "ipv4_address: 4", "services.app.networks.frontend.ipv4_address",
+                "ipv6_address: false", "services.app.networks.frontend.ipv6_address",
+                "mac_address: 1", "services.app.networks.frontend.mac_address").entrySet()) {
+            Files.writeString(composeFile, "services:\n  app:\n    image: alpine\n    networks:\n      frontend:\n        "
+                    + invalid.getKey() + "\nnetworks:\n  frontend: {}\n");
+
+            ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                    () -> new ComposeFileLoader().load(directory, null), invalid.getKey());
+
+            assertEquals(invalid.getValue(), exception.propertyPath());
+            assertEquals("app", exception.serviceName());
+        }
+
+        Files.writeString(composeFile, """
+                services:
+                  app:
+                    image: alpine
+                    networks:
+                      frontend:
+                        aliases: [web, api]
+                        ipv4_address: "192.0.2.10"
+                        ipv6_address: "2001:db8::10"
+                        mac_address: "02:42:ac:11:00:02"
+                networks:
+                  frontend: {}
+                """);
+        Map<?, ?> options = (Map<?, ?>) ((Map<?, ?>) new ComposeFileLoader().load(directory, null)
+                .services().get("app").configuration().get("networks")).get("frontend");
+        assertEquals(List.of("web", "api"), options.get("aliases"));
+        assertEquals("192.0.2.10", options.get("ipv4_address"));
+        assertEquals("2001:db8::10", options.get("ipv6_address"));
+        assertEquals("02:42:ac:11:00:02", options.get("mac_address"));
+    }
+
+    @Test
     void validatesServiceLinksAndAcceptsAliases() throws Exception {
         Path composeFile = directory.resolve("compose.yaml");
         Files.writeString(composeFile, """
