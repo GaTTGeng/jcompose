@@ -629,6 +629,7 @@ class ComposeFileLoaderTest {
 
             assertEquals(networks.equals("[1]") ? "services.app.networks.0"
                     : networks.contains("frontend") ? "services.app.networks.frontend"
+                    : networks.contains("{ 1") ? "services.app.networks.1"
                     : "services.app.networks", exception.propertyPath());
             assertEquals("app", exception.serviceName());
         }
