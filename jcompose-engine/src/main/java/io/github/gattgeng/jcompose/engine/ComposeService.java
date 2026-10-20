@@ -3770,6 +3770,16 @@ public final class ComposeService implements IComposeService {
                 List<com.github.dockerjava.api.model.Bind> binds = new ArrayList<>(serviceBinds(project, context.projectName(), service));
                 for (String volume : effective.volumes() == null ? List.<String>of() : effective.volumes())
                     binds.add(parseRunBind(volume));
+                List<com.github.dockerjava.api.model.Mount> anonymousMounts = new ArrayList<>();
+                for (com.github.dockerjava.api.model.Bind bind : binds) {
+                    if (bind.getPath() != null && !bind.getPath().isBlank()) continue;
+                    anonymousMounts.add(new com.github.dockerjava.api.model.Mount()
+                            .withType(com.github.dockerjava.api.model.MountType.VOLUME)
+                            .withTarget(bind.getVolume().getPath())
+                            .withReadOnly(bind.getAccessMode() == com.github.dockerjava.api.model.AccessMode.ro));
+                }
+                binds.removeIf(bind -> bind.getPath() == null || bind.getPath().isBlank());
+                if (!anonymousMounts.isEmpty()) host.withMounts(anonymousMounts);
                 if (!binds.isEmpty()) host.withBinds(binds);
                 if (effective.privileged()) host.withPrivileged(true);
                 if (effective.capAdd() != null && !effective.capAdd().isEmpty()) host.withCapAdd(effective.capAdd().stream()

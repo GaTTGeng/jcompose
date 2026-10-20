@@ -123,6 +123,33 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void runCreatesAnonymousVolumeMounts() throws Exception {
+        String projectName = "jcompose-run-volume-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: [sh, -c, 'sleep 300']
+                    volumes: ["/cache"]
+                """);
+
+        IComposeService service = new ComposeService();
+        String containerId = service.runAsync(context, "app", ComposeRunOptions.builder()
+                        .noDeps(true).detach(true).tty(false).build())
+                .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+        try (var client = DockerClientFactory.create(context)) {
+            var mounts = client.inspectContainerCmd(containerId).exec().getMounts();
+            assertTrue(mounts.stream().anyMatch(mount -> "/cache".equals(mount.getDestination().getPath())
+                    && mount.getName() != null && !mount.getName().isBlank()));
+        } finally {
+            try (var client = DockerClientFactory.create(context)) {
+                client.removeContainerCmd(containerId).withForce(true).withRemoveVolumes(true).exec();
+            }
+        }
+    }
+
+    @Test
     void scaleStartsDependenciesUnlessNoDepsIsSet() throws Exception {
         String projectName = "jcompose-scale-deps-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
