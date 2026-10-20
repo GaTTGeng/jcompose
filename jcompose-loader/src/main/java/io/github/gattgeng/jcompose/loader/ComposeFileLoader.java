@@ -649,10 +649,34 @@ public final class ComposeFileLoader {
     }
 
     private static void validateServiceNetworks(Path file, String service, Object configured, Object declared) {
+        if (configured == null) return;
         List<String> references;
-        if (configured instanceof Map<?, ?> map) references = map.keySet().stream().map(String::valueOf).toList();
-        else if (configured instanceof List<?> list) references = list.stream().map(String::valueOf).toList();
-        else return;
+        String path = "services." + service + ".networks";
+        if (configured instanceof Map<?, ?> map) {
+            List<String> names = new java.util.ArrayList<>();
+            for (var entry : map.entrySet()) {
+                if (!(entry.getKey() instanceof String network))
+                    throw new ComposeValidationException(file, path, service,
+                            "network names must be strings.", null, null, null);
+                if (entry.getValue() != null && !(entry.getValue() instanceof Map<?, ?>))
+                    throw new ComposeValidationException(file, path + "." + network, service,
+                            "network configuration must be a mapping.", null, null, null);
+                names.add(network);
+            }
+            references = names;
+        } else if (configured instanceof List<?> list) {
+            List<String> names = new java.util.ArrayList<>();
+            for (int index = 0; index < list.size(); index++) {
+                if (!(list.get(index) instanceof String network))
+                    throw new ComposeValidationException(file, path + "." + index, service,
+                            "network names must be strings.", null, null, null);
+                names.add(network);
+            }
+            references = names;
+        } else {
+            throw new ComposeValidationException(file, path, service,
+                    "networks must be a list or mapping.", null, null, null);
+        }
         Set<String> known = new java.util.LinkedHashSet<>(names(declared));
         known.add("default");
         for (String network : references) {

@@ -619,6 +619,37 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void validatesServiceNetworksShapeAndMappingValues() throws Exception {
+        Path composeFile = directory.resolve("compose.yaml");
+        for (String networks : List.of("bridge", "[1]", "{ frontend: false }", "{ 1: {} }")) {
+            Files.writeString(composeFile, "services:\n  app:\n    image: alpine\n    networks: " + networks + "\n");
+
+            ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                    () -> new ComposeFileLoader().load(directory, null), networks);
+
+            assertEquals(networks.equals("[1]") ? "services.app.networks.0"
+                    : networks.contains("frontend") ? "services.app.networks.frontend"
+                    : "services.app.networks", exception.propertyPath());
+            assertEquals("app", exception.serviceName());
+        }
+
+        Files.writeString(composeFile, """
+                services:
+                  app:
+                    image: alpine
+                    networks:
+                      default: {}
+                      frontend:
+                networks:
+                  frontend: {}
+                """);
+        Map<?, ?> configured = (Map<?, ?>) new ComposeFileLoader().load(directory, null)
+                .services().get("app").configuration().get("networks");
+        assertEquals(Map.of(), configured.get("default"));
+        assertNull(configured.get("frontend"));
+    }
+
+    @Test
     void validatesServiceLinksAndAcceptsAliases() throws Exception {
         Path composeFile = directory.resolve("compose.yaml");
         Files.writeString(composeFile, """
