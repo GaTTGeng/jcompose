@@ -2400,7 +2400,9 @@ public final class ComposeService implements IComposeService {
     static com.github.dockerjava.api.model.HealthCheck serviceHealthcheck(ServiceDefinition service) {
         if (!(service.configuration().get("healthcheck") instanceof Map<?, ?> raw)) return null;
         Map<String, Object> config = stringKeyMap(raw);
-        List<String> test = asStringList(config.get("test"));
+        Object configuredTest = config.get("test");
+        List<String> test = configuredTest instanceof String command
+                ? List.of("CMD-SHELL", command) : asStringList(configuredTest);
         if (Boolean.TRUE.equals(config.get("disable"))) test = List.of("NONE");
         if (test.isEmpty()) return null;
         var healthcheck = new com.github.dockerjava.api.model.HealthCheck().withTest(test);
