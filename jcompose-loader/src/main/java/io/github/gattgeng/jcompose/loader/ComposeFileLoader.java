@@ -669,9 +669,12 @@ public final class ComposeFileLoader {
             throw new ComposeValidationException(file, "services." + service + ".profiles", service,
                     "profiles must be an array of strings.", null, null, null);
         for (int index = 0; index < profiles.size(); index++) {
-            if (!(profiles.get(index) instanceof String))
+            if (!(profiles.get(index) instanceof String profile))
                 throw new ComposeValidationException(file, "services." + service + ".profiles." + index, service,
                         "profile names must be strings.", null, null, null);
+            if (!profile.matches("[a-zA-Z0-9][a-zA-Z0-9_.-]+"))
+                throw new ComposeValidationException(file, "services." + service + ".profiles." + index, service,
+                        "profile names must match [a-zA-Z0-9][a-zA-Z0-9_.-]+.", null, null, null);
         }
     }
 
