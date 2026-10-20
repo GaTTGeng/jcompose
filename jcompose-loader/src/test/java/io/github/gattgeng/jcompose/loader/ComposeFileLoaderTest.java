@@ -820,6 +820,8 @@ class ComposeFileLoaderTest {
                 "JCOMPOSE_ENV_FORWARD=${JCOMPOSE_ENV_LATER}",
                 "JCOMPOSE_ENV_LATER=late",
                 "JCOMPOSE_ENV_HASH=hash#value",
+                "JCOMPOSE_ENV_QUOTED_HASH=\"hash # value\" # comment",
+                "JCOMPOSE_ENV_HASH_WITHOUT_SPACE=value#not-a-comment",
                 "JCOMPOSE_ENV_COMMENT=value # comment",
                 "JCOMPOSE_ENV_EMPTY=",
                 "JCOMPOSE_ENV_UNSET",
@@ -837,6 +839,8 @@ class ComposeFileLoaderTest {
                       REFERENCE_CHAIN: "${JCOMPOSE_ENV_REFERENCE_CHAIN}"
                       FORWARD: "${JCOMPOSE_ENV_FORWARD}"
                       HASH: "${JCOMPOSE_ENV_HASH}"
+                      QUOTED_HASH: "${JCOMPOSE_ENV_QUOTED_HASH}"
+                      HASH_WITHOUT_SPACE: "${JCOMPOSE_ENV_HASH_WITHOUT_SPACE}"
                       COMMENT: "${JCOMPOSE_ENV_COMMENT}"
                       EMPTY: "${JCOMPOSE_ENV_EMPTY:-empty-default}"
                       UNSET: "${JCOMPOSE_ENV_UNSET:-unset-default}"
@@ -853,6 +857,8 @@ class ComposeFileLoaderTest {
         assertEquals("value-suffix-next", environment.get("REFERENCE_CHAIN"));
         assertEquals("", environment.get("FORWARD"));
         assertEquals("hash#value", environment.get("HASH"));
+        assertEquals("hash # value", environment.get("QUOTED_HASH"));
+        assertEquals("value#not-a-comment", environment.get("HASH_WITHOUT_SPACE"));
         assertEquals("value", environment.get("COMMENT"));
         assertEquals("empty-default", environment.get("EMPTY"));
         assertEquals("unset-default", environment.get("UNSET"));

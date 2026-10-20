@@ -31,7 +31,7 @@ Malformed or unclosed braced expressions fail loading with the Compose property 
 
 `ComposeFileLoader.load`, `loadProject`, and `loadMerged` accept per-call environment overrides. For that call, the precedence is explicit overrides, then the process environment, then the project `.env`. For a multi-file load, the project directory defaults to the directory of the first Compose file, so the same `.env` supplies interpolation values to every merged file. Overrides are never written to the process environment, so separate or concurrent loads remain isolated. On Windows, override names are matched without regard to case; on other platforms they are case-sensitive.
 
-The parser is intentionally smaller than the full Compose interpolation and dotenv grammars. The `.env` reader does not implement all quoting, escape, multiline, or format variants. Unsupported shell expressions are not evaluated. An unset variable without an operator becomes empty text, without Docker Compose's warning.
+The parser is intentionally smaller than the full Compose interpolation and dotenv grammars. It supports the quoting, escaping, multiline, and comment forms listed above, but does not implement every dotenv edge case or the CLI's `--env-file` selection and project-directory discovery behavior. Unsupported shell expressions are not evaluated. An unset variable without an operator becomes empty text, without Docker Compose's warning.
 
 ## Multi-file overlays
 
