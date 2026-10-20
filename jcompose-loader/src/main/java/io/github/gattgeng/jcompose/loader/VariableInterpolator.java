@@ -1,16 +1,43 @@
 package io.github.gattgeng.jcompose.loader;
 
 import java.util.Map;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Expands Docker Compose-style variables in YAML values and environment files. */
-final class VariableInterpolator {
+/** Expands Docker Compose-style variables using the process environment and project dotenv values. */
+public final class VariableInterpolator {
     private static final Pattern NAME = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
     private static final Pattern EXPRESSION = Pattern.compile(
             "^([A-Za-z_][A-Za-z0-9_]*)(?:(:\\?|:\\+|:-|\\+|-|\\?)(.*))?$", Pattern.DOTALL);
 
     private VariableInterpolator() { }
+
+    /**
+     * Expands Compose-style variables. Process environment values take precedence over {@code dotenv}.
+     *
+     * @param text text containing Compose-style variable expressions
+     * @param dotenv values loaded from the project's {@code .env} file
+     * @return text with variable expressions expanded
+     */
+    public static String expand(String text, Map<String, String> dotenv) {
+        return expand(text, dotenv, false);
+    }
+
+    /**
+     * Expands Compose-style variables. Process environment values take precedence over {@code dotenv}.
+     * The {@code strict} argument is reserved and currently has no effect, matching ComposeSharp 3.0.0.
+     *
+     * @param text text containing Compose-style variable expressions
+     * @param dotenv values loaded from the project's {@code .env} file
+     * @param strict reserved for stricter unresolved-variable behavior
+     * @return text with variable expressions expanded
+     */
+    public static String expand(String text, Map<String, String> dotenv, boolean strict) {
+        Objects.requireNonNull(text, "text");
+        Objects.requireNonNull(dotenv, "dotenv");
+        return expand(text, dotenv, System.getenv());
+    }
 
     static String expand(String text, Map<String, String> dotenv, Map<String, String> process) {
         return expand(text, dotenv, process, 0);

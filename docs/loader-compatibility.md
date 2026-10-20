@@ -25,6 +25,8 @@ Interpolation runs on each Compose file before multi-file merging. It applies to
 | `${NAME:+replacement}` | Uses replacement when set and nonempty; otherwise emits empty text. |
 | `${NAME+replacement}` | Uses replacement when set, including an empty value; otherwise emits empty text. |
 
+The loader module exposes `VariableInterpolator.expand(text, dotenv)` and `VariableInterpolator.expand(text, dotenv, strict)` for callers that need the same interpolation utility independently of loading a Compose project. Process environment values take precedence over the supplied dotenv map. The `strict` argument is reserved and currently has no effect, matching the ComposeSharp 3.0.0 contract.
+
 Process environment values take precedence over values in the project `.env` file. Defaults and replacement expressions, including nested forms such as `${MISSING:-${FALLBACK:-value}}`, are recursively interpolated, with a guard against excessive nesting. This is the current implementation contract; verify edge cases against Docker Compose before expanding compatibility claims.
 
 Malformed or unclosed braced expressions fail loading with the Compose property path and source location when they occur in a YAML value. A bare unset variable still becomes empty without Docker Compose's warning.

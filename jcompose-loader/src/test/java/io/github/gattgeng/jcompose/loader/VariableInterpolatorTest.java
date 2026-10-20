@@ -59,4 +59,11 @@ class VariableInterpolatorTest {
     void processEnvironmentOverridesDotenvValues() {
         assertEquals("process", VariableInterpolator.expand("${VALUE}", Map.of("VALUE", "dotenv"), Map.of("VALUE", "process")));
     }
+
+    @Test
+    void exposesTheComposeSharpLoaderInterpolationUtility() {
+        Map<String, String> dotenv = Map.of("JCOMPOSE_PUBLIC_VALUE", "dotenv-value");
+        assertEquals("dotenv-value", VariableInterpolator.expand("${JCOMPOSE_PUBLIC_VALUE}", dotenv));
+        assertEquals("dotenv-value", VariableInterpolator.expand("${JCOMPOSE_PUBLIC_VALUE}", dotenv, true));
+    }
 }
