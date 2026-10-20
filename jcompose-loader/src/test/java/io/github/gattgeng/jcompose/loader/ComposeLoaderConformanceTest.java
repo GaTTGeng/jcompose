@@ -384,6 +384,21 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
+    void preservesServiceDeclarationOrder() throws IOException {
+        Files.writeString(temporaryDirectory.resolve("compose.yaml"), """
+                services:
+                  zulu:
+                    image: example/zulu
+                  alpha:
+                    image: example/alpha
+                """);
+
+        ComposeProject project = new ComposeFileLoader().load(temporaryDirectory, "compose.yaml");
+
+        assertEquals(List.of("zulu", "alpha"), List.copyOf(project.services().keySet()));
+    }
+
+    @Test
     void mergesOverrideFixtureFieldsAndResources() throws IOException {
         Path directory = copyFixture("merged-loader");
         ComposeProject project = new ComposeFileLoader().loadMerged(directory,

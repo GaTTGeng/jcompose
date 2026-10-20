@@ -40,7 +40,7 @@ public record ComposeProject(Path sourceFile, Map<String, ServiceDefinition> ser
     }
 
     public ComposeProject {
-        services = Map.copyOf(services);
+        services = Collections.unmodifiableMap(new LinkedHashMap<>(services));
         volumes = List.copyOf(volumes);
         networks = List.copyOf(networks);
         secrets = List.copyOf(secrets);
