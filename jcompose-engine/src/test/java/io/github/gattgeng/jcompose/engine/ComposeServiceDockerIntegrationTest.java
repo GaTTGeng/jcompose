@@ -10,6 +10,7 @@ import io.github.gattgeng.jcompose.api.ComposeProjectContext;
 import io.github.gattgeng.jcompose.api.ComposeRestartOptions;
 import io.github.gattgeng.jcompose.api.ComposeRunOptions;
 import io.github.gattgeng.jcompose.api.ComposeScaleOptions;
+import io.github.gattgeng.jcompose.api.ComposeStartOptions;
 import io.github.gattgeng.jcompose.api.ComposeStopOptions;
 import io.github.gattgeng.jcompose.api.ComposeTopOptions;
 import io.github.gattgeng.jcompose.api.ComposeUpOptions;
@@ -1148,6 +1149,39 @@ class ComposeServiceDockerIntegrationTest {
 
             assertTrue(logServices.contains("visible"));
             assertFalse(logServices.contains("quiet"));
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
+    void startAttachToFiltersOutputStreams() throws Exception {
+        String projectName = "jcompose-start-attach-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: ["sh", "-c", "echo stdout-marker; echo stderr-marker >&2"]
+                """);
+
+        CopyOnWriteArrayList<String> output = new CopyOnWriteArrayList<>();
+        ILogConsumer consumer = new ILogConsumer() {
+            @Override public void onLog(String serviceName, String message, boolean standardError) {
+                output.add((standardError ? "stderr:" : "stdout:") + message);
+            }
+            @Override public void onLogComplete(String serviceName) { }
+            @Override public void onStatus(String serviceName, String message) { }
+        };
+        IComposeService service = new ComposeService();
+        try {
+            service.createAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            service.startAsync(context, ComposeStartOptions.builder().attach(consumer)
+                            .attachTo(java.util.List.of("stdout")).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+
+            assertTrue(output.stream().anyMatch(line -> line.contains("stdout-marker")));
+            assertFalse(output.stream().anyMatch(line -> line.contains("stderr-marker")));
         } finally {
             service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
         }
