@@ -425,6 +425,7 @@ class ComposeFileLoaderTest {
                 Map.entry("healthcheck:\n      interval: eventually", "services.app.healthcheck.interval"),
                 Map.entry("shm_size: huge", "services.app.shm_size"),
                 Map.entry("deploy:\n      replicas: many", "services.app.deploy.replicas"),
+                Map.entry("stop_signal: 15", "services.app.stop_signal"),
                 Map.entry("privileged: sometimes", "services.app.privileged"),
                 Map.entry("environment: invalid", "services.app.environment"),
                 Map.entry("build: []", "services.app.build"))) {
@@ -437,6 +438,14 @@ class ComposeFileLoaderTest {
             assertEquals("app", exception.serviceName());
             assertEquals(composeFile, exception.sourceFile());
         }
+    }
+
+    @Test
+    void acceptsStringStopSignal() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), "services:\n  app:\n    image: alpine\n    stop_signal: SIGUSR1\n");
+
+        assertEquals("SIGUSR1", new ComposeFileLoader().load(directory, null)
+                .services().get("app").configuration().get("stop_signal"));
     }
 
     @Test

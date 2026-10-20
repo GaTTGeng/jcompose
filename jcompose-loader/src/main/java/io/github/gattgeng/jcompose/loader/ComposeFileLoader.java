@@ -804,6 +804,9 @@ public final class ComposeFileLoader {
         validateVolumeMounts(file, service, configuration.get("volumes"), path + ".volumes");
         validatePorts(file, service, configuration.get("ports"), path + ".ports");
         validateRestart(file, service, configuration.get("restart"), path + ".restart");
+        Object stopSignal = configuration.get("stop_signal");
+        if (stopSignal != null && !(stopSignal instanceof String))
+            throw shapeFailure(file, service, path + ".stop_signal", "a string", stopSignal);
         for (String key : List.of("deploy", "healthcheck", "logging"))
             validateOptionalMap(file, service, configuration, key, path + "." + key);
         validateDevelop(file, service, configuration.get("develop"), path + ".develop");
