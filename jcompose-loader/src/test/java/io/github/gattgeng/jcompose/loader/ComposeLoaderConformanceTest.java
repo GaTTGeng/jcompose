@@ -1,6 +1,7 @@
 package io.github.gattgeng.jcompose.loader;
 
 import io.github.gattgeng.jcompose.api.ComposeProject;
+import io.github.gattgeng.jcompose.api.ComposeServicePort;
 import io.github.gattgeng.jcompose.api.ComposeValidationException;
 import io.github.gattgeng.jcompose.api.ServiceDefinition;
 import org.junit.jupiter.api.Test;
@@ -366,9 +367,24 @@ class ComposeLoaderConformanceTest {
         assertEquals(List.of("app-data"), project.volumes());
         assertEquals(List.of("frontend"), project.networks());
         assertEquals(List.of("127.0.0.1:8080:8081/tcp", "9090:9091/udp"), app.configuration().get("ports"));
+        assertEquals(List.of(
+                new ComposeServicePort("8081", "8080", "127.0.0.1", "tcp", null, null, null),
+                new ComposeServicePort("9091", "9090", null, "udp", null, null, null)), app.ports());
         assertEquals(List.of("app-data:/var/lib/app"), app.configuration().get("volumes"));
         assertEquals(List.of("frontend"), app.configuration().get("networks"));
         assertEquals("api", ((Map<?, ?>) app.configuration().get("labels")).get("com.example.component"));
+    }
+
+    @Test
+    void exposesLongSyntaxPortsAsTypedMappings() throws IOException {
+        Path compose = temporaryDirectory.resolve("long-ports.yaml");
+        Files.writeString(compose, "services:\n  app:\n    image: example/app\n    ports:\n      - target: 8080\n        published: \"8443\"\n        host_ip: 127.0.0.1\n        protocol: tcp\n        mode: host\n        name: https\n        app_protocol: https\n");
+
+        ServiceDefinition app = new ComposeFileLoader().load(temporaryDirectory, "long-ports.yaml")
+                .services().get("app");
+
+        assertEquals(List.of(new ComposeServicePort(
+                "8080", "8443", "127.0.0.1", "tcp", "host", "https", "https")), app.ports());
     }
 
     @Test
