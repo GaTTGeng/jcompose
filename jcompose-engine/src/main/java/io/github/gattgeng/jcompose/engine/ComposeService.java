@@ -1785,24 +1785,27 @@ public final class ComposeService implements IComposeService {
         host.withNetworkMode(configuredNetworkMode.isBlank() ? primaryNetwork(projectName, project, service)
                 : dockerNamespaceMode(client, projectName, service, "network_mode"));
         List<com.github.dockerjava.api.model.Bind> binds = serviceBinds(project, projectName, service);
-        if (!anonymousVolumes.isEmpty()) {
-            List<com.github.dockerjava.api.model.Bind> configuredBinds = new ArrayList<>(binds);
-            java.util.Set<String> reusedTargets = anonymousVolumes.keySet();
-            binds.removeIf(bind -> (bind.getPath() == null || bind.getPath().isBlank())
-                    && reusedTargets.contains(bind.getVolume().getPath()));
-            List<com.github.dockerjava.api.model.Mount> mounts = anonymousVolumes.entrySet().stream()
-                    .map(entry -> {
-                        boolean readOnly = configuredBinds.stream()
-                                .anyMatch(bind -> (bind.getPath() == null || bind.getPath().isBlank())
-                                        && entry.getKey().equals(bind.getVolume().getPath())
-                                        && bind.getAccessMode() == com.github.dockerjava.api.model.AccessMode.ro);
-                        return new com.github.dockerjava.api.model.Mount()
-                                .withType(com.github.dockerjava.api.model.MountType.VOLUME)
-                                .withSource(entry.getValue()).withTarget(entry.getKey()).withReadOnly(readOnly);
-                    })
-                    .toList();
-            host.withMounts(mounts);
+        List<com.github.dockerjava.api.model.Bind> configuredBinds = new ArrayList<>(binds);
+        Map<String, com.github.dockerjava.api.model.Mount> volumeMounts = new LinkedHashMap<>();
+        for (com.github.dockerjava.api.model.Bind bind : configuredBinds) {
+            if (bind.getPath() != null && !bind.getPath().isBlank()) continue;
+            String target = bind.getVolume().getPath();
+            volumeMounts.put(target, new com.github.dockerjava.api.model.Mount()
+                    .withType(com.github.dockerjava.api.model.MountType.VOLUME)
+                    .withTarget(target)
+                    .withReadOnly(bind.getAccessMode() == com.github.dockerjava.api.model.AccessMode.ro));
         }
+        binds.removeIf(bind -> bind.getPath() == null || bind.getPath().isBlank());
+        anonymousVolumes.forEach((target, source) -> {
+            boolean readOnly = configuredBinds.stream()
+                    .anyMatch(bind -> (bind.getPath() == null || bind.getPath().isBlank())
+                            && target.equals(bind.getVolume().getPath())
+                            && bind.getAccessMode() == com.github.dockerjava.api.model.AccessMode.ro);
+            volumeMounts.put(target, new com.github.dockerjava.api.model.Mount()
+                    .withType(com.github.dockerjava.api.model.MountType.VOLUME)
+                    .withSource(source).withTarget(target).withReadOnly(readOnly));
+        });
+        if (!volumeMounts.isEmpty()) host.withMounts(new ArrayList<>(volumeMounts.values()));
         if (!binds.isEmpty()) host.withBinds(binds);
         applyVolumesFrom(client, project, projectName, service, host);
         if (config.get("init") instanceof Boolean value) host.withInit(value);
