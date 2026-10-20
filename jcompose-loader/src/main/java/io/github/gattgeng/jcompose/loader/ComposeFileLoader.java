@@ -1,6 +1,7 @@
 package io.github.gattgeng.jcompose.loader;
 
 import io.github.gattgeng.jcompose.api.ComposeProject;
+import io.github.gattgeng.jcompose.api.ComposeDiagnostic;
 import io.github.gattgeng.jcompose.api.ComposeValidationException;
 import io.github.gattgeng.jcompose.api.ServiceDefinition;
 import org.yaml.snakeyaml.LoaderOptions;
@@ -50,6 +51,23 @@ public final class ComposeFileLoader {
     private static final Set<String> EXTENDS_UNIQUE_LIST_FIELDS = Set.of("cap_add", "cap_drop", "configs",
             "constraints", "device_cgroup_rules", "expose", "external_links", "generic_resources", "ports",
             "preferences", "secrets", "security_opt");
+    private static final Set<String> KNOWN_PROJECT_FIELDS = Set.of(
+            "name", "version", "services", "volumes", "networks", "secrets", "configs", "include");
+    private static final Set<String> KNOWN_SERVICE_FIELDS = Set.of(
+            "image", "build", "container_name", "command", "entrypoint", "environment", "env_file", "ports",
+            "volumes", "restart", "healthcheck", "depends_on", "networks", "extra_hosts", "privileged",
+            "network_mode", "ipc", "shm_size", "profiles", "deploy", "secrets", "configs", "labels", "logging",
+            "hostname", "domainname", "user", "working_dir", "tty", "stdin_open", "stop_signal", "stop_grace_period",
+            "read_only", "tmpfs", "cap_add", "cap_drop", "devices", "sysctls", "security_opt", "init", "platform",
+            "pull_policy", "dns", "dns_search", "pid", "mac_address", "cgroup_parent", "extends", "develop", "links",
+            "cpu_shares", "cpu_quota", "cpuset", "mem_limit", "memswap_limit", "mem_reservation", "oom_kill_disable",
+            "oom_score_adj", "group_add", "annotations", "attach", "pre_start", "post_start", "pre_stop", "post_stop",
+            "scale", "volumes_from", "external_links", "device_cgroup_rules", "blkio_config", "ulimits", "storage_opt",
+            "isolation", "runtime", "credential_spec", "use_api_socket", "provider", "models");
+    private static final Set<String> UNSUPPORTED_SERVICE_FIELDS = Set.of(
+            "secrets", "configs", "logging", "stop_signal", "stop_grace_period", "sysctls", "platform",
+            "pull_policy", "dns", "dns_search", "links", "cpu_quota", "oom_kill_disable", "oom_score_adj",
+            "annotations", "extends", "develop");
 
     /** Loads one Compose file. Conventional default names are discovered from the working directory upward. */
     public ComposeProject load(Path workingDirectory, String composeFileName) {
@@ -396,7 +414,11 @@ public final class ComposeFileLoader {
                                             Map<String, String> environment,
                                             Map<String, Path> provenance) {
         try {
-            return toProjectValidated(file, root, environmentOverrides, environment);
+            ComposeProject project = toProjectValidated(file, root, environmentOverrides, environment);
+            List<ComposeDiagnostic> diagnostics = collectDiagnostics(file, unwrapMergeTags(root), provenance);
+            return new ComposeProject(project.sourceFile(), project.services(), project.volumes(), project.networks(),
+                    project.secrets(), project.configs(), project.volumeDefinitions(), project.networkDefinitions(),
+                    project.secretDefinitions(), project.configDefinitions(), project.extensions(), project.environment(), diagnostics);
         } catch (ComposeValidationException exception) {
             if (!file.equals(exception.sourceFile())) throw exception;
             Path source = sourceFor(file, exception.propertyPath(), exception.serviceName(), provenance);
@@ -411,6 +433,87 @@ public final class ComposeFileLoader {
             throw new ComposeValidationException(source, exception.propertyPath(), exception.serviceName(),
                     detail, exception.line(), exception.column(), exception.getCause());
         }
+    }
+
+    private static List<ComposeDiagnostic> collectDiagnostics(Path file, Map<String, Object> root,
+                                                                Map<String, Path> provenance) {
+        List<ComposeDiagnostic> result = new ArrayList<>();
+        for (var entry : root.entrySet()) {
+            String key = entry.getKey();
+            if (!KNOWN_PROJECT_FIELDS.contains(key) && !key.startsWith("x-") && meaningful(entry.getValue()))
+                addDiagnostic(result, file, provenance, key, null, "unsupported-field",
+                        "This project field is not recognized and has no engine behavior.");
+        }
+        Object rawServices = root.get("services");
+        if (rawServices instanceof Map<?, ?> services) {
+            for (var serviceEntry : services.entrySet()) {
+                String serviceName = String.valueOf(serviceEntry.getKey());
+                if (!(serviceEntry.getValue() instanceof Map<?, ?> rawService)) continue;
+                Map<String, Object> service = stringKeyMap(rawService, file, "services." + serviceName);
+                String servicePath = "services." + serviceName;
+                for (var field : service.entrySet()) {
+                    if (!KNOWN_SERVICE_FIELDS.contains(field.getKey()) && !field.getKey().startsWith("x-")
+                            && meaningful(field.getValue())) {
+                        addDiagnostic(result, file, provenance, servicePath + "." + field.getKey(), serviceName,
+                                "unsupported-field", "This service field is not recognized and has no engine behavior.");
+                    } else if (UNSUPPORTED_SERVICE_FIELDS.contains(field.getKey()) && meaningful(field.getValue())) {
+                        addDiagnostic(result, file, provenance, servicePath + "." + field.getKey(), serviceName,
+                                "unsupported-field", "This service field is retained or parsed but is not applied to Docker resources.");
+                    }
+                }
+                Object ports = service.get("ports");
+                if (ports instanceof List<?> list) {
+                    for (int i = 0; i < list.size(); i++) {
+                        if (list.get(i) instanceof String port && port.chars().filter(c -> c == ':').count() >= 2)
+                            addDiagnostic(result, file, provenance, servicePath + ".ports[" + i + "]", serviceName,
+                                    "partially-supported-field", "Host IP port bindings are not preserved by the current port model.");
+                    }
+                }
+                Object dependencies = service.get("depends_on");
+                if (dependencies instanceof Map<?, ?> dependencyMap) {
+                    for (var dependency : dependencyMap.entrySet()) if (meaningful(dependency.getValue()))
+                        addDiagnostic(result, file, provenance, servicePath + ".depends_on." + dependency.getKey(), serviceName,
+                                "partially-supported-field", "Long-form dependency conditions and options are not applied.");
+                }
+                Object deploy = service.get("deploy");
+                if (deploy instanceof Map<?, ?> deployMap) {
+                    for (var field : deployMap.entrySet()) if (!"replicas".equals(String.valueOf(field.getKey())) && meaningful(field.getValue()))
+                        addDiagnostic(result, file, provenance, servicePath + ".deploy." + field.getKey(), serviceName,
+                                "partially-supported-field", "Only deploy.replicas affects service operations.");
+                }
+                Object build = service.get("build");
+                if (build instanceof Map<?, ?> buildMap && meaningful(buildMap.get("cache_to")))
+                    addDiagnostic(result, file, provenance, servicePath + ".build.cache_to", serviceName,
+                            "partially-supported-field", "Build cache export is not applied.");
+            }
+        }
+        addResourceDiagnostics(result, file, provenance, root, "volumes", "partially-supported-field",
+                "Only the resource name is retained; resource options are not applied.");
+        addResourceDiagnostics(result, file, provenance, root, "networks", "partially-supported-field",
+                "Only the resource name is retained; resource options are not applied.");
+        for (String section : List.of("secrets", "configs")) if (meaningful(root.get(section)))
+            addDiagnostic(result, file, provenance, section, null, "unsupported-field",
+                    "Project resources are named in the loaded model but are not provisioned or mounted.");
+        return List.copyOf(result);
+    }
+
+    private static void addResourceDiagnostics(List<ComposeDiagnostic> result, Path file, Map<String, Path> provenance,
+                                               Map<String, Object> root, String section, String code, String message) {
+        if (!(root.get(section) instanceof Map<?, ?> resources)) return;
+        for (var resource : resources.entrySet()) if (meaningful(resource.getValue()))
+            addDiagnostic(result, file, provenance, section + "." + resource.getKey(), null, code, message);
+    }
+
+    private static void addDiagnostic(List<ComposeDiagnostic> result, Path file, Map<String, Path> provenance,
+                                      String path, String service, String code, String message) {
+        result.add(new ComposeDiagnostic(sourceFor(file, path, service, provenance).toString(), path, service, code, message));
+    }
+
+    private static boolean meaningful(Object value) {
+        if (value == null || Boolean.FALSE.equals(value) || "".equals(value)) return false;
+        if (value instanceof Map<?, ?> map) return !map.isEmpty();
+        if (value instanceof List<?> list) return !list.isEmpty();
+        return true;
     }
 
     private static ComposeProject toProjectValidated(Path file, Map<String, Object> root,

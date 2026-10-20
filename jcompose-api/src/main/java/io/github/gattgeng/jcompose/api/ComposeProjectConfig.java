@@ -7,7 +7,16 @@ import java.util.Map;
 public record ComposeProjectConfig(String name, String workingDirectory, List<String> configFiles,
                                    List<String> services, List<String> networks, List<String> volumes,
                                    List<String> secrets, List<String> configs,
-                                   Map<String, String> environment, String renderedYaml) {
+                                   Map<String, String> environment, String renderedYaml,
+                                   List<ComposeDiagnostic> diagnostics) {
+    public ComposeProjectConfig(String name, String workingDirectory, List<String> configFiles,
+                                List<String> services, List<String> networks, List<String> volumes,
+                                List<String> secrets, List<String> configs,
+                                Map<String, String> environment, String renderedYaml) {
+        this(name, workingDirectory, configFiles, services, networks, volumes, secrets, configs,
+                environment, renderedYaml, List.of());
+    }
+
     public ComposeProjectConfig {
         configFiles = configFiles == null ? List.of() : List.copyOf(configFiles);
         services = services == null ? List.of() : List.copyOf(services);
@@ -16,5 +25,6 @@ public record ComposeProjectConfig(String name, String workingDirectory, List<St
         secrets = secrets == null ? List.of() : List.copyOf(secrets);
         configs = configs == null ? List.of() : List.copyOf(configs);
         environment = environment == null ? Map.of() : Map.copyOf(environment);
+        diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
     }
 }

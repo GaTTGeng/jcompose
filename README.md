@@ -90,7 +90,7 @@ Configure optional defaults with `jcompose.default-project-name` and `jcompose.d
 
 ## What the loader understands
 
-The loader reads Compose YAML, `.env`, and service `env_file` inputs, performs variable interpolation, and creates project/service models. The current implementation is an incremental subset, not a complete Compose Specification parser. It retains raw service mappings for fields that do not yet have a fully typed Java representation or Docker Engine behavior.
+The loader reads Compose YAML, `.env`, and service `env_file` inputs, performs variable interpolation, and creates project/service models. The current implementation is an incremental subset, not a complete Compose Specification parser. `ComposeProjectConfig.diagnostics()` reports unknown fields and fields that are not fully applied without including their configured values. Pass `ComposeValidationMode.STRICT` to the `ComposeProjectContext` constructor to reject projects with diagnostics before Docker operations begin. Raw service mappings remain available for fields without a fully typed Java representation.
 
 ### Variable interpolation and environment files
 

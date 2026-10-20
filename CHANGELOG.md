@@ -8,6 +8,8 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 
 ### Added
 
+- Synced the current ComposeSharp field-diagnostic worktree based on `755afae`: report value-free diagnostics for unknown and partially applied Compose fields, with an opt-in strict validation mode that rejects them before Docker operations.
+
 - Applied explicit `attach.detachKeys` sequences to forwarded stdin so callers can detach without sending the key bytes to the container.
 
 - Ran Docker Compose `pre_start` hooks in ordered ephemeral containers with service environment, network, and volume access before service containers start; hook failures now block service startup.

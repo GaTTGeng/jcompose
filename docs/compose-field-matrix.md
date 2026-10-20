@@ -14,6 +14,8 @@ This matrix tracks **jcompose's** behavior against Docker Compose. ComposeSharp 
 
 The repository is currently an early `3.0.0-SNAPSHOT`. When no Compose filename is explicitly supplied, jcompose prefers `compose.yaml` and searches conventional filenames from the working directory upward. Project loading also merges the matching optional conventional override file. Most Compose-shaped service fields are retained in `ServiceDefinition` as raw values. The engine implements a limited subset of build and service lifecycle behavior. Therefore, **no field should be read as full Docker Compose support unless its row explicitly says Implemented**. At this snapshot, no Compose service field has been verified as fully implemented against Docker Compose.
 
+`ComposeProjectConfig.diagnostics()` reports unknown project/service fields and known fields whose values are only partly or not applied, without including configured values. Passing `ComposeValidationMode.STRICT` to `ComposeProjectContext` rejects a project with any such diagnostic before Docker runtime operations proceed. This report covers the current loader field inventory and is not a full Compose Specification validator.
+
 ## Project and service fields
 
 | Docker Compose field or behavior | jcompose model/API | Current status | Notes and target behavior |

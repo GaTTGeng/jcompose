@@ -80,10 +80,17 @@ public final class ComposeService implements IComposeService {
 
     private ComposeProject loadComposeProject(ComposeProjectContext context) {
         Map<String, String> environment = Map.of("COMPOSE_PROJECT_NAME", context.projectName());
-        if (context.composeFiles().size() == 1) {
-            return loader.loadProject(context.workingDirectory(), context.composeFiles().getFirst(), environment);
+        ComposeProject project = context.composeFiles().size() == 1
+                ? loader.loadProject(context.workingDirectory(), context.composeFiles().getFirst(), environment)
+                : loader.loadMerged(context.workingDirectory(), context.composeFiles(), environment);
+        if (context.validationMode() == io.github.gattgeng.jcompose.api.ComposeValidationMode.STRICT
+                && !project.diagnostics().isEmpty()) {
+            var diagnostic = project.diagnostics().getFirst();
+            Path file = Path.of(diagnostic.sourceFile());
+            throw new io.github.gattgeng.jcompose.api.ComposeValidationException(file, diagnostic.propertyPath(),
+                    diagnostic.serviceName(), diagnostic.code() + ": " + diagnostic.message(), null, null, null);
         }
-        return loader.loadMerged(context.workingDirectory(), context.composeFiles(), environment);
+        return project;
     }
 
     private boolean hasComposeFile(ComposeProjectContext context) {
@@ -821,7 +828,8 @@ public final class ComposeService implements IComposeService {
                                                        String renderedYaml) {
         return new ComposeProjectConfig(projectName, project.sourceFile().getParent().toString(),
                 projectConfigFiles(project, composeFiles), services.stream().map(ServiceDefinition::name).toList(),
-                project.networks(), project.volumes(), project.secrets(), project.configs(), project.environment(), renderedYaml);
+                project.networks(), project.volumes(), project.secrets(), project.configs(), project.environment(), renderedYaml,
+                project.diagnostics());
     }
 
     private static List<String> projectConfigFiles(ComposeProject project, List<String> composeFiles) {
