@@ -4018,6 +4018,7 @@ public final class ComposeService implements IComposeService {
                         effective.useNetworkAliases());
                 connectAdditionalNetworks(client, context.projectName(), project, service, containerId,
                         effective.useNetworkAliases());
+                runPreStartHooks(client, context, project, service, 1);
                 if (!effective.detach()) {
                     if (effective.interactive()) {
                         var callback = client.attachContainerCmd(containerId).withLogs(false).withFollowStream(true)

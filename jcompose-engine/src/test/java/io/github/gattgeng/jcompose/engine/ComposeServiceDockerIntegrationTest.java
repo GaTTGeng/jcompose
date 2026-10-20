@@ -440,6 +440,38 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void runExecutesPreStartHooksBeforeStartingTheOneOffContainer() throws Exception {
+        String projectName = "jcompose-run-pre-start-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        var marker = directory.resolve("run-pre-start.marker");
+        Files.deleteIfExists(marker);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: ["sh", "-c", "sleep 60"]
+                    volumes: ["./:/workspace"]
+                    pre_start:
+                      - command: ["sh", "-c", "echo ready > /workspace/run-pre-start.marker"]
+                """);
+
+        IComposeService service = new ComposeService();
+        String containerId = null;
+        try {
+            containerId = service.runAsync(context, "app", ComposeRunOptions.builder()
+                    .noDeps(true).detach(true).tty(false).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertEquals("ready", Files.readString(marker).trim());
+        } finally {
+            try (var client = DockerClientFactory.create(context)) {
+                if (containerId != null) client.removeContainerCmd(containerId).withForce(true).withRemoveVolumes(false).exec();
+            }
+            Files.deleteIfExists(marker);
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
     void runPublishesServicePortsOnlyWhenRequested() throws Exception {
         String projectName = "jcompose-run-ports-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
