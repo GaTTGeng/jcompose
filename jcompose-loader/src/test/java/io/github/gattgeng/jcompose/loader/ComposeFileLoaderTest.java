@@ -666,7 +666,7 @@ class ComposeFileLoaderTest {
                 Map.entry("priority: invalid", "services.app.networks.frontend.priority"),
                 Map.entry("priority: 1.5", "services.app.networks.frontend.priority"),
                 Map.entry("gw_priority: invalid", "services.app.networks.frontend.gw_priority"),
-                Map.entry("gw_priority: 1.5", "services.app.networks.frontend.gw_priority"))) {
+                Map.entry("gw_priority: 1.5", "services.app.networks.frontend.gw_priority")).entrySet()) {
             Files.writeString(composeFile, "services:\n  app:\n    image: alpine\n    networks:\n      frontend:\n        "
                     + invalid.getKey() + "\nnetworks:\n  frontend: {}\n");
 
