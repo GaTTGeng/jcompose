@@ -28,6 +28,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Aligned `wait` service selection with project profiles and included selected running one-off containers; Docker API wait errors yield `-1` for that container.
 - Applied shared profile-aware existing-service selection to lifecycle operations, `down`, `ps`, `top`, `images`, and `logs`, with label-only fallback when the Compose file is absent and no profiles are active.
 - Aligned `stop` completion with ComposeSharp by polling container state for up to five seconds after a successful stop request; removed containers count as stopped.
+- Applied service `stop_grace_period` to stop, restart, down, and remove-with-stop operations when no operation timeout overrides it.
 - Matched ComposeSharp's per-container Docker API error handling for lifecycle batches so a failed action does not prevent eligible remaining containers from being processed.
 - Made `remove` with `stop` enabled finish the stop phase for the selected containers before beginning removal.
 - Implemented `wait`'s `downProjectOnContainerExit` option: the first watched exit tears down all project containers and project networks before wait results are returned.

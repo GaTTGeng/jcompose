@@ -211,7 +211,8 @@ public final class ComposeService implements IComposeService {
                 if (isRunning(container)) runLifecycleHooks(client, container, selection.project(), "pre_stop");
                 try {
                     var stop = client.stopContainerCmd(container.getId());
-                    if (timeout != null) stop.withTimeout(timeout);
+                    Integer effectiveTimeout = stopTimeout(label(container, ComposeConstants.SERVICE_LABEL), selection.project(), timeout);
+                    if (effectiveTimeout != null) stop.withTimeout(effectiveTimeout);
                     stop.exec();
                 } catch (DockerException ignored) {
                     continue;
@@ -260,10 +261,18 @@ public final class ComposeService implements IComposeService {
         for (Container container : containers) {
             if (isRunning(container)) runLifecycleHooks(client, container, project, "pre_stop");
             var restart = client.restartContainerCmd(container.getId());
-            if (timeout != null) restart.withTimeout(timeout);
+            Integer effectiveTimeout = stopTimeout(label(container, ComposeConstants.SERVICE_LABEL), project, timeout);
+            if (effectiveTimeout != null) restart.withTimeout(effectiveTimeout);
             restart.exec();
             runLifecycleHooks(client, container, project, "post_start");
         }
+    }
+
+    static Integer stopTimeout(String serviceName, ComposeProject project, Integer operationTimeout) {
+        if (operationTimeout != null) return operationTimeout;
+        ServiceDefinition service = project == null || serviceName == null ? null : project.services().get(serviceName);
+        Object configuredTimeout = service == null ? null : service.configuration().get("stop_grace_period");
+        return configuredTimeout == null ? null : parseDurationSeconds(String.valueOf(configuredTimeout));
     }
 
     private static List<String> restartDependencyNames(ServiceDefinition service) {
@@ -313,7 +322,10 @@ public final class ComposeService implements IComposeService {
                     boolean stopAccepted = true;
                     try {
                         if (isRunning(container)) runLifecycleHooks(client, container, selection.project(), "pre_stop");
-                        client.stopContainerCmd(container.getId()).exec();
+                        var stop = client.stopContainerCmd(container.getId());
+                        Integer timeout = stopTimeout(label(container, ComposeConstants.SERVICE_LABEL), selection.project(), null);
+                        if (timeout != null) stop.withTimeout(timeout);
+                        stop.exec();
                     } catch (DockerException ignored) {
                         stopAccepted = false;
                         // Continue removing the remaining project containers.
@@ -359,7 +371,8 @@ public final class ComposeService implements IComposeService {
                 if (isRunning(container)) runLifecycleHooks(client, container, project, "pre_stop");
                 try {
                     var stop = client.stopContainerCmd(container.getId());
-                    if (timeout != null) stop.withTimeout(timeout);
+                    Integer effectiveTimeout = stopTimeout(label(container, ComposeConstants.SERVICE_LABEL), project, timeout);
+                    if (effectiveTimeout != null) stop.withTimeout(effectiveTimeout);
                     stop.exec();
                 } catch (DockerException ignored) {
                     // Continue teardown when the container is already stopped or unavailable.
