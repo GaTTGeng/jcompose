@@ -340,7 +340,6 @@ public final class ComposeService implements IComposeService {
                 if (effectiveTimeout != null) stop.withTimeout(effectiveTimeout);
                 stop.exec();
             }
-            runPreStartHooks(client, context, project, serviceFor(project, container), replicaNumber(container));
             client.startContainerCmd(container.getId()).exec();
             runLifecycleHooks(client, container, project, "post_start");
         }
