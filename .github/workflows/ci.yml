@@ -22,5 +22,8 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
+      - name: Require Docker Engine for integration coverage
+        if: runner.os == 'Linux'
+        run: docker info --format '{{.ServerVersion}}'
       - name: Verify all modules
         run: mvn --batch-mode --no-transfer-progress verify
