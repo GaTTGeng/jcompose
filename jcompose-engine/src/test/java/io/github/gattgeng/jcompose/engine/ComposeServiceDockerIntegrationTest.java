@@ -474,8 +474,8 @@ class ComposeServiceDockerIntegrationTest {
                 var defaultBindings = client.inspectContainerCmd(defaultRun).exec().getHostConfig().getPortBindings();
                 var requestedBindings = client.inspectContainerCmd(servicePortsRun).exec().getHostConfig().getPortBindings();
                 var explicitBindings = client.inspectContainerCmd(explicitPublishRun).exec().getHostConfig().getPortBindings();
-                assertTrue(client.inspectContainerCmd(defaultRun).exec().getConfig().getOpenStdin());
-                assertFalse(client.inspectContainerCmd(nonInteractiveRun).exec().getConfig().getOpenStdin());
+                assertTrue(client.inspectContainerCmd(defaultRun).exec().getConfig().getStdinOpen());
+                assertFalse(client.inspectContainerCmd(nonInteractiveRun).exec().getConfig().getStdinOpen());
                 assertTrue(defaultBindings == null || defaultBindings.getBindings().isEmpty());
                 assertFalse(requestedBindings == null || requestedBindings.getBindings().isEmpty());
                 assertEquals(1, explicitBindings.getBindings().size());
