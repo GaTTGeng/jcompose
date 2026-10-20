@@ -420,6 +420,7 @@ public final class ComposeFileLoader {
         Object rawServices = root.get("services");
         if (!(rawServices instanceof Map<?, ?> serviceMap) || serviceMap.isEmpty())
             throw new ComposeValidationException(file, "services", "the document must define at least one service.");
+        validateExternalNetworks(file, root.get("networks"));
         Map<String, Map<String, Object>> resolvedServices = new LinkedHashMap<>();
         for (var entry : serviceMap.entrySet()) {
             String name = String.valueOf(entry.getKey());
@@ -646,6 +647,26 @@ public final class ComposeFileLoader {
         Map<String, Object> result = new LinkedHashMap<>();
         map.forEach((key, definition) -> result.put(String.valueOf(key), definition));
         return result;
+    }
+
+    private static void validateExternalNetworks(Path file, Object configured) {
+        if (!(configured instanceof Map<?, ?> networks)) return;
+        for (var entry : networks.entrySet()) {
+            if (!(entry.getKey() instanceof String network) || !(entry.getValue() instanceof Map<?, ?> definition))
+                continue;
+            Object external = definition.get("external");
+            String path = "networks." + network;
+            if (external != null && !(external instanceof Boolean))
+                throw new ComposeValidationException(file, path + ".external", null,
+                        "external must be a boolean.", null, null, null);
+            if (Boolean.TRUE.equals(external)) {
+                for (Object key : definition.keySet()) {
+                    if (!"external".equals(key) && !"name".equals(key))
+                        throw new ComposeValidationException(file, path + "." + key, null,
+                                "external networks cannot specify other attributes besides name.", null, null, null);
+                }
+            }
+        }
     }
 
     private static void validateServiceNetworks(Path file, String service, Object configured, Object declared) {

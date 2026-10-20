@@ -12,6 +12,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ComposeFileLoaderTest {
     @TempDir
@@ -616,6 +617,36 @@ class ComposeFileLoaderTest {
                 """);
         assertEquals(List.of("default"), new ComposeFileLoader().load(directory, null)
                 .services().get("app").configuration().get("networks"));
+    }
+
+    @Test
+    void validatesExternalNetworkDefinitionAttributes() throws Exception {
+        Path composeFile = directory.resolve("compose.yaml");
+        Files.writeString(composeFile, """
+                services:
+                  app:
+                    image: alpine
+                    networks: [shared]
+                networks:
+                  shared:
+                    external: true
+                    name: shared-network
+                """);
+        assertTrue(new ComposeFileLoader().load(directory, null)
+                .networkDefinitions().get("shared") instanceof Map<?, ?> definition
+                && Boolean.TRUE.equals(definition.get("external")));
+
+        for (Map.Entry<String, String> invalid : Map.of(
+                "external: \"true\"", "networks.shared.external",
+                "external: true\ndriver: bridge", "networks.shared.driver").entrySet()) {
+            Files.writeString(composeFile, "services:\n  app:\n    image: alpine\nnetworks:\n  shared:\n    "
+                    + invalid.getKey().replace("\n", "\n    ") + "\n");
+
+            ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                    () -> new ComposeFileLoader().load(directory, null), invalid.getKey());
+
+            assertEquals(invalid.getValue(), exception.propertyPath());
+        }
     }
 
     @Test
