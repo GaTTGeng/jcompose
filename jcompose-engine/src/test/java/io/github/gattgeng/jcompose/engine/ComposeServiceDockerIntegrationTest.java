@@ -93,6 +93,39 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void runsPreStartInitContainerWithServiceVolumesBeforeStartingService() throws Exception {
+        String projectName = "jcompose-pre-start-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: [sh, -c, 'test -f /shared/ready && sleep 300']
+                    volumes: [state:/shared]
+                    pre_start:
+                      - image: busybox:1.36
+                        command: [sh, -c, 'echo initialized > /shared/ready']
+                volumes:
+                  state: {}
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            try (var client = DockerClientFactory.create(context)) {
+                var containers = client.listContainersCmd().withShowAll(true)
+                        .withLabelFilter(java.util.Map.of("com.docker.compose.project", projectName,
+                                "com.docker.compose.service", "app"))
+                        .exec();
+                assertEquals(1, containers.size());
+                assertTrue(containers.getFirst().getStatus().contains("Up"));
+            }
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
     void runExecutesPostStartHookForOneOffContainer() throws Exception {
         String projectName = "jcompose-run-hooks-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);

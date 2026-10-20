@@ -689,7 +689,8 @@ public final class ComposeFileLoader {
             validateOptionalMap(file, service, configuration, key, path + "." + key);
         validateDevelop(file, service, configuration.get("develop"), path + ".develop");
         for (String hook : List.of("post_start", "pre_stop"))
-            validateLifecycleHooks(file, service, configuration.get(hook), path + "." + hook);
+            validateLifecycleHooks(file, service, configuration.get(hook), path + "." + hook, false);
+        validateLifecycleHooks(file, service, configuration.get("pre_start"), path + ".pre_start", true);
         validateScalarOrMap(file, service, configuration, "extends", path + ".extends");
         Object uts = configuration.get("uts");
         if (uts != null && (!(uts instanceof String mode) || !"host".equals(mode)))
@@ -800,7 +801,7 @@ public final class ComposeFileLoader {
             validateDevelopWatchRule(file, service, rules.get(index), path + ".watch[" + index + "]");
     }
 
-    private static void validateLifecycleHooks(Path file, String service, Object configured, String path) {
+    private static void validateLifecycleHooks(Path file, String service, Object configured, String path, boolean preStart) {
         if (configured == null) return;
         if (!(configured instanceof List<?> hooks))
             throw shapeFailure(file, service, path, "a YAML list", configured);
@@ -808,13 +809,16 @@ public final class ComposeFileLoader {
             String hookPath = path + "[" + index + "]";
             if (!(hooks.get(index) instanceof Map<?, ?> hook))
                 throw shapeFailure(file, service, hookPath, "a YAML mapping", hooks.get(index));
+            Set<String> fields = preStart
+                    ? Set.of("command", "image", "user", "privileged", "working_dir", "environment", "per_replica")
+                    : Set.of("command", "user", "privileged", "working_dir", "environment");
             for (Object key : hook.keySet()) {
-                if (!(key instanceof String field) || !Set.of("command", "user", "privileged", "working_dir", "environment").contains(field))
+                if (!(key instanceof String field) || !fields.contains(field))
                     throw new ComposeValidationException(file, hookPath + "." + key, service,
                             "unsupported lifecycle hook option '" + key + "'.", null, null, null);
             }
             Object command = hook.get("command");
-            if (!isNonBlankString(command) && !(command instanceof List<?> commandList && !commandList.isEmpty()
+            if (!(preStart && command == null) && !isNonBlankString(command) && !(command instanceof List<?> commandList && !commandList.isEmpty()
                     && commandList.stream().allMatch(String.class::isInstance)))
                 throw new ComposeValidationException(file, hookPath + ".command", service,
                         "a non-empty shell or exec command is required.", null, null, null);
@@ -824,6 +828,10 @@ public final class ComposeFileLoader {
                     throw shapeFailure(file, service, hookPath + "." + field, "a scalar", value);
             }
             validateBoolean(file, service, hook, "privileged", hookPath + ".privileged");
+            validateBoolean(file, service, hook, "per_replica", hookPath + ".per_replica");
+            if (hook.get("image") != null && !(hook.get("image") instanceof String image && !image.isBlank()))
+                throw new ComposeValidationException(file, hookPath + ".image", service,
+                        "image must be a non-empty string.", null, null, null);
             validateListOrMap(file, service, hook, "environment", hookPath + ".environment");
         }
     }

@@ -364,12 +364,18 @@ class ComposeFileLoaderTest {
                       - command: ./shutdown.sh
                         environment:
                           HOOK: pre
+                    pre_start:
+                      - image: busybox:1.36
+                        command: [sh, -c, 'echo initialized']
+                        per_replica: false
+                      - command: ./prepare.sh
                 """);
 
         var project = new ComposeFileLoader().load(directory, null);
 
         assertEquals(1, ((List<?>) project.services().get("app").configuration().get("post_start")).size());
         assertEquals(1, ((List<?>) project.services().get("app").configuration().get("pre_stop")).size());
+        assertEquals(2, ((List<?>) project.services().get("app").configuration().get("pre_start")).size());
     }
 
     @Test
@@ -391,6 +397,22 @@ class ComposeFileLoaderTest {
             assertEquals(invalid.getValue(), exception.propertyPath());
             assertEquals("app", exception.serviceName());
             assertEquals(composeFile, exception.sourceFile());
+        }
+    }
+
+    @Test
+    void rejectsInvalidPreStartHookDefinitionsWithComposePaths() throws Exception {
+        Path composeFile = directory.resolve("compose.yaml");
+        ComposeFileLoader loader = new ComposeFileLoader();
+        for (var invalid : List.of(
+                Map.entry("pre_start:\n      - image: \"\"", "services.app.pre_start[0].image"),
+                Map.entry("pre_start:\n      - command: echo ok\n        per_replica: \"yes\"", "services.app.pre_start[0].per_replica"),
+                Map.entry("pre_start:\n      - command: echo ok\n        image: 4", "services.app.pre_start[0].image"))) {
+            Files.writeString(composeFile, "services:\n  app:\n    image: alpine\n    " + invalid.getKey() + "\n");
+            ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                    () -> loader.load(directory, null));
+            assertEquals(invalid.getValue(), exception.propertyPath());
+            assertEquals("app", exception.serviceName());
         }
     }
 
