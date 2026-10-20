@@ -1333,4 +1333,43 @@ class ComposeFileLoaderTest {
 
         assertEquals(Map.of("disable", true), app.get("healthcheck"));
     }
+
+    @Test
+    void acceptsDockerComposeHealthcheckTestForms() throws Exception {
+        for (String test : List.of("echo healthy", "[CMD, echo, healthy]", "[CMD-SHELL, echo healthy]", "[]")) {
+            Files.writeString(directory.resolve("compose.yaml"), """
+                    services:
+                      app:
+                        image: alpine
+                        healthcheck:
+                          test: %s
+                    """.formatted(test));
+
+            new ComposeFileLoader().load(directory, null);
+        }
+    }
+
+    @Test
+    void rejectsInvalidDockerComposeHealthcheckTestFormsWithPropertyPath() throws Exception {
+        Map<String, String> invalidTests = Map.of(
+                "{cmd: echo}", "services.app.healthcheck.test",
+                "[UNKNOWN, echo]", "services.app.healthcheck.test.0",
+                "[CMD, 42]", "services.app.healthcheck.test.1",
+                "null", "services.app.healthcheck.test");
+
+        for (var entry : invalidTests.entrySet()) {
+            Files.writeString(directory.resolve("compose.yaml"), """
+                    services:
+                      app:
+                        image: alpine
+                        healthcheck:
+                          test: %s
+                    """.formatted(entry.getKey()));
+
+            ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                    () -> new ComposeFileLoader().load(directory, null));
+
+            assertEquals(entry.getValue(), exception.propertyPath());
+        }
+    }
 }

@@ -843,6 +843,7 @@ public final class ComposeFileLoader {
 
         Object healthcheckValue = configuration.get("healthcheck");
         if (healthcheckValue instanceof Map<?, ?> healthcheck) {
+            validateHealthcheckTest(file, service, healthcheck, path + ".healthcheck.test");
             validateBoolean(file, service, healthcheck, "disable", path + ".healthcheck.disable");
             validateInteger(file, service, healthcheck, "retries", path + ".healthcheck.retries");
             validateDurations(file, service, healthcheck, path + ".healthcheck",
@@ -869,6 +870,23 @@ public final class ComposeFileLoader {
             for (String key : List.of("privileged", "pull", "no_cache"))
                 validateBoolean(file, service, build, key, path + ".build." + key);
         }
+    }
+
+    private static void validateHealthcheckTest(Path file, String service, Map<?, ?> healthcheck, String path) {
+        if (!healthcheck.containsKey("test")) return;
+        Object test = healthcheck.get("test");
+        if (test instanceof String) return;
+        if (!(test instanceof List<?> commands))
+            throw new ComposeValidationException(file, path, service,
+                    "healthcheck.test must be a string or a list of strings.", null, null, null);
+        for (int index = 0; index < commands.size(); index++) {
+            if (!(commands.get(index) instanceof String))
+                throw new ComposeValidationException(file, path + "." + index, service,
+                        "healthcheck.test entries must be strings.", null, null, null);
+        }
+        if (!commands.isEmpty() && !List.of("NONE", "CMD", "CMD-SHELL").contains(commands.getFirst()))
+            throw new ComposeValidationException(file, path + ".0", service,
+                    "healthcheck.test must start with NONE, CMD, or CMD-SHELL.", null, null, null);
     }
 
     private static void validateVolumeMounts(Path file, String service, Object configured, String path) {
