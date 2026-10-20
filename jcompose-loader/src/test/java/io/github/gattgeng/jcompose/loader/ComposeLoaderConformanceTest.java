@@ -24,6 +24,23 @@ class ComposeLoaderConformanceTest {
     Path temporaryDirectory;
 
     @Test
+    void rejectsNonStringTopLevelProjectName() throws IOException {
+        Path file = temporaryDirectory.resolve("compose.yaml");
+        Files.writeString(file, """
+                name:
+                  nested: value
+                services:
+                  app:
+                    image: busybox
+                """);
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(temporaryDirectory, "compose.yaml"));
+
+        assertEquals("name", exception.propertyPath());
+    }
+
+    @Test
     void mapsBuildDefinitionFixture() throws IOException {
         ComposeProject project = loadFixture("build-definition");
         ServiceDefinition app = project.services().get("app");

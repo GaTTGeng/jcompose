@@ -417,6 +417,8 @@ public final class ComposeFileLoader {
                                                        Map<String, String> environmentOverrides,
                                                        Map<String, String> environment) {
         root = unwrapMergeTags(root);
+        if (root.containsKey("name") && !(root.get("name") instanceof String))
+            throw new ComposeValidationException(file, "name", "project name must be a string.");
         Object rawServices = root.get("services");
         if (!(rawServices instanceof Map<?, ?> serviceMap) || serviceMap.isEmpty())
             throw new ComposeValidationException(file, "services", "the document must define at least one service.");
