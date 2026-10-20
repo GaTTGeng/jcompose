@@ -98,6 +98,7 @@ class ComposeServiceDockerIntegrationTest {
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
         Path hookDirectory = Files.createDirectories(directory.resolve("pre-start"));
         Path events = hookDirectory.resolve("events");
+        Path allow = hookDirectory.resolve("allow");
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:
                   app:
@@ -106,17 +107,35 @@ class ComposeServiceDockerIntegrationTest {
                     volumes: ["./pre-start:/shared"]
                     pre_start:
                       - image: busybox:1.36
-                        command: [sh, -c, 'echo initialized >> /shared/events; touch /shared/ready']
+                        command: [sh, -c, 'if [ ! -f /shared/allow ]; then echo failed >> /shared/events; exit 1; fi; echo initialized >> /shared/events; touch /shared/ready']
                 """);
 
         IComposeService service = new ComposeService();
         try {
+            assertThrows(ExecutionException.class, () -> service.upAsync(context, null)
+                    .get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS));
+            try (var client = DockerClientFactory.create(context)) {
+                var failedHooks = client.listContainersCmd().withShowAll(true)
+                        .withLabelFilter(java.util.Map.of("com.docker.compose.project", projectName,
+                                "com.docker.compose.hook", "pre_start"))
+                        .exec();
+                assertEquals(1, failedHooks.size());
+            }
+
+            Files.writeString(allow, "retry\n");
             service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
-            assertEquals("initialized\n", Files.readString(events));
+            assertEquals("failed\ninitialized\n", Files.readString(events));
+            try (var client = DockerClientFactory.create(context)) {
+                var hookContainers = client.listContainersCmd().withShowAll(true)
+                        .withLabelFilter(java.util.Map.of("com.docker.compose.project", projectName,
+                                "com.docker.compose.hook", "pre_start"))
+                        .exec();
+                assertTrue(hookContainers.isEmpty());
+            }
             service.stopAsync(context, null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
             service.startAsync(context, null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
             service.restartAsync(context, null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
-            assertEquals("initialized\n", Files.readString(events));
+            assertEquals("failed\ninitialized\n", Files.readString(events));
             try (var client = DockerClientFactory.create(context)) {
                 var containers = client.listContainersCmd().withShowAll(true)
                         .withLabelFilter(java.util.Map.of("com.docker.compose.project", projectName,

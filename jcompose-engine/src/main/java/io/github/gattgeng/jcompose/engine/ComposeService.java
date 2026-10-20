@@ -147,6 +147,8 @@ public final class ComposeService implements IComposeService {
         for (Container container : projectContainers(client, context.projectName(), selectedServices, true)) {
             if ("true".equalsIgnoreCase(label(container, ComposeConstants.ONE_OFF_LABEL))) continue;
             if (!isRunning(container)) {
+                if (isCreated(container))
+                    runPreStartHooks(client, context, project, serviceFor(project, container), replicaNumber(container));
                 try {
                     client.startContainerCmd(container.getId()).exec();
                 } catch (DockerException exception) {
@@ -166,6 +168,7 @@ public final class ComposeService implements IComposeService {
     private static void runPreStartHooks(DockerClient client, ComposeProjectContext context, ComposeProject project,
                                          ServiceDefinition service, int replica) {
         if (project == null || service == null || !(service.configuration().get("pre_start") instanceof List<?> hooks)) return;
+        removeOrphanPreStartContainers(client, context.projectName(), service.name());
         int hookIndex = 0;
         for (Object value : hooks) {
             hookIndex++;
@@ -189,7 +192,9 @@ public final class ComposeService implements IComposeService {
             }
             Map<String, String> labels = new LinkedHashMap<>();
             labels.put(ComposeConstants.PROJECT_LABEL, context.projectName());
+            labels.put(ComposeConstants.SERVICE_LABEL, service.name());
             labels.put(ComposeConstants.ONE_OFF_LABEL, "true");
+            labels.put(ComposeConstants.HOOK_LABEL, ComposeConstants.PRE_START_HOOK);
             labels.put(ComposeConstants.VERSION_LABEL, "3.0.0");
             var host = serviceHostConfig(client, project, context.projectName(), service, Map.of())
                     .withPortBindings(List.of())
@@ -198,6 +203,7 @@ public final class ComposeService implements IComposeService {
             String name = "jcompose-pre-start-" + java.util.UUID.randomUUID();
             String hookName = "pre_start[" + (hookIndex - 1) + "]";
             String containerId = null;
+            boolean hookFailed = false;
             try {
                 var create = client.createContainerCmd(image).withName(name).withLabels(labels).withHostConfig(host);
                 if (hook.get("command") instanceof String command) create.withCmd("/bin/sh", "-c", command);
@@ -219,13 +225,25 @@ public final class ComposeService implements IComposeService {
                     @Override public void onError(Throwable error) { result.completeExceptionally(error); }
                 });
                 int exitCode = await(result);
-                if (exitCode != 0) throw new IllegalStateException("Lifecycle hook '" + hookName + "' failed for service '"
-                        + service.name() + "' with exit code " + exitCode + ".");
+                if (exitCode != 0) {
+                    hookFailed = true;
+                    throw new IllegalStateException("Lifecycle hook '" + hookName + "' failed for service '"
+                            + service.name() + "' with exit code " + exitCode + ". Hook container '" + containerId + "' was retained.");
+                }
             } finally {
-                if (containerId != null) {
+                if (containerId != null && !hookFailed) {
                     try { client.removeContainerCmd(containerId).withForce(true).withRemoveVolumes(false).exec(); }
                     catch (NotFoundException ignored) { }
                 }
+            }
+        }
+    }
+
+    private static void removeOrphanPreStartContainers(DockerClient client, String projectName, String serviceName) {
+        for (Container container : projectContainers(client, projectName, List.of(serviceName), true)) {
+            if (ComposeConstants.PRE_START_HOOK.equals(label(container, ComposeConstants.HOOK_LABEL))) {
+                try { client.removeContainerCmd(container.getId()).withForce(true).withRemoveVolumes(true).exec(); }
+                catch (NotFoundException ignored) { }
             }
         }
     }
@@ -1233,6 +1251,10 @@ public final class ComposeService implements IComposeService {
         return "running".equalsIgnoreCase(container.getState());
     }
 
+    private static boolean isCreated(Container container) {
+        return "created".equalsIgnoreCase(container.getState());
+    }
+
     private static List<String> services(List<String> names) { return names; }
 
     private ExistingServiceSelection selectExistingServices(ComposeProjectContext context, List<String> explicitServices) {
@@ -1635,6 +1657,7 @@ public final class ComposeService implements IComposeService {
             }
             if (start) existing.forEach(container -> {
                 if (!isRunning(container)) {
+                    if (isCreated(container)) runPreStartHooks(client, context, project, service, replicaNumber(container));
                     client.startContainerCmd(container.getId()).exec();
                     runLifecycleHooks(client, container, project, "post_start");
                 }
