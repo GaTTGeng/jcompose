@@ -15,7 +15,7 @@ import java.util.Objects;
  * @param detach Run detached and return the container ID immediately.
  * @param noDeps Do not start the service's dependency services first.
  * @param tty Allocate a TTY for the container.
- * @param interactive Keep standard input open and forward process standard input in attached mode.
+ * @param interactive Keep standard input open and forward process standard input in attached mode; the builder defaults to true.
  * @param workdir Working directory inside the container.
  * @param user User (name or UID) the container process runs as.
  * @param capAdd Linux capabilities to add to the container.
@@ -90,7 +90,7 @@ public record ComposeRunOptions(
         private boolean detach;
         private boolean noDeps;
         private boolean tty = true;
-        private boolean interactive;
+        private boolean interactive = true;
         private String workdir;
         private String user;
         private List<String> capAdd;
@@ -172,7 +172,7 @@ public record ComposeRunOptions(
         public Builder tty(boolean value) { this.tty = value; return this; }
 
         /**
-         * Keep standard input open and forward process standard input in attached mode.
+         * Keep standard input open and forward process standard input in attached mode; defaults to true.
          * @param value Keep standard input open and forward process standard input in attached mode.
          * @return this builder
          */

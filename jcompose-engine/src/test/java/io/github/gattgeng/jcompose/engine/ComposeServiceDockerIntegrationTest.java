@@ -455,6 +455,7 @@ class ComposeServiceDockerIntegrationTest {
         String defaultRun = null;
         String servicePortsRun = null;
         String explicitPublishRun = null;
+        String nonInteractiveRun = null;
         try {
             defaultRun = service.runAsync(context, "app", ComposeRunOptions.builder()
                     .noDeps(true).detach(true).tty(false).build())
@@ -465,11 +466,16 @@ class ComposeServiceDockerIntegrationTest {
             explicitPublishRun = service.runAsync(context, "app", ComposeRunOptions.builder()
                     .noDeps(true).detach(true).tty(false).publish(java.util.List.of("127.0.0.1:0:8081/udp")).build())
                     .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            nonInteractiveRun = service.runAsync(context, "app", ComposeRunOptions.builder()
+                    .noDeps(true).detach(true).tty(false).interactive(false).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
 
             try (var client = DockerClientFactory.create(context)) {
                 var defaultBindings = client.inspectContainerCmd(defaultRun).exec().getHostConfig().getPortBindings();
                 var requestedBindings = client.inspectContainerCmd(servicePortsRun).exec().getHostConfig().getPortBindings();
                 var explicitBindings = client.inspectContainerCmd(explicitPublishRun).exec().getHostConfig().getPortBindings();
+                assertTrue(client.inspectContainerCmd(defaultRun).exec().getConfig().getOpenStdin());
+                assertFalse(client.inspectContainerCmd(nonInteractiveRun).exec().getConfig().getOpenStdin());
                 assertTrue(defaultBindings == null || defaultBindings.getBindings().isEmpty());
                 assertFalse(requestedBindings == null || requestedBindings.getBindings().isEmpty());
                 assertEquals(1, explicitBindings.getBindings().size());
@@ -480,6 +486,7 @@ class ComposeServiceDockerIntegrationTest {
                 if (defaultRun != null) client.removeContainerCmd(defaultRun).withForce(true).withRemoveVolumes(false).exec();
                 if (servicePortsRun != null) client.removeContainerCmd(servicePortsRun).withForce(true).withRemoveVolumes(false).exec();
                 if (explicitPublishRun != null) client.removeContainerCmd(explicitPublishRun).withForce(true).withRemoveVolumes(false).exec();
+                if (nonInteractiveRun != null) client.removeContainerCmd(nonInteractiveRun).withForce(true).withRemoveVolumes(false).exec();
             }
             service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
         }
