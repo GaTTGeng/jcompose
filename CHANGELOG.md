@@ -11,7 +11,8 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Ran Docker Compose `pre_start` hooks in ordered ephemeral containers with service environment, network, and volume access before service containers start; hook failures now block service startup.
 - Rejected malformed or unclosed Compose interpolation expressions with the YAML property path and source location.
 - Loaded recursive local Docker Compose `include` files, merging each mapping's ordered `path` list into one included project before import, rebasing included file paths, and rejecting cross-project name conflicts; remote OCI/Git includes remain unsupported.
-- Retained and validated Docker Compose `develop.watch` rule configuration, including supported actions, source paths, sync targets, filters, initial sync, and `sync+exec` options; action execution is not implemented.
+- Implemented the supported Docker Compose `develop.watch` actions (`rebuild`, `restart`, `sync`, `sync+restart`, and `sync+exec`) with path filters, initial sync, and sync targets.
+- Rejected non-string service `stop_signal` values with the Compose property path in the validation error.
 - Added per-call environment overrides for multi-file merges without changing process-wide environment variables.
 - Passed the primary build image and all distinct `build.tags` values to Docker Engine in one build request.
 - Skipped `top` results when a container exits or is removed between project listing and process inspection; other Docker errors remain visible.
