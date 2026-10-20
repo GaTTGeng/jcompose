@@ -457,13 +457,20 @@ public final class ComposeFileLoader {
                 for (var field : service.entrySet()) {
                     if (!KNOWN_SERVICE_FIELDS.contains(field.getKey()) && !field.getKey().startsWith("x-")
                             && meaningful(field.getValue())) {
-                        addDiagnostic(result, file, provenance, servicePath + "." + field.getKey(), serviceName,
+                        String propertyPath = field.getKey().matches("[A-Za-z0-9_-]+")
+                                ? servicePath + "." + field.getKey()
+                                : servicePath + "[\"" + field.getKey().replace("\\", "\\\\").replace("\"", "\\\"") + "\"]";
+                        addDiagnostic(result, file, provenance, propertyPath, serviceName,
                                 "unsupported-field", "This service field is not recognized and has no engine behavior.");
                     } else if (UNSUPPORTED_SERVICE_FIELDS.contains(field.getKey()) && meaningful(field.getValue())) {
                         addDiagnostic(result, file, provenance, servicePath + "." + field.getKey(), serviceName,
                                 "unsupported-field", "This service field is retained or parsed but is not applied to Docker resources.");
                     }
                 }
+                for (String field : List.of("command", "entrypoint"))
+                    if (service.get(field) instanceof String command && !command.isEmpty())
+                        addDiagnostic(result, file, provenance, servicePath + "." + field, serviceName,
+                                "partially-supported-field", "Scalar commands are passed as one argument instead of shell-split arguments.");
                 Object ports = service.get("ports");
                 if (ports instanceof List<?> list) {
                     for (int i = 0; i < list.size(); i++) {
@@ -489,19 +496,19 @@ public final class ComposeFileLoader {
                     addDiagnostic(result, file, provenance, servicePath + ".build.cache_to", serviceName,
                             "partially-supported-field", "Build cache export is not applied.");
                 if (build instanceof Map<?, ?> buildMap) {
-                    for (String field : List.of("secrets", "ssh", "additional_contexts"))
+                    for (String field : List.of("secrets", "ssh", "additional_contexts", "privileged"))
                         if (meaningful(buildMap.get(field)))
                             addDiagnostic(result, file, provenance, servicePath + ".build." + field, serviceName,
-                                    "unsupported-field", "This build option is not retained by the loader or applied to Docker.");
+                                    "privileged".equals(field) ? "partially-supported-field" : "unsupported-field",
+                                    "privileged".equals(field)
+                                            ? "This build option is retained but not applied to Docker."
+                                            : "This build option is not retained by the loader or applied to Docker.");
                 }
                 Object healthcheck = service.get("healthcheck");
                 if (healthcheck instanceof Map<?, ?> healthcheckMap) {
                     if (meaningful(healthcheckMap.get("start_interval")))
                         addDiagnostic(result, file, provenance, servicePath + ".healthcheck.start_interval", serviceName,
                                 "unsupported-field", "Health check start_interval is not retained or applied.");
-                    if (healthcheckMap.get("test") instanceof String test && !test.isEmpty())
-                        addDiagnostic(result, file, provenance, servicePath + ".healthcheck.test", serviceName,
-                                "partially-supported-field", "Scalar health check commands are not converted to CMD-SHELL.");
                 }
                 for (String field : List.of("network_mode", "ipc", "pid"))
                     if (service.get(field) instanceof String mode && mode.startsWith("service:"))
@@ -512,10 +519,17 @@ public final class ComposeFileLoader {
                     addDiagnostic(result, file, provenance, servicePath + ".extra_hosts", serviceName,
                             "partially-supported-field", "Mapping syntax loses host addresses and is not supported.");
                 Object serviceNetworks = service.get("networks");
-                if (serviceNetworks instanceof Map<?, ?> networkMap)
+                if (serviceNetworks instanceof List<?> networkList && networkList.size() > 1)
+                    addDiagnostic(result, file, provenance, servicePath + ".networks", serviceName,
+                            "partially-supported-field", "Only the first declared network is attached to the service.");
+                else if (serviceNetworks instanceof Map<?, ?> networkMap) {
+                    if (networkMap.size() > 1)
+                        addDiagnostic(result, file, provenance, servicePath + ".networks", serviceName,
+                                "partially-supported-field", "Only the first declared network is attached to the service.");
                     for (var network : networkMap.entrySet()) if (meaningful(network.getValue()))
                         addDiagnostic(result, file, provenance, servicePath + ".networks." + network.getKey(), serviceName,
-                                "partially-supported-field", "Per-network options and multiple network attachments are not applied.");
+                                "partially-supported-field", "Per-network options are not applied.");
+                }
                 Object devices = service.get("devices");
                 if (devices instanceof List<?> deviceList)
                     for (int i = 0; i < deviceList.size(); i++)
@@ -548,8 +562,8 @@ public final class ComposeFileLoader {
 
     private static boolean meaningful(Object value) {
         if (value == null || Boolean.FALSE.equals(value) || "".equals(value)) return false;
-        if (value instanceof Map<?, ?> map) return !map.isEmpty();
-        if (value instanceof List<?> list) return !list.isEmpty();
+        if (value instanceof Map<?, ?> map) return map.values().stream().anyMatch(ComposeFileLoader::meaningful);
+        if (value instanceof List<?> list) return list.stream().anyMatch(ComposeFileLoader::meaningful);
         return true;
     }
 

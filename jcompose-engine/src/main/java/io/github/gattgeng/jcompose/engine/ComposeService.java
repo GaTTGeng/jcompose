@@ -93,6 +93,11 @@ public final class ComposeService implements IComposeService {
         return project;
     }
 
+    private void validateStrictProjectBeforeDocker(ComposeProjectContext context) {
+        if (context.validationMode() == io.github.gattgeng.jcompose.api.ComposeValidationMode.STRICT)
+            loadComposeProject(context);
+    }
+
     private boolean hasComposeFile(ComposeProjectContext context) {
         return context.composeFiles().stream().anyMatch(file -> loader.hasComposeFile(context.workingDirectory(), file));
     }
@@ -765,6 +770,7 @@ public final class ComposeService implements IComposeService {
             java.util.Objects.requireNonNull(context, "context");
             if (service == null || service.isBlank()) throw new IllegalArgumentException("service is required");
             if (port < 1 || port > 65535) throw new IllegalArgumentException("port must be between 1 and 65535");
+            validateStrictProjectBeforeDocker(context);
             String protocolName = options == null || options.protocol() == null || options.protocol().isBlank()
                     ? "tcp" : options.protocol().toLowerCase(java.util.Locale.ROOT);
             InternetProtocol protocol = switch (protocolName) {
@@ -875,6 +881,7 @@ public final class ComposeService implements IComposeService {
     public CompletableFuture<List<VolumesSummary>> volumesAsync(ComposeProjectContext context, ComposeVolumesOptions options) {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
+            validateStrictProjectBeforeDocker(context);
             try (DockerClient client = createDockerClient(context)) {
                 var response = client.listVolumesCmd().exec();
                 if (response == null || response.getVolumes() == null) return List.of();
@@ -4102,6 +4109,7 @@ public final class ComposeService implements IComposeService {
             ComposeProjectContext context, String service, ComposeExecOptions options) {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
+            validateStrictProjectBeforeDocker(context);
             java.util.Objects.requireNonNull(options, "options");
             if (service == null || service.isBlank()) throw new IllegalArgumentException("Service must not be blank.");
             if (options.command().isEmpty()) throw new IllegalArgumentException("Exec command must not be empty.");
@@ -4140,6 +4148,7 @@ public final class ComposeService implements IComposeService {
     @Override public CompletableFuture<Void> attachAsync(ComposeProjectContext context, ComposeAttachOptions options) {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
+            validateStrictProjectBeforeDocker(context);
             ComposeAttachOptions effective = options == null ? ComposeAttachOptions.builder().build() : options;
             try (DockerClient client = createDockerClient(context)) {
                 List<Container> running = projectContainers(client, context.projectName(),
@@ -4189,6 +4198,7 @@ public final class ComposeService implements IComposeService {
     public CompletableFuture<CopyResult> copyAsync(ComposeProjectContext context, ComposeCopyOptions options) {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
+            validateStrictProjectBeforeDocker(context);
             java.util.Objects.requireNonNull(options, "options");
             CopyPath source = CopyPath.parse(options.source());
             CopyPath destination = CopyPath.parse(options.destination());
@@ -4560,6 +4570,7 @@ public final class ComposeService implements IComposeService {
     @Override public CompletableFuture<Void> exportAsync(ComposeProjectContext context, ComposeExportOptions options) {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
+            validateStrictProjectBeforeDocker(context);
             java.util.Objects.requireNonNull(options, "options");
             if (options.service().isBlank()) throw new IllegalArgumentException("Service must not be blank.");
             if (options.outputPath().isBlank()) throw new IllegalArgumentException("Output path must not be blank.");
@@ -4583,6 +4594,7 @@ public final class ComposeService implements IComposeService {
     @Override public CompletableFuture<String> commitAsync(ComposeProjectContext context, ComposeCommitOptions options) {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
+            validateStrictProjectBeforeDocker(context);
             java.util.Objects.requireNonNull(options, "options");
             if (options.service().isBlank()) throw new IllegalArgumentException("Service must not be blank.");
             List<String> changes = ImageCommitParametersFactory.toDockerfileChanges(options.changes());

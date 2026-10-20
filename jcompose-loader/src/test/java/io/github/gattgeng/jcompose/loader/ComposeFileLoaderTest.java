@@ -89,9 +89,57 @@ class ComposeFileLoaderTest {
         var project = new ComposeFileLoader().load(directory, null);
 
         assertEquals(List.of("name", "services.app.build.ssh", "services.app.healthcheck.start_interval",
-                        "services.app.healthcheck.test", "services.app.network_mode", "services.app.extra_hosts",
+                        "services.app.network_mode", "services.app.extra_hosts",
                         "services.app.devices[0]", "services.networked.networks.backend"),
                 project.diagnostics().stream().map(diagnostic -> diagnostic.propertyPath()).toList());
+    }
+
+    @Test
+    void diagnosesOnlyUnsupportedBuildAndAdditionalNetworkBehavior() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                networks:
+                  front: {}
+                  back: {}
+                services:
+                  list:
+                    image: alpine
+                    command: echo ready
+                    entrypoint: /bin/sh
+                    networks: [front, back]
+                  mapping:
+                    image: alpine
+                    networks:
+                      front: null
+                      back: null
+                  single:
+                    image: alpine
+                    networks: [front]
+                  built:
+                    build:
+                      context: .
+                      privileged: true
+                """);
+
+        var diagnostics = new ComposeFileLoader().load(directory, null).diagnostics();
+
+        assertEquals(List.of("services.list.command", "services.list.entrypoint", "services.list.networks",
+                        "services.mapping.networks", "services.built.build.privileged"),
+                diagnostics.stream().map(diagnostic -> diagnostic.propertyPath()).toList());
+        assertEquals("partially-supported-field", diagnostics.getLast().code());
+    }
+
+    @Test
+    void unknownDottedServiceFieldUsesBracketPath() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    access.token: hidden
+                """);
+
+        var diagnostic = new ComposeFileLoader().load(directory, null).diagnostics().getFirst();
+
+        assertEquals("services.app[\"access.token\"]", diagnostic.propertyPath());
     }
 
     @Test

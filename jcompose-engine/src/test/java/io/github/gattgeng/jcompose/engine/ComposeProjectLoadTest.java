@@ -8,6 +8,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.CompletionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -85,5 +86,26 @@ class ComposeProjectLoadTest {
 
         assertEquals("services.app.custom_service_option", exception.propertyPath());
         assertEquals("app", exception.serviceName());
+    }
+
+    @Test
+    void strictModeRejectsDirectDockerOperationsBeforeConnecting() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    logging:
+                      driver: json-file
+                """);
+        var context = new ComposeProjectContext("test", directory, "compose.yaml", null,
+                "npipe://./pipe/jcompose-validation-test-missing", null, false, false, null,
+                ComposeValidationMode.STRICT);
+
+        CompletionException exception = assertThrows(CompletionException.class,
+                () -> new ComposeService().portAsync(context, "app", 80, null).join());
+
+        assertTrue(exception.getCause() instanceof ComposeValidationException);
+        ComposeValidationException validationException = (ComposeValidationException) exception.getCause();
+        assertEquals("services.app.logging", validationException.propertyPath());
     }
 }
