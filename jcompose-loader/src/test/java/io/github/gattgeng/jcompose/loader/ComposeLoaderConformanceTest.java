@@ -347,6 +347,24 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
+    void validatesServiceRestartPolicyDuringLoading() throws IOException {
+        Path file = temporaryDirectory.resolve("compose.yaml");
+        for (String restart : List.of("no", "always", "unless-stopped", "on-failure", "on-failure:0", "on-failure:3")) {
+            Files.writeString(file, "services:\n  app:\n    image: busybox\n    restart: \"" + restart + "\"\n");
+            assertEquals(restart, new ComposeFileLoader().load(temporaryDirectory, "compose.yaml")
+                    .services().get("app").configuration().get("restart"));
+        }
+
+        for (String restart : List.of("sometimes", "always:2", "on-failure:", "on-failure:-1",
+                "on-failure:many", "on-failure:2147483648")) {
+            Files.writeString(file, "services:\n  app:\n    image: busybox\n    restart: \"" + restart + "\"\n");
+            ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                    () -> new ComposeFileLoader().load(temporaryDirectory, "compose.yaml"));
+            assertEquals("services.app.restart", exception.propertyPath());
+        }
+    }
+
+    @Test
     void mapsProjectResourcesFixture() throws IOException {
         ComposeProject project = loadFixture("service-resources");
         ServiceDefinition app = project.services().get("app");

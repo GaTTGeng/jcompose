@@ -685,6 +685,7 @@ public final class ComposeFileLoader {
         validateLabelFiles(file, service, configuration.get("label_file"), path + ".label_file");
         validateVolumeMounts(file, service, configuration.get("volumes"), path + ".volumes");
         validatePorts(file, service, configuration.get("ports"), path + ".ports");
+        validateRestart(file, service, configuration.get("restart"), path + ".restart");
         for (String key : List.of("deploy", "healthcheck", "logging"))
             validateOptionalMap(file, service, configuration, key, path + "." + key);
         validateDevelop(file, service, configuration.get("develop"), path + ".develop");
@@ -1131,6 +1132,20 @@ public final class ComposeFileLoader {
         if (value != null && (!isScalar(value) || !(value instanceof Boolean
                 || "true".equalsIgnoreCase(String.valueOf(value)) || "false".equalsIgnoreCase(String.valueOf(value)))))
             throw conversionFailure(file, service, path, value, "a boolean value");
+    }
+
+    private static void validateRestart(Path file, String service, Object value, String path) {
+        if (value == null) return;
+        if (!(value instanceof String restart))
+            throw conversionFailure(file, service, path, value, "a Docker Compose restart policy string");
+        if (List.of("no", "always", "unless-stopped", "on-failure").contains(restart)) return;
+        if (restart.startsWith("on-failure:")) {
+            String retries = restart.substring("on-failure:".length());
+            if (retries.matches("[0-9]+")
+                    && new BigInteger(retries).compareTo(BigInteger.valueOf(Integer.MAX_VALUE)) <= 0) return;
+        }
+        throw conversionFailure(file, service, path, value,
+                "no, always, unless-stopped, on-failure, or on-failure with a non-negative retry count");
     }
 
     private static void validateInteger(Path file, String service, Map<?, ?> map, String key, String path) {
