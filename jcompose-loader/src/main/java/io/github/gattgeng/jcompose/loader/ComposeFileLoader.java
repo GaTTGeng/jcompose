@@ -440,7 +440,10 @@ public final class ComposeFileLoader {
         List<ComposeDiagnostic> result = new ArrayList<>();
         for (var entry : root.entrySet()) {
             String key = entry.getKey();
-            if (!KNOWN_PROJECT_FIELDS.contains(key) && !key.startsWith("x-") && meaningful(entry.getValue()))
+            if ("name".equals(key) && meaningful(entry.getValue())) {
+                addDiagnostic(result, file, provenance, key, null, "partially-supported-field",
+                        "The project name is supplied by ComposeProjectContext and this field does not change resource labels.");
+            } else if (!KNOWN_PROJECT_FIELDS.contains(key) && !key.startsWith("x-") && meaningful(entry.getValue()))
                 addDiagnostic(result, file, provenance, key, null, "unsupported-field",
                         "This project field is not recognized and has no engine behavior.");
         }
@@ -485,6 +488,40 @@ public final class ComposeFileLoader {
                 if (build instanceof Map<?, ?> buildMap && meaningful(buildMap.get("cache_to")))
                     addDiagnostic(result, file, provenance, servicePath + ".build.cache_to", serviceName,
                             "partially-supported-field", "Build cache export is not applied.");
+                if (build instanceof Map<?, ?> buildMap) {
+                    for (String field : List.of("secrets", "ssh", "additional_contexts"))
+                        if (meaningful(buildMap.get(field)))
+                            addDiagnostic(result, file, provenance, servicePath + ".build." + field, serviceName,
+                                    "unsupported-field", "This build option is not retained by the loader or applied to Docker.");
+                }
+                Object healthcheck = service.get("healthcheck");
+                if (healthcheck instanceof Map<?, ?> healthcheckMap) {
+                    if (meaningful(healthcheckMap.get("start_interval")))
+                        addDiagnostic(result, file, provenance, servicePath + ".healthcheck.start_interval", serviceName,
+                                "unsupported-field", "Health check start_interval is not retained or applied.");
+                    if (healthcheckMap.get("test") instanceof String test && !test.isEmpty())
+                        addDiagnostic(result, file, provenance, servicePath + ".healthcheck.test", serviceName,
+                                "partially-supported-field", "Scalar health check commands are not converted to CMD-SHELL.");
+                }
+                for (String field : List.of("network_mode", "ipc", "pid"))
+                    if (service.get(field) instanceof String mode && mode.startsWith("service:"))
+                        addDiagnostic(result, file, provenance, servicePath + "." + field, serviceName,
+                                "partially-supported-field", "Service-container references are not resolved to a service container.");
+                Object extraHosts = service.get("extra_hosts");
+                if (extraHosts instanceof Map<?, ?> hostMap && !hostMap.isEmpty())
+                    addDiagnostic(result, file, provenance, servicePath + ".extra_hosts", serviceName,
+                            "partially-supported-field", "Mapping syntax loses host addresses and is not supported.");
+                Object serviceNetworks = service.get("networks");
+                if (serviceNetworks instanceof Map<?, ?> networkMap)
+                    for (var network : networkMap.entrySet()) if (meaningful(network.getValue()))
+                        addDiagnostic(result, file, provenance, servicePath + ".networks." + network.getKey(), serviceName,
+                                "partially-supported-field", "Per-network options and multiple network attachments are not applied.");
+                Object devices = service.get("devices");
+                if (devices instanceof List<?> deviceList)
+                    for (int i = 0; i < deviceList.size(); i++)
+                        if (deviceList.get(i) instanceof String device && device.chars().filter(c -> c == ':').count() >= 2)
+                            addDiagnostic(result, file, provenance, servicePath + ".devices[" + i + "]", serviceName,
+                                    "partially-supported-field", "Device permission suffixes are not modeled correctly.");
             }
         }
         addResourceDiagnostics(result, file, provenance, root, "volumes", "partially-supported-field",

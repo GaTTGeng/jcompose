@@ -60,6 +60,41 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void reportsKnownFieldsWhoseOptionsAreNotApplied() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                name: declared-name
+                networks:
+                  backend: {}
+                services:
+                  app:
+                    image: alpine
+                    build:
+                      context: .
+                      ssh: [default]
+                    healthcheck:
+                      test: "curl localhost"
+                      start_interval: 2s
+                    network_mode: service:proxy
+                    extra_hosts:
+                      host.docker.internal: 192.0.2.1
+                    devices:
+                      - /dev/fuse:/dev/fuse:rwm
+                  networked:
+                    image: alpine
+                    networks:
+                      backend:
+                        aliases: [app]
+                """);
+
+        var project = new ComposeFileLoader().load(directory, null);
+
+        assertEquals(List.of("name", "services.app.build.ssh", "services.app.healthcheck.start_interval",
+                        "services.app.healthcheck.test", "services.app.network_mode", "services.app.extra_hosts",
+                        "services.app.devices[0]", "services.networked.networks.backend"),
+                project.diagnostics().stream().map(diagnostic -> diagnostic.propertyPath()).toList());
+    }
+
+    @Test
     void includesLocalComposeResourcesAndRebasesTheirRelativePaths() throws Exception {
         Path includedDirectory = Files.createDirectories(directory.resolve("backend"));
         Files.writeString(directory.resolve("compose.yaml"), """
