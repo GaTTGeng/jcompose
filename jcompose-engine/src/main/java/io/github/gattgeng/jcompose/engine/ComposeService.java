@@ -119,12 +119,17 @@ public final class ComposeService implements IComposeService {
 
             List<ServiceDefinition> requested = project == null ? List.of()
                     : selectConfigurationServices(project, context.profiles(), options == null ? null : options.services());
+            List<String> requestedNames = requested.stream().map(ServiceDefinition::name).toList();
+            List<String> attachServices = project == null ? null : startAttachServices(options, requestedNames);
             List<String> effectiveProfiles = effectiveProfiles(requested, context.profiles());
             List<ServiceDefinition> ordered = project == null ? List.of()
                     : dependencyOrderedServices(project, requested, effectiveProfiles);
             try (DockerClient client = createDockerClient(context)) {
                 if (project == null) {
                     startExistingContainers(client, context, options == null ? null : options.services(), null);
+                    if (options != null && options.attach() != null)
+                        followContainerLogs(client, context.projectName(), options.attachTo() == null
+                                ? options.services() : options.attachTo(), options.attach());
                     return null;
                 }
                 Integer dependencyTimeout = options == null ? null : options.dependencyWaitTimeoutSeconds();
@@ -135,11 +140,40 @@ public final class ComposeService implements IComposeService {
                         awaitServiceRunning(client, context.projectName(), service, options.waitTimeoutSeconds());
                     }
                 }
+                if (options != null && options.attach() != null)
+                    followContainerLogs(client, context.projectName(), attachServices, options.attach());
             } catch (java.io.IOException exception) {
                 throw new java.io.UncheckedIOException("Could not close Docker Engine client.", exception);
             }
             return null;
         });
+    }
+
+    static List<String> startAttachServices(ComposeStartOptions options, List<String> requestedServices) {
+        if (options == null || options.attach() == null) return List.of();
+        List<String> attachTo = options.attachTo();
+        if (attachTo == null) return requestedServices;
+        for (String service : attachTo) {
+            if (!requestedServices.contains(service))
+                throw new IllegalArgumentException("Cannot attach to service '" + service + "' because it is not selected for start.");
+        }
+        return attachTo;
+    }
+
+    private static void followContainerLogs(DockerClient client, String projectName, List<String> services, ILogConsumer consumer) {
+        List<Container> containers = projectContainers(client, projectName, services, true).stream()
+                .filter(container -> !"true".equalsIgnoreCase(label(container, ComposeConstants.ONE_OFF_LABEL)))
+                .sorted(containerOrder()).toList();
+        List<LogCallback> callbacks = new ArrayList<>();
+        for (Container container : containers) {
+            String service = label(container, ComposeConstants.SERVICE_LABEL);
+            if (service == null || service.isBlank()) service = container.getId();
+            LogCallback callback = new LogCallback(service, consumer, false);
+            client.logContainerCmd(container.getId()).withFollowStream(true).withTimestamps(false)
+                    .withStdOut(true).withStdErr(true).withTailAll().exec(callback);
+            callbacks.add(callback);
+        }
+        for (LogCallback callback : callbacks) await(callback);
     }
 
     private static void startExistingContainers(DockerClient client, ComposeProjectContext context, List<String> selectedServices,

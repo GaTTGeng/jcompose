@@ -61,6 +61,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 
 ### Fixed
 
+- Honored `start.attach` by following selected service logs, with `attachTo` filtering and validation against the start selection.
 - Created Docker-managed anonymous volume mounts for target-only service volumes in one-off `run` containers.
 - Made `wait` aggregate exit codes deterministically by container ID, regardless of Docker wait completion order.
 - Matched Docker Compose's profile handling by loading inactive services without `image` or `build` and rejecting them with a clear diagnostic when a runtime operation selects them.

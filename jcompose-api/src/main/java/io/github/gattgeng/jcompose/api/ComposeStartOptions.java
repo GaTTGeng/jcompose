@@ -7,7 +7,7 @@ import java.util.Objects;
  * Options for starting already-created containers.
  * @param services Restricts the start to these service names; null starts every project service.
  * @param attach Receives output from the started containers; null does not attach.
- * @param attachTo Stream names to attach to when {@link #attach()} is set.
+ * @param attachTo Service names whose logs are streamed when {@link #attach()} is set; null streams the selected services.
  * @param waitForCompletion Block until the started containers are running (or healthy), instead of returning once start is issued.
  * @param waitTimeoutSeconds Upper bound in seconds for {@link #waitForCompletion()} before the call fails.
  * @param dependencyWaitTimeoutSeconds Maximum seconds to wait for each dependency to become ready; null waits until readiness, failure, or cancellation.
@@ -50,8 +50,8 @@ public record ComposeStartOptions(
         public Builder attach(ILogConsumer value) { this.attach = value; return this; }
 
         /**
-         * Stream names to attach to when {@link ComposeStartOptions#attach()} is set.
-         * @param value Stream names to attach to when {@link ComposeStartOptions#attach()} is set.
+         * Service names whose logs are streamed when {@link ComposeStartOptions#attach()} is set; null streams the selected services.
+         * @param value Service names whose logs are streamed when {@link ComposeStartOptions#attach()} is set; null streams the selected services.
          * @return this builder
          */
         public Builder attachTo(List<String> value) { this.attachTo = value; return this; }
