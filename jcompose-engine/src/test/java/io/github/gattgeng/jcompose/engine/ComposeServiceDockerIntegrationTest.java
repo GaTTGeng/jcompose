@@ -59,6 +59,33 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void appliesOnFailureRetryCountToCreatedContainer() throws Exception {
+        String projectName = "jcompose-restart-retries-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    restart: on-failure:5
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            service.createAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            try (var client = DockerClientFactory.create(context)) {
+                var containers = client.listContainersCmd().withShowAll(true)
+                        .withLabelFilter(java.util.Map.of("com.docker.compose.project", projectName,
+                                "com.docker.compose.service", "app"))
+                        .exec();
+                assertEquals(5, client.inspectContainerCmd(containers.getFirst().getId()).exec()
+                        .getHostConfig().getRestartPolicy().getMaximumRetryCount());
+            }
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
     void executesPostStartAndPreStopHooks() throws Exception {
         String projectName = "jcompose-hooks-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);

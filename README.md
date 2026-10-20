@@ -106,6 +106,8 @@ Local `include` files recursively import services, networks, volumes, secrets, a
 
 ## What the engine does today
 
+Service `restart: on-failure:N` sets Docker's maximum retry count. Counts from 0 to 2147483647 are accepted; zero or omission means unlimited retries. Invalid counts are rejected with Compose property diagnostics.
+
 The engine is being ported from the ComposeSharp feature scope, one documented and reviewable slice at a time. The current snapshot implements a subset of image builds and publishing, including local and remote build contexts, basic `up`/`create` reconciliation, one-off `run`, host/container `copy`, `scale` and `wait`, `exec`/`attach`, local build-context watch events, container filesystem export and image commit, selected label-scoped operations for existing Docker resources, project container queries, and a normalized configuration snapshot. These operations have explicit limitations and are not complete Docker Compose equivalents; see the compatibility matrix for current gaps.
 
 | Area | Current boundary |

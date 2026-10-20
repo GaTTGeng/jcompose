@@ -63,6 +63,8 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 
 ### Fixed
 
+- Verified that service `restart: on-failure:N` applies Docker's maximum retry count; malformed and out-of-range counts are rejected during loading.
+
 - Honored `start.attach` by following selected service logs, with `attachTo` filtering `stdout` and `stderr` streams as defined by the ComposeSharp API.
 - Created Docker-managed anonymous volume mounts for target-only service volumes in one-off `run` containers.
 - Made `wait` aggregate exit codes deterministically by container ID, regardless of Docker wait completion order.
