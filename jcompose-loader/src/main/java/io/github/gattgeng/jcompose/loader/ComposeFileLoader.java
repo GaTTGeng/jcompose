@@ -701,19 +701,43 @@ public final class ComposeFileLoader {
                             "network aliases must be strings.", null, null, null);
             }
         }
-        for (String key : List.of("ipv4_address", "ipv6_address", "mac_address")) {
+        for (String key : List.of("ipv4_address", "ipv6_address", "mac_address", "interface_name")) {
             Object value = options.get(key);
             if (value != null && !(value instanceof String))
                 throw new ComposeValidationException(file, path + "." + key, service,
                         key + " must be a string.", null, null, null);
         }
-        Object priority = options.get("priority");
-        if (priority != null && !(priority instanceof Number))
-            throw new ComposeValidationException(file, path + ".priority", service,
-                    "priority must be an integer.", null, null, null);
-        if (priority instanceof Number number && number.doubleValue() != number.intValue())
-            throw new ComposeValidationException(file, path + ".priority", service,
-                    "priority must be an integer.", null, null, null);
+        Object linkLocalIps = options.get("link_local_ips");
+        if (linkLocalIps != null) {
+            if (!(linkLocalIps instanceof List<?> list))
+                throw new ComposeValidationException(file, path + ".link_local_ips", service,
+                        "link_local_ips must be a list of strings.", null, null, null);
+            for (int index = 0; index < list.size(); index++) {
+                if (!(list.get(index) instanceof String))
+                    throw new ComposeValidationException(file, path + ".link_local_ips." + index, service,
+                            "link-local IP addresses must be strings.", null, null, null);
+            }
+        }
+        Object driverOptions = options.get("driver_opts");
+        if (driverOptions != null) {
+            if (!(driverOptions instanceof Map<?, ?> map))
+                throw new ComposeValidationException(file, path + ".driver_opts", service,
+                        "driver_opts must be a mapping.", null, null, null);
+            for (Object key : map.keySet()) {
+                if (!(key instanceof String))
+                    throw new ComposeValidationException(file, path + ".driver_opts", service,
+                            "driver option names must be strings.", null, null, null);
+            }
+        }
+        for (String key : List.of("priority", "gw_priority")) {
+            Object priority = options.get(key);
+            if (priority != null && !(priority instanceof Number))
+                throw new ComposeValidationException(file, path + "." + key, service,
+                        key + " must be an integer.", null, null, null);
+            if (priority instanceof Number number && number.doubleValue() != number.intValue())
+                throw new ComposeValidationException(file, path + "." + key, service,
+                        key + " must be an integer.", null, null, null);
+        }
     }
 
     private static void validateServiceProfiles(Path file, String service, Map<String, Object> configuration) {

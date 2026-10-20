@@ -653,14 +653,20 @@ class ComposeFileLoaderTest {
     @Test
     void validatesMappedServiceNetworkOptionTypes() throws Exception {
         Path composeFile = directory.resolve("compose.yaml");
-        for (Map.Entry<String, String> invalid : Map.of(
-                "aliases: app", "services.app.networks.frontend.aliases",
-                "aliases: [1]", "services.app.networks.frontend.aliases.0",
-                "ipv4_address: 4", "services.app.networks.frontend.ipv4_address",
-                "ipv6_address: false", "services.app.networks.frontend.ipv6_address",
-                "mac_address: 1", "services.app.networks.frontend.mac_address",
-                "priority: invalid", "services.app.networks.frontend.priority",
-                "priority: 1.5", "services.app.networks.frontend.priority").entrySet()) {
+        for (Map.Entry<String, String> invalid : Map.ofEntries(
+                Map.entry("aliases: app", "services.app.networks.frontend.aliases"),
+                Map.entry("aliases: [1]", "services.app.networks.frontend.aliases.0"),
+                Map.entry("ipv4_address: 4", "services.app.networks.frontend.ipv4_address"),
+                Map.entry("ipv6_address: false", "services.app.networks.frontend.ipv6_address"),
+                Map.entry("mac_address: 1", "services.app.networks.frontend.mac_address"),
+                Map.entry("interface_name: 4", "services.app.networks.frontend.interface_name"),
+                Map.entry("link_local_ips: 127.0.0.1", "services.app.networks.frontend.link_local_ips"),
+                Map.entry("link_local_ips: [1]", "services.app.networks.frontend.link_local_ips.0"),
+                Map.entry("driver_opts: invalid", "services.app.networks.frontend.driver_opts"),
+                Map.entry("priority: invalid", "services.app.networks.frontend.priority"),
+                Map.entry("priority: 1.5", "services.app.networks.frontend.priority"),
+                Map.entry("gw_priority: invalid", "services.app.networks.frontend.gw_priority"),
+                Map.entry("gw_priority: 1.5", "services.app.networks.frontend.gw_priority"))) {
             Files.writeString(composeFile, "services:\n  app:\n    image: alpine\n    networks:\n      frontend:\n        "
                     + invalid.getKey() + "\nnetworks:\n  frontend: {}\n");
 
@@ -682,6 +688,11 @@ class ComposeFileLoaderTest {
                         ipv6_address: "2001:db8::10"
                         mac_address: "02:42:ac:11:00:02"
                         priority: 100
+                        interface_name: eth0
+                        link_local_ips: [169.254.1.10]
+                        driver_opts:
+                          com.example.option: enabled
+                        gw_priority: 10
                 networks:
                   frontend: {}
                 """);
@@ -692,6 +703,10 @@ class ComposeFileLoaderTest {
         assertEquals("2001:db8::10", options.get("ipv6_address"));
         assertEquals("02:42:ac:11:00:02", options.get("mac_address"));
         assertEquals(100, options.get("priority"));
+        assertEquals("eth0", options.get("interface_name"));
+        assertEquals(List.of("169.254.1.10"), options.get("link_local_ips"));
+        assertEquals(Map.of("com.example.option", "enabled"), options.get("driver_opts"));
+        assertEquals(10, options.get("gw_priority"));
     }
 
     @Test
