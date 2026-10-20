@@ -30,12 +30,16 @@ class ComposeVolumeSpecTest {
     void parsesNamedAndAnonymousVolumeSources() {
         ComposeService.VolumeSpec named = ComposeService.parseVolumeSpec("app-data:/var/lib/app:rw");
         ComposeService.VolumeSpec anonymous = ComposeService.parseVolumeSpec(":/var/lib/app");
+        ComposeService.VolumeSpec targetOnly = ComposeService.parseVolumeSpec("/cache");
 
         assertEquals("app-data", named.source());
         assertEquals("/var/lib/app", named.target());
         assertEquals("", anonymous.source());
         assertEquals("/var/lib/app", anonymous.target());
         assertEquals("rw", anonymous.mode());
+        assertEquals("", targetOnly.source());
+        assertEquals("/cache", targetOnly.target());
+        assertEquals("rw", targetOnly.mode());
     }
 
     @Test

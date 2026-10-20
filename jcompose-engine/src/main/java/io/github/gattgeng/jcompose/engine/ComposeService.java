@@ -2578,7 +2578,7 @@ public final class ComposeService implements IComposeService {
 
     static VolumeSpec parseVolumeSpec(String value) {
         int separator = value.matches("^[A-Za-z]:[\\\\/].*") ? value.indexOf(':', 2) : value.indexOf(':');
-        if (separator < 0) return null;
+        if (separator < 0) return value.startsWith("/") ? new VolumeSpec("", value, "rw") : null;
         String source = value.substring(0, separator);
         String[] targetAndMode = value.substring(separator + 1).split(":", 2);
         String target = targetAndMode[0];
