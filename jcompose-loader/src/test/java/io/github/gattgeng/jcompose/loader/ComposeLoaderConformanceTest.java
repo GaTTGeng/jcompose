@@ -24,6 +24,28 @@ class ComposeLoaderConformanceTest {
     Path temporaryDirectory;
 
     @Test
+    void acceptsMissingOrEmptyServicesLikeDockerCompose() throws IOException {
+        Path missingServices = temporaryDirectory.resolve("missing-services.yaml");
+        Files.writeString(missingServices, "name: empty-project\n");
+        assertTrue(new ComposeFileLoader().load(temporaryDirectory, "missing-services.yaml").services().isEmpty());
+
+        Path emptyServices = temporaryDirectory.resolve("empty-services.yaml");
+        Files.writeString(emptyServices, "services: {}\n");
+        assertTrue(new ComposeFileLoader().load(temporaryDirectory, "empty-services.yaml").services().isEmpty());
+    }
+
+    @Test
+    void rejectsNonMappingServicesSection() throws IOException {
+        Path file = temporaryDirectory.resolve("compose.yaml");
+        Files.writeString(file, "services: null\n");
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(temporaryDirectory, "compose.yaml"));
+
+        assertEquals("services", exception.propertyPath());
+    }
+
+    @Test
     void rejectsNonStringTopLevelProjectName() throws IOException {
         Path file = temporaryDirectory.resolve("compose.yaml");
         Files.writeString(file, """

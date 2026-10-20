@@ -420,8 +420,9 @@ public final class ComposeFileLoader {
         if (root.containsKey("name") && !(root.get("name") instanceof String))
             throw new ComposeValidationException(file, "name", "project name must be a string.");
         Object rawServices = root.get("services");
-        if (!(rawServices instanceof Map<?, ?> serviceMap) || serviceMap.isEmpty())
-            throw new ComposeValidationException(file, "services", "the document must define at least one service.");
+        if (root.containsKey("services") && !(rawServices instanceof Map<?, ?>))
+            throw new ComposeValidationException(file, "services", "services must be a mapping.");
+        Map<?, ?> serviceMap = rawServices instanceof Map<?, ?> map ? map : Map.of();
         validateExternalResources(file, root);
         Map<String, Map<String, Object>> resolvedServices = new LinkedHashMap<>();
         for (var entry : serviceMap.entrySet()) {
