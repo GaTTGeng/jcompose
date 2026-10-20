@@ -620,32 +620,32 @@ class ComposeFileLoaderTest {
     }
 
     @Test
-    void validatesExternalNetworkDefinitionAttributes() throws Exception {
+    void validatesExternalResourceDefinitionAttributes() throws Exception {
         Path composeFile = directory.resolve("compose.yaml");
-        Files.writeString(composeFile, """
-                services:
-                  app:
-                    image: alpine
-                    networks: [shared]
-                networks:
-                  shared:
-                    external: true
-                    name: shared-network
-                """);
-        assertTrue(new ComposeFileLoader().load(directory, null)
-                .networkDefinitions().get("shared") instanceof Map<?, ?> definition
-                && Boolean.TRUE.equals(definition.get("external")));
+        for (String resourceType : List.of("networks", "volumes", "secrets", "configs")) {
+            Files.writeString(composeFile, "services:\n  app:\n    image: alpine\n" + resourceType
+                    + ":\n  shared:\n    external: true\n    name: shared-resource\n");
+            var project = new ComposeFileLoader().load(directory, null);
+            Map<String, Object> definitions = switch (resourceType) {
+                case "networks" -> project.networkDefinitions();
+                case "volumes" -> project.volumeDefinitions();
+                case "secrets" -> project.secretDefinitions();
+                default -> project.configDefinitions();
+            };
+            assertTrue(definitions.get("shared") instanceof Map<?, ?> definition
+                    && Boolean.TRUE.equals(definition.get("external")), resourceType);
 
-        for (Map.Entry<String, String> invalid : Map.of(
-                "external: \"true\"", "networks.shared.external",
-                "external: true\ndriver: bridge", "networks.shared.driver").entrySet()) {
-            Files.writeString(composeFile, "services:\n  app:\n    image: alpine\nnetworks:\n  shared:\n    "
-                    + invalid.getKey().replace("\n", "\n    ") + "\n");
+            for (Map.Entry<String, String> invalid : Map.of(
+                    "external: \"true\"", resourceType + ".shared.external",
+                    "external: true\ndriver: bridge", resourceType + ".shared.driver").entrySet()) {
+                Files.writeString(composeFile, "services:\n  app:\n    image: alpine\n" + resourceType + ":\n  shared:\n    "
+                        + invalid.getKey().replace("\n", "\n    ") + "\n");
 
-            ComposeValidationException exception = assertThrows(ComposeValidationException.class,
-                    () -> new ComposeFileLoader().load(directory, null), invalid.getKey());
+                ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                        () -> new ComposeFileLoader().load(directory, null), invalid.getKey());
 
-            assertEquals(invalid.getValue(), exception.propertyPath());
+                assertEquals(invalid.getValue(), exception.propertyPath());
+            }
         }
     }
 
