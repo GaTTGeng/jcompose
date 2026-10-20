@@ -364,6 +364,23 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
+    void validatesContainerNameFormatDuringLoading() throws IOException {
+        Path file = temporaryDirectory.resolve("compose.yaml");
+        for (String name : List.of("app-container", "1app", "app.container", "app_container")) {
+            Files.writeString(file, "services:\n  app:\n    image: busybox\n    container_name: \"" + name + "\"\n");
+            assertEquals(name, new ComposeFileLoader().load(temporaryDirectory, "compose.yaml")
+                    .services().get("app").configuration().get("container_name"));
+        }
+
+        for (String name : List.of("", "x", "-app", ".app", "_app", "app/name", "ümlaut")) {
+            Files.writeString(file, "services:\n  app:\n    image: busybox\n    container_name: \"" + name + "\"\n");
+            ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                    () -> new ComposeFileLoader().load(temporaryDirectory, "compose.yaml"));
+            assertEquals("services.app.container_name", exception.propertyPath());
+        }
+    }
+
+    @Test
     void validatesServiceRestartPolicyDuringLoading() throws IOException {
         Path file = temporaryDirectory.resolve("compose.yaml");
         for (String restart : List.of("no", "always", "unless-stopped", "on-failure", "on-failure:0", "on-failure:3")) {

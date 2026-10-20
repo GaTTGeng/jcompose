@@ -683,6 +683,11 @@ public final class ComposeFileLoader {
         Object image = configuration.get("image");
         if (image != null && !isScalar(image))
             throw shapeFailure(file, service, path + ".image", "a scalar", image);
+        Object containerName = configuration.get("container_name");
+        if (containerName != null && (!(containerName instanceof String name)
+                || !name.matches("[a-zA-Z0-9][a-zA-Z0-9_.-]+")))
+            throw new ComposeValidationException(file, path + ".container_name", service,
+                    "container_name must match [a-zA-Z0-9][a-zA-Z0-9_.-]+.", null, null, null);
         validateScalarOrMap(file, service, configuration, "build", path + ".build");
         validateListOrMap(file, service, configuration, "environment", path + ".environment");
         validateLabelFiles(file, service, configuration.get("label_file"), path + ".label_file");

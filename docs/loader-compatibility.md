@@ -74,6 +74,7 @@ When changing loader behavior, record the exact ComposeSharp version/commit sync
 ## Observed Docker Compose behavior
 
 - Docker Compose CLI v5.5.1 accepts service names made of ASCII letters, digits, `_`, `-`, and `.`, and rejects spaces, `:`, `@`, `/`, and non-ASCII characters. `ComposeLoaderConformanceTest` covers accepted and rejected examples with service context in validation errors.
+- Docker Compose service `container_name` values must match `[a-zA-Z0-9][a-zA-Z0-9_.-]+`; `ComposeLoaderConformanceTest` covers accepted and rejected names with a service property path.
 - Docker Compose CLI v5.5.1 `config --format json`: an `env_file` bare key is omitted when the host variable is unset and resolves from the host when set. A key-only or null `environment` entry resolves from the host when set and still overrides a same-named `env_file` entry when unset. `ComposeFileLoaderTest` covers these cases in jcompose.
 - Docker Compose CLI v5.5.1 `config --format json`: include `env_file` lists are applied in order, with the parent project's environment taking precedence over included defaults. `ComposeFileLoaderTest` covers list ordering and parent `.env` precedence.
 - Docker Compose CLI v5.5.1 `config --format json`: `services.<name>.profiles` must be an array of strings, and each name must match `[a-zA-Z0-9][a-zA-Z0-9_.-]+`. `ComposeLoaderConformanceTest` covers valid and invalid profile names in jcompose.
