@@ -442,6 +442,50 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
+    void resetMergeTagClearsInheritedSequence() throws IOException {
+        Path directory = temporaryDirectory.resolve("reset-merge-tag");
+        Files.createDirectories(directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: example/app
+                    ports: ["8080:80"]
+                """);
+        Files.writeString(directory.resolve("compose.override.yaml"), """
+                services:
+                  app:
+                    ports: !reset []
+                """);
+
+        ServiceDefinition app = new ComposeFileLoader().loadMerged(directory,
+                List.of("compose.yaml", "compose.override.yaml")).services().get("app");
+
+        assertEquals(List.of(), app.configuration().get("ports"));
+    }
+
+    @Test
+    void overrideMergeTagReplacesInheritedSequenceWithoutMerging() throws IOException {
+        Path directory = temporaryDirectory.resolve("override-merge-tag");
+        Files.createDirectories(directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: example/app
+                    ports: ["8080:80"]
+                """);
+        Files.writeString(directory.resolve("compose.override.yaml"), """
+                services:
+                  app:
+                    ports: !override ["8443:443"]
+                """);
+
+        ServiceDefinition app = new ComposeFileLoader().loadMerged(directory,
+                List.of("compose.yaml", "compose.override.yaml")).services().get("app");
+
+        assertEquals(List.of("8443:443"), app.configuration().get("ports"));
+    }
+
+    @Test
     void usesFirstComposeFilesDotEnvForEveryMergedFile() throws IOException {
         Path directory = temporaryDirectory.resolve("project-dotenv-merge");
         Path overlayDirectory = Files.createDirectories(directory.resolve("overlay"));
