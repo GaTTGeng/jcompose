@@ -1890,9 +1890,15 @@ public final class ComposeService implements IComposeService {
             String networkId = idsByName.get(engineName);
             if (networkId == null) throw new IllegalStateException("Docker network '" + engineName + "' was not created.");
             Map<String, Object> options = serviceNetworkOptions(service, logicalName);
-            var endpoint = new com.github.dockerjava.api.model.ContainerNetwork();
+            var endpoint = new ComposeEndpointConfig();
             List<String> aliases = networkAliases(project, service, logicalName, includeServiceName);
             if (!aliases.isEmpty()) endpoint.withAliases(aliases);
+            String interfaceName = stringValue(options.get("interface_name"), null);
+            if (interfaceName != null) endpoint.withInterfaceName(interfaceName);
+            Map<String, String> driverOpts = stringMap(options.get("driver_opts"));
+            if (!driverOpts.isEmpty()) endpoint.withDriverOpts(driverOpts);
+            if (options.get("gw_priority") instanceof Number priority)
+                endpoint.withGwPriority(priority.intValue());
             String mac = stringValue(options.get("mac_address"),
                     logicalName.equals(serviceMacAddressNetwork(service))
                             ? stringValue(service.configuration().get("mac_address"), null) : null);
@@ -1900,10 +1906,17 @@ public final class ComposeService implements IComposeService {
             String ipv4 = stringValue(options.get("ipv4_address"), null);
             String ipv6 = stringValue(options.get("ipv6_address"), null);
             if (ipv4 != null || ipv6 != null) {
-                var ipam = new com.github.dockerjava.api.model.ContainerNetwork.Ipam();
+                var ipam = new ComposeEndpointConfig.ComposeEndpointIpam();
                 if (ipv4 != null) ipam.withIpv4Address(ipv4);
                 if (ipv6 != null) ipam.withIpv6Address(ipv6);
-                endpoint.withIpamConfig(ipam);
+                endpoint.withComposeIpamConfig(ipam);
+            }
+            List<String> linkLocalIps = asStringList(options.get("link_local_ips"));
+            if (!linkLocalIps.isEmpty()) {
+                var ipam = endpoint.getIpamConfig();
+                if (ipam == null) ipam = new ComposeEndpointConfig.ComposeEndpointIpam();
+                ipam.withLinkLocalIps(linkLocalIps);
+                endpoint.withComposeIpamConfig(ipam);
             }
             client.connectToNetworkCmd().withNetworkId(networkId).withContainerId(containerId)
                     .withContainerNetwork(endpoint).exec();
