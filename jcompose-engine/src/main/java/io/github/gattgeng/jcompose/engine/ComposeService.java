@@ -365,7 +365,8 @@ public final class ComposeService implements IComposeService {
                     // Continue teardown when the container is already stopped or unavailable.
                 }
                 try {
-                    client.removeContainerCmd(container.getId()).withForce(true).withRemoveVolumes(false).exec();
+                    client.removeContainerCmd(container.getId()).withForce(true)
+                            .withRemoveVolumes(options != null && options.removeVolumes()).exec();
                 } catch (NotFoundException ignored) {
                     // A container removed concurrently is already down.
                 }

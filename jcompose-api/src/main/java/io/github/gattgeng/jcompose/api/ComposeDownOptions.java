@@ -5,7 +5,7 @@ import java.util.Objects;
 
 /**
  * Options for taking a project down.
- * @param removeVolumes Also remove named volumes declared by the project.
+ * @param removeVolumes Also remove named project volumes and anonymous volumes attached to removed containers.
  * @param removeOrphans Also remove containers of services that no longer exist in the Compose file.
  * @param removeImages Image removal policy: <code>all</code> removes every project image, <code>local</code> only untagged ones.
  * @param services Restricts the teardown to these service names; networks are cleaned up only when the whole project goes down.
@@ -32,8 +32,8 @@ public record ComposeDownOptions(
         private Integer timeoutSeconds;
 
         /**
-         * Also remove named volumes declared by the project.
-         * @param value Also remove named volumes declared by the project.
+         * Also remove named project volumes and anonymous volumes attached to removed containers.
+         * @param value Also remove named project volumes and anonymous volumes attached to removed containers.
          * @return this builder
          */
         public Builder removeVolumes(boolean value) { this.removeVolumes = value; return this; }

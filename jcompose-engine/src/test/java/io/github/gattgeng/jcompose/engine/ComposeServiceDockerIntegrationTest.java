@@ -1,6 +1,7 @@
 package io.github.gattgeng.jcompose.engine;
 
 import io.github.gattgeng.jcompose.api.ComposeEvent;
+import io.github.gattgeng.jcompose.api.ComposeDownOptions;
 import io.github.gattgeng.jcompose.api.ComposeExecOptions;
 import io.github.gattgeng.jcompose.api.ComposeEventsOptions;
 import io.github.gattgeng.jcompose.api.ComposeListOptions;
@@ -259,6 +260,51 @@ class ComposeServiceDockerIntegrationTest {
         }
 
         assertTrue(service.psAsync(context, null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS).isEmpty());
+    }
+
+    @Test
+    void downWithVolumesRemovesAnonymousAndDeclaredVolumes() throws Exception {
+        String projectName = "jcompose-down-volumes-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: [sh, -c, 'sleep 300']
+                    volumes:
+                      - data:/data
+                      - /cache
+                volumes:
+                  data: {}
+                """);
+
+        IComposeService service = new ComposeService();
+        java.util.Set<String> createdVolumes;
+        try {
+            service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            try (var client = DockerClientFactory.create(context)) {
+                String containerId = service.psAsync(context, null).get(30, TimeUnit.SECONDS).getFirst().id();
+                createdVolumes = client.inspectContainerCmd(containerId).exec().getMounts().stream()
+                        .map(com.github.dockerjava.api.command.InspectContainerResponse.Mount::getName)
+                        .filter(java.util.Objects::nonNull)
+                        .collect(java.util.stream.Collectors.toSet());
+            }
+            assertTrue(createdVolumes.contains(projectName + "_data"));
+            assertEquals(2, createdVolumes.size());
+
+            service.downAsync(context, ComposeDownOptions.builder().removeVolumes(true).build())
+                    .get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+
+            try (var client = DockerClientFactory.create(context)) {
+                var remainingVolumes = client.listVolumesCmd().exec().getVolumes().stream()
+                        .map(com.github.dockerjava.api.command.InspectVolumeResponse::getName)
+                        .collect(java.util.stream.Collectors.toSet());
+                assertTrue(remainingVolumes.stream().noneMatch(createdVolumes::contains));
+            }
+        } finally {
+            service.downAsync(context, ComposeDownOptions.builder().removeVolumes(true).build())
+                    .get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
     }
 
     @Test
