@@ -1815,13 +1815,17 @@ public final class ComposeService implements IComposeService {
     }
 
     private static com.github.dockerjava.api.model.Network.Ipam networkIpam(Map<String, Object> options) {
-        var ipam = new com.github.dockerjava.api.model.Network.Ipam();
+        Map<String, String> driverOptions = options.get("options") instanceof Map<?, ?> rawOptions
+                ? stringMap(rawOptions) : null;
+        var ipam = new ComposeNetworkIpam(driverOptions);
         if (options.get("driver") != null) ipam.withDriver(String.valueOf(options.get("driver")));
         if (options.get("config") instanceof List<?> configs) {
             List<com.github.dockerjava.api.model.Network.Ipam.Config> subnets = new ArrayList<>();
             for (Object item : configs) if (item instanceof Map<?, ?> map) {
                 Map<String, Object> config = stringKeyMap(map);
-                var subnet = new com.github.dockerjava.api.model.Network.Ipam.Config();
+                Map<String, String> auxiliaryAddresses = config.get("aux_addresses") instanceof Map<?, ?> rawAddresses
+                        ? stringMap(rawAddresses) : null;
+                var subnet = new ComposeNetworkIpam.Config(auxiliaryAddresses);
                 if (config.get("subnet") != null) subnet.withSubnet(String.valueOf(config.get("subnet")));
                 if (config.get("ip_range") != null) subnet.withIpRange(String.valueOf(config.get("ip_range")));
                 if (config.get("gateway") != null) subnet.withGateway(String.valueOf(config.get("gateway")));

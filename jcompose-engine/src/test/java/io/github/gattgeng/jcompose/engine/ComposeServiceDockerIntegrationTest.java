@@ -626,6 +626,43 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void createsProjectNetworkWithIpamAuxiliaryAddresses() throws Exception {
+        String projectName = "jcompose-ipam-aux-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Path composeFile = directory.resolve("compose.yaml");
+        Files.writeString(composeFile, """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: ["sh", "-c", "sleep 60"]
+                    networks:
+                      default:
+                        ipv4_address: 172.31.101.10
+                networks:
+                  default:
+                    ipam:
+                      config:
+                        - subnet: 172.31.101.0/24
+                          aux_addresses:
+                            reserved: 172.31.101.50
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            var containers = service.psAsync(context, null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            var app = containers.stream().filter(container -> "app".equals(container.service())).findFirst().orElseThrow();
+            try (var client = DockerClientFactory.create(context)) {
+                var network = client.inspectContainerCmd(app.id()).exec().getNetworkSettings().getNetworks()
+                        .get(projectName + "_default");
+                assertEquals("172.31.101.10", network.getIpAddress());
+            }
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
     void externalLinksResolveOnAnExplicitlySharedNetwork() throws Exception {
         String projectName = "jcompose-external-links-" + UUID.randomUUID().toString().substring(0, 8);
         String networkName = projectName + "_shared";
