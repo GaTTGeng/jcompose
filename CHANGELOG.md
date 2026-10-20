@@ -8,6 +8,8 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 
 ### Added
 
+- Applied explicit `attach.detachKeys` sequences to forwarded stdin so callers can detach without sending the key bytes to the container.
+
 - Ran Docker Compose `pre_start` hooks in ordered ephemeral containers with service environment, network, and volume access before service containers start; hook failures now block service startup.
 - Rejected malformed or unclosed Compose interpolation expressions with the YAML property path and source location.
 - Loaded recursive local Docker Compose `include` files, merging each mapping's ordered `path` list into one included project before import, rebasing included file paths, and rejecting cross-project name conflicts; remote OCI/Git includes remain unsupported.

@@ -4148,8 +4148,7 @@ public final class ComposeService implements IComposeService {
                 }
                 var command = client.attachContainerCmd(container.getId()).withLogs(false).withFollowStream(true)
                         .withStdOut(effective.stdout()).withStdErr(effective.stderr());
-                if (effective.stdin()) command.withStdIn(System.in);
-                ResultCallback.Adapter<Frame> callback = command.exec(new Adapter<>() {
+                ResultCallback.Adapter<Frame> callback = new Adapter<>() {
                     @Override public void onNext(Frame frame) {
                         byte[] payload = frame.getPayload();
                         if (payload == null || payload.length == 0) return;
@@ -4157,7 +4156,20 @@ public final class ComposeService implements IComposeService {
                         stream.write(payload, 0, payload.length);
                         stream.flush();
                     }
-                });
+                };
+                if (effective.stdin()) {
+                    if (effective.detachKeys() == null) command.withStdIn(System.in);
+                    else command.withStdIn(new DetachKeyInputStream(System.in, effective.detachKeys(), () -> {
+                        try {
+                            callback.close();
+                        } catch (java.io.IOException exception) {
+                            throw new java.io.UncheckedIOException(exception);
+                        }
+                    }));
+                } else if (effective.detachKeys() != null) {
+                    DetachKeyInputStream.parse(effective.detachKeys());
+                }
+                command.exec(callback);
                 await(callback);
             } catch (java.io.IOException exception) {
                 throw new java.io.UncheckedIOException("Could not close Docker Engine client.", exception);
