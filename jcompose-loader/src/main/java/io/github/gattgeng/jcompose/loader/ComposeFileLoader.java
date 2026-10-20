@@ -651,10 +651,19 @@ public final class ComposeFileLoader {
 
     private static void validateExternalResources(Path file, Map<String, Object> root) {
         for (String resourceType : List.of("networks", "volumes", "secrets", "configs")) {
-            if (!(root.get(resourceType) instanceof Map<?, ?> resources)) continue;
+            Object configured = root.get(resourceType);
+            if (configured == null) continue;
+            if (!(configured instanceof Map<?, ?> resources))
+                throw new ComposeValidationException(file, resourceType, null,
+                        resourceType + " must be a mapping.", null, null, null);
             for (var entry : resources.entrySet()) {
-                if (!(entry.getKey() instanceof String resource) || !(entry.getValue() instanceof Map<?, ?> definition))
-                    continue;
+                if (!(entry.getKey() instanceof String resource))
+                    throw new ComposeValidationException(file, resourceType, null,
+                            resourceType + " resource names must be strings.", null, null, null);
+                if (entry.getValue() == null) continue;
+                if (!(entry.getValue() instanceof Map<?, ?> definition))
+                    throw new ComposeValidationException(file, resourceType + "." + resource, null,
+                            "resource definition must be a mapping.", null, null, null);
                 Object external = definition.get("external");
                 String path = resourceType + "." + resource;
                 if (external != null && !(external instanceof Boolean))

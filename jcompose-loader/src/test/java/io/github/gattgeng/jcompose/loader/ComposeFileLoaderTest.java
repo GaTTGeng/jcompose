@@ -650,6 +650,24 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void validatesTopLevelResourceMappingShapes() throws Exception {
+        Path composeFile = directory.resolve("compose.yaml");
+        for (String resourceType : List.of("networks", "volumes", "secrets", "configs")) {
+            for (Map.Entry<String, String> invalid : Map.of(
+                    "[]", resourceType,
+                    "{ shared: false }", resourceType + ".shared").entrySet()) {
+                Files.writeString(composeFile, "services:\n  app:\n    image: alpine\n" + resourceType + ": "
+                        + invalid.getKey() + "\n");
+
+                ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                        () -> new ComposeFileLoader().load(directory, null), resourceType + " " + invalid.getKey());
+
+                assertEquals(invalid.getValue(), exception.propertyPath());
+            }
+        }
+    }
+
+    @Test
     void validatesServiceNetworksShapeAndMappingValues() throws Exception {
         Path composeFile = directory.resolve("compose.yaml");
         for (String networks : List.of("bridge", "[1]", "{ frontend: false }", "{ 1: {} }")) {
