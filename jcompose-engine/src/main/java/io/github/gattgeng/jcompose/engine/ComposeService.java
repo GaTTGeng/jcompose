@@ -147,7 +147,6 @@ public final class ComposeService implements IComposeService {
         for (Container container : projectContainers(client, context.projectName(), selectedServices, true)) {
             if ("true".equalsIgnoreCase(label(container, ComposeConstants.ONE_OFF_LABEL))) continue;
             if (!isRunning(container)) {
-                runPreStartHooks(client, context, project, serviceFor(project, container), replicaNumber(container));
                 try {
                     client.startContainerCmd(container.getId()).exec();
                 } catch (DockerException exception) {
@@ -1637,7 +1636,6 @@ public final class ComposeService implements IComposeService {
             }
             if (start) existing.forEach(container -> {
                 if (!isRunning(container)) {
-                    runPreStartHooks(client, context, project, service, replicaNumber(container));
                     client.startContainerCmd(container.getId()).exec();
                     runLifecycleHooks(client, container, project, "post_start");
                 }

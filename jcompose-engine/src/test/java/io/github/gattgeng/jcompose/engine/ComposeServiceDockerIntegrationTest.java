@@ -96,22 +96,27 @@ class ComposeServiceDockerIntegrationTest {
     void runsPreStartInitContainerWithServiceVolumesBeforeStartingService() throws Exception {
         String projectName = "jcompose-pre-start-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Path hookDirectory = Files.createDirectories(directory.resolve("pre-start"));
+        Path events = hookDirectory.resolve("events");
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:
                   app:
                     image: busybox:1.36
                     command: [sh, -c, 'test -f /shared/ready && sleep 300']
-                    volumes: [state:/shared]
+                    volumes: ["./pre-start:/shared"]
                     pre_start:
                       - image: busybox:1.36
-                        command: [sh, -c, 'echo initialized > /shared/ready']
-                volumes:
-                  state: {}
+                        command: [sh, -c, 'echo initialized >> /shared/events; touch /shared/ready']
                 """);
 
         IComposeService service = new ComposeService();
         try {
             service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            assertEquals("initialized\n", Files.readString(events));
+            service.stopAsync(context, null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            service.startAsync(context, null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            service.restartAsync(context, null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertEquals("initialized\n", Files.readString(events));
             try (var client = DockerClientFactory.create(context)) {
                 var containers = client.listContainersCmd().withShowAll(true)
                         .withLabelFilter(java.util.Map.of("com.docker.compose.project", projectName,
