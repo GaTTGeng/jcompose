@@ -285,6 +285,74 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void mountsLongFormVolumeSubpathAndPreservesExternalVolumeOnDown() throws Exception {
+        String projectName = "jcompose-volume-subpath-" + UUID.randomUUID().toString().substring(0, 8);
+        String volumeName = projectName + "-shared";
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        String seedContainerId = null;
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: [sh, -c, 'sleep 300']
+                    volumes:
+                      - type: volume
+                        source: data
+                        target: /data
+                        volume:
+                          subpath: logs/app
+                volumes:
+                  data:
+                    external: true
+                    name: %s
+                """.formatted(volumeName));
+
+        IComposeService service = new ComposeService();
+        try {
+            try (var client = DockerClientFactory.create(context)) {
+                client.createVolumeCmd().withName(volumeName).exec();
+                seedContainerId = client.createContainerCmd("busybox:1.36")
+                        .withCmd("sh", "-c", "mkdir -p /seed/logs/app && echo subpath-ok > /seed/logs/app/probe")
+                        .withHostConfig(com.github.dockerjava.api.model.HostConfig.newHostConfig()
+                                .withBinds(new com.github.dockerjava.api.model.Bind(volumeName,
+                                        new com.github.dockerjava.api.model.Volume("/seed"))))
+                        .exec().getId();
+                client.startContainerCmd(seedContainerId).exec();
+                CompletableFuture<Integer> seeded = new CompletableFuture<>();
+                client.waitContainerCmd(seedContainerId).exec(new com.github.dockerjava.api.async.ResultCallback.Adapter<com.github.dockerjava.api.model.WaitResponse>() {
+                    @Override public void onNext(com.github.dockerjava.api.model.WaitResponse response) {
+                        seeded.complete(response.getStatusCode());
+                    }
+                    @Override public void onError(Throwable error) { seeded.completeExceptionally(error); }
+                    @Override public void onComplete() { }
+                });
+                assertEquals(0, seeded.get(30, TimeUnit.SECONDS));
+                client.removeContainerCmd(seedContainerId).withForce(true).exec();
+                seedContainerId = null;
+            }
+            service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            var result = service.execAsync(context, "app", ComposeExecOptions.builder()
+                            .command(java.util.List.of("cat", "/data/probe")).tty(false).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertEquals("subpath-ok", result.standardOutput().trim());
+            service.downAsync(context, ComposeDownOptions.builder().removeVolumes(true).build())
+                    .get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+            try (var client = DockerClientFactory.create(context)) {
+                assertTrue(client.listVolumesCmd().exec().getVolumes().stream()
+                        .anyMatch(volume -> volumeName.equals(volume.getName())));
+            }
+        } finally {
+            if (seedContainerId != null) try (var client = DockerClientFactory.create(context)) {
+                client.removeContainerCmd(seedContainerId).withForce(true).exec();
+            }
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+            try (var client = DockerClientFactory.create(context)) {
+                client.removeVolumeCmd(volumeName).exec();
+            }
+        }
+    }
+
+    @Test
     void scaleStartsDependenciesUnlessNoDepsIsSet() throws Exception {
         String projectName = "jcompose-scale-deps-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
