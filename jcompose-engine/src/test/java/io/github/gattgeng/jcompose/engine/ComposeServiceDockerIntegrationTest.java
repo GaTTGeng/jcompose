@@ -27,6 +27,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.net.InetAddress;
+import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -1310,6 +1312,66 @@ class ComposeServiceDockerIntegrationTest {
             assertTrue(cause.getMessage().contains("app"));
             assertTrue(cause.getMessage().contains("database"));
         } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
+    void startPropagatesDependencyDockerFailureBeforeStartingDependentService() throws Exception {
+        int occupiedPort;
+        try (var portProbe = new ServerSocket(0, 0, InetAddress.getByName("127.0.0.1"))) {
+            occupiedPort = portProbe.getLocalPort();
+        }
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        Path appDirectory = directory.resolve("app");
+        Path blockerDirectory = directory.resolve("blocker");
+        Files.createDirectories(appDirectory);
+        Files.createDirectories(blockerDirectory);
+        String projectName = "jcompose-dependency-start-failure-" + suffix;
+        String blockerProjectName = "jcompose-dependency-start-blocker-" + suffix;
+        ComposeProjectContext context = new ComposeProjectContext(projectName, appDirectory);
+        ComposeProjectContext blockerContext = new ComposeProjectContext(blockerProjectName, blockerDirectory);
+        Files.writeString(appDirectory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: ["sleep", "300"]
+                    depends_on: [database]
+                  database:
+                    image: busybox:1.36
+                    command: ["sleep", "300"]
+                    ports:
+                      - "127.0.0.1:%d:80"
+                """.formatted(occupiedPort));
+        Files.writeString(blockerDirectory.resolve("compose.yaml"), """
+                services:
+                  blocker:
+                    image: busybox:1.36
+                    command: ["sleep", "300"]
+                    ports:
+                      - "127.0.0.1:%d:80"
+                """.formatted(occupiedPort));
+
+        IComposeService service = new ComposeService();
+        IComposeService blockerService = new ComposeService();
+        try {
+            service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            service.stopAsync(context, null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            blockerService.upAsync(blockerContext, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+
+            ExecutionException failure = assertThrows(ExecutionException.class,
+                    () -> service.startAsync(context, ComposeStartOptions.builder().services(java.util.List.of("app")).build())
+                            .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS));
+            assertTrue(failure.getCause() != null);
+            Throwable cause = failure.getCause();
+            while (cause.getCause() != null) cause = cause.getCause();
+            assertFalse(cause instanceof TimeoutException, "The Docker start failure must propagate instead of timing out.");
+
+            var containers = service.psAsync(context, null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            var app = containers.stream().filter(container -> "app".equals(container.service())).findFirst().orElseThrow();
+            assertEquals("exited", app.state());
+        } finally {
+            blockerService.downAsync(blockerContext, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
             service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
         }
     }
