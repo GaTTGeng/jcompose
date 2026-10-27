@@ -196,6 +196,8 @@ class ComposeFileLoaderTest {
                         condition: service_healthy
                       started:
                         condition: service_started
+                      disabled:
+                        condition: service_started
                       completed:
                         condition: service_completed_successfully
                   healthy:
@@ -206,11 +208,44 @@ class ComposeFileLoaderTest {
                     image: cache
                   completed:
                     image: worker
+                  disabled:
+                    image: worker
+                    healthcheck:
+                      disable: true
                 """);
 
-        var diagnostic = new ComposeFileLoader().load(directory, null).diagnostics().getFirst();
+        var diagnostics = new ComposeFileLoader().load(directory, null).diagnostics();
 
-        assertEquals("services.app.depends_on.completed", diagnostic.propertyPath());
+        assertEquals(List.of("services.app.depends_on.started", "services.app.depends_on.completed"),
+                diagnostics.stream().map(diagnostic -> diagnostic.propertyPath()).toList());
+    }
+
+    @Test
+    void nestedExtensionFieldsDoNotProduceDiagnostics() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                volumes:
+                  data:
+                    x-volume-note: local
+                networks:
+                  front:
+                    x-network-note: local
+                secrets:
+                  credential:
+                    x-secret-note: local
+                configs:
+                  settings:
+                    x-config-note: local
+                services:
+                  api:
+                    image: app
+                    deploy:
+                      x-rollout-note: local
+                    networks:
+                      front:
+                        x-attachment-note: local
+                """);
+
+        assertTrue(new ComposeFileLoader().load(directory, null).diagnostics().isEmpty());
     }
 
     @Test

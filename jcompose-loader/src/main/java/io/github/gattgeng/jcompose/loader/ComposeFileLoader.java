@@ -533,9 +533,12 @@ public final class ComposeFileLoader {
                 }
                 Object deploy = service.get("deploy");
                 if (deploy instanceof Map<?, ?> deployMap) {
-                    for (var field : deployMap.entrySet()) if (!"replicas".equals(String.valueOf(field.getKey())) && meaningful(field.getValue()))
-                        addDiagnostic(result, file, provenance, servicePath + ".deploy." + field.getKey(), serviceName,
-                                "partially-supported-field", "Only deploy.replicas affects service operations.");
+                    for (var field : deployMap.entrySet()) {
+                        String name = String.valueOf(field.getKey());
+                        if (!"replicas".equals(name) && !name.startsWith("x-") && meaningful(field.getValue()))
+                            addDiagnostic(result, file, provenance, servicePath + ".deploy." + name, serviceName,
+                                    "partially-supported-field", "Only deploy.replicas affects service operations.");
+                    }
                 }
                 Object build = service.get("build");
                 if (build instanceof Map<?, ?> buildMap && meaningful(buildMap.get("cache_to")))
@@ -580,7 +583,8 @@ public final class ComposeFileLoader {
                 "Only the resource name is retained; resource options are not applied.");
         addResourceDiagnostics(result, file, provenance, root, "networks", "partially-supported-field",
                 "Only the resource name is retained; resource options are not applied.");
-        for (String section : List.of("secrets", "configs")) if (meaningful(root.get(section)))
+        for (String section : List.of("secrets", "configs"))
+            if (resourceSectionMeaningful(root.get(section)))
             addDiagnostic(result, file, provenance, section, null, "unsupported-field",
                     "Project resources are named in the loaded model but are not provisioned or mounted.");
         return List.copyOf(result);
@@ -608,8 +612,18 @@ public final class ComposeFileLoader {
     private static boolean meaningfulResourceDefinition(Object value) {
         if (!(value instanceof Map<?, ?> options)) return meaningful(value);
         return options.entrySet().stream().anyMatch(option ->
-                !("external".equals(String.valueOf(option.getKey())) && isFalse(option.getValue()))
+                !isExtensionField(option.getKey())
+                        && !("external".equals(String.valueOf(option.getKey())) && isFalse(option.getValue()))
                         && meaningful(option.getValue()));
+    }
+
+    private static boolean resourceSectionMeaningful(Object value) {
+        if (!(value instanceof Map<?, ?> resources)) return meaningful(value);
+        return resources.values().stream().anyMatch(ComposeFileLoader::meaningfulResourceDefinition);
+    }
+
+    private static boolean isExtensionField(Object key) {
+        return String.valueOf(key).startsWith("x-");
     }
 
     private static boolean isFalse(Object value) {
@@ -647,8 +661,10 @@ public final class ComposeFileLoader {
                 && !isTrue(healthcheck.get("disable"))
                 && meaningful(healthcheck.get("test"))
                 && !disabledHealthcheckTest(healthcheck.get("test"));
+        boolean healthcheckDisabled = rawHealthcheck instanceof Map<?, ?> healthcheck
+                && (isTrue(healthcheck.get("disable")) || disabledHealthcheckTest(healthcheck.get("test")));
         return "service_healthy".equals(condition) && hasHealthcheck
-                || "service_started".equals(condition) && !hasHealthcheck;
+                || "service_started".equals(condition) && healthcheckDisabled;
     }
 
     private static boolean disabledHealthcheckTest(Object value) {
