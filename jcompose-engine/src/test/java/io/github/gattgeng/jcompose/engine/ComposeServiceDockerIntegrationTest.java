@@ -82,12 +82,22 @@ class ComposeServiceDockerIntegrationTest {
         IComposeService service = new ComposeService();
         String runContainerId = null;
         try {
+            ComposeProjectContext defaultContext = new ComposeProjectContext(projectName, directory);
+            service.upAsync(defaultContext, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            String previousContainerId;
+            try (var client = DockerClientFactory.create(defaultContext)) {
+                previousContainerId = client.listContainersCmd().withShowAll(true)
+                        .withLabelFilter(java.util.Map.of("com.docker.compose.project", projectName)).exec()
+                        .stream().filter(candidate -> "web".equals(candidate.getLabels().get("com.docker.compose.service")))
+                        .map(com.github.dockerjava.api.model.Container::getId).findFirst().orElseThrow();
+            }
             service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
             try (var client = DockerClientFactory.create(context)) {
                 var container = client.listContainersCmd().withShowAll(true)
                         .withLabelFilter(java.util.Map.of("com.docker.compose.project", projectName)).exec()
                         .stream().filter(candidate -> "web".equals(candidate.getLabels().get("com.docker.compose.service")))
                         .findFirst().orElseThrow();
+                assertFalse(previousContainerId.equals(container.getId()));
                 assertTrue(java.util.Arrays.asList(container.getNames()).contains("/" + projectName + "_web_1"));
             }
             runContainerId = service.runAsync(context, "web", ComposeRunOptions.builder()

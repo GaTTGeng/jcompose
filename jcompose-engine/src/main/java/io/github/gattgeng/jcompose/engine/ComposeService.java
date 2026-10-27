@@ -1656,7 +1656,9 @@ public final class ComposeService implements IComposeService {
                 .filter(field -> serviceNamespaceReference(service, field) != null)
                 .map(field -> field + "=" + dockerNamespaceMode(client, context.projectName(), service, field))
                 .collect(java.util.stream.Collectors.joining(";"));
-        String hash = configHash(service, project) + (namespaceServiceIds.isEmpty() ? "" : "-" + namespaceServiceIds);
+        String hash = configHash(service, project)
+                + (context.compatibility() ? "\u0000compatibility=true" : "")
+                + (namespaceServiceIds.isEmpty() ? "" : "-" + namespaceServiceIds);
         boolean configurationChanged = existing.stream()
                 .anyMatch(container -> !hash.equals(label(container, ComposeConstants.CONFIG_HASH_LABEL)));
         boolean recreate = forceRecreate || configurationChanged && !noRecreate;
