@@ -72,7 +72,7 @@ public final class ComposeFileLoader {
     private static final Set<String> UNSUPPORTED_SERVICE_FIELDS = Set.of(
             "secrets", "configs", "logging", "stop_signal", "stop_grace_period", "sysctls",
             "pull_policy", "dns", "dns_search", "links", "cpu_quota", "oom_kill_disable", "oom_score_adj",
-            "annotations", "extends", "develop");
+            "annotations", "extends", "develop", "credential_spec");
 
     /** Loads one Compose file. Conventional default names are discovered from the working directory upward. */
     public ComposeProject load(Path workingDirectory, String composeFileName) {

@@ -180,6 +180,24 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void diagnosesCredentialSpecsThatAreNotAppliedToDocker() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: windows/servercore
+                    credential_spec:
+                      registry: gmsa-spec
+                """);
+
+        var diagnostics = new ComposeFileLoader().load(directory, null).diagnostics();
+
+        assertEquals(1, diagnostics.size());
+        assertEquals("services.app.credential_spec", diagnostics.getFirst().propertyPath());
+        assertEquals("unsupported-field", diagnostics.getFirst().code());
+        assertFalse(diagnostics.getFirst().message().contains("gmsa-spec"));
+    }
+
+    @Test
     void serviceNamespaceReferencesDoNotProduceUnsupportedDiagnostics() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:
