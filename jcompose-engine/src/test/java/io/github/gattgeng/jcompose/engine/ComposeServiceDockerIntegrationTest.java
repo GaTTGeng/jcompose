@@ -44,6 +44,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -113,7 +114,7 @@ class ComposeServiceDockerIntegrationTest {
                         .withLabelFilter(java.util.Map.of("com.docker.compose.project", projectName,
                                 "com.docker.compose.service", "app"))
                         .exec();
-                assertEquals(java.util.List.of("internal.example:192.0.2.10"),
+                assertArrayEquals(new String[] {"internal.example:192.0.2.10"},
                         client.inspectContainerCmd(containers.getFirst().getId()).exec()
                                 .getHostConfig().getExtraHosts());
             }
