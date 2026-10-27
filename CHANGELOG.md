@@ -7,6 +7,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 ## [Unreleased]
 
 ### Fixed
+- Honor `ComposeKillOptions.removeOrphans` by force-removing project containers whose service names are absent from the loaded Compose project.
 - Apply file- and registry-backed `credential_spec` values to Windows container security options, and diagnose the Swarm-only config form.
 - Honor service-level `scale` when creating/updating replica counts, require it to match `deploy.replicas` when both are set, and avoid recreating unchanged containers when only the replica count changes.
 - Apply the context compatibility flag to generated service and one-off container names, using legacy underscore separators, and recreate service containers when that mode changes.

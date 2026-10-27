@@ -633,11 +633,13 @@ public final class ComposeService implements IComposeService {
     public CompletableFuture<Void> killAsync(ComposeProjectContext context, ComposeKillOptions options) {
         String signal = options == null || options.signal() == null || options.signal().isBlank() ? "SIGKILL" : options.signal();
         return execute(context, client -> {
-            List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
-            for (Container container : projectContainers(client, context.projectName(), selectedServices)) {
+            ExistingServiceSelection selection = selectExistingServices(context, options == null ? null : options.services());
+            for (Container container : projectContainers(client, context.projectName(), selection.serviceNames())) {
                 try { client.killContainerCmd(container.getId()).withSignal(signal).exec(); }
                 catch (DockerException ignored) { /* Continue with the remaining containers. */ }
             }
+            if (options != null && options.removeOrphans() && selection.project() != null)
+                removeOrphanContainers(client, context.projectName(), selection.project());
         });
     }
 
@@ -1522,7 +1524,7 @@ public final class ComposeService implements IComposeService {
         java.util.Set<String> valid = project.services().keySet();
         for (Container container : projectContainers(client, projectName, null, true)) {
             String service = label(container, ComposeConstants.SERVICE_LABEL);
-            if (service != null && !valid.contains(service))
+            if (service == null || !valid.contains(service))
                 client.removeContainerCmd(container.getId()).withForce(true).withRemoveVolumes(false).exec();
         }
     }

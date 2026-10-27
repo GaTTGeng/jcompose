@@ -8,6 +8,7 @@ import io.github.gattgeng.jcompose.api.ComposeDownOptions;
 import io.github.gattgeng.jcompose.api.ComposeExecOptions;
 import io.github.gattgeng.jcompose.api.ComposeExportOptions;
 import io.github.gattgeng.jcompose.api.ComposeEventsOptions;
+import io.github.gattgeng.jcompose.api.ComposeKillOptions;
 import io.github.gattgeng.jcompose.api.ComposeListOptions;
 import io.github.gattgeng.jcompose.api.ComposePauseOptions;
 import io.github.gattgeng.jcompose.api.ComposeProjectContext;
@@ -114,6 +115,38 @@ class ComposeServiceDockerIntegrationTest {
                 client.removeContainerCmd(runContainerId).withForce(true).withRemoveVolumes(false).exec();
             }
             service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
+    void killRemovesOrphanContainersWhenRequested() throws Exception {
+        String projectName = "jcompose-kill-orphans-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), "services: {app: {image: busybox:1.36}}\n");
+        String orphanId = null;
+        try {
+            try (var client = DockerClientFactory.create(context)) {
+                orphanId = client.createContainerCmd("busybox:1.36")
+                        .withCmd("sh", "-c", "sleep 300")
+                        .withLabels(java.util.Map.of(
+                                "com.docker.compose.project", projectName,
+                                "com.docker.compose.service", "removed-service"))
+                        .exec().getId();
+                client.startContainerCmd(orphanId).exec();
+            }
+
+            new ComposeService().killAsync(context, ComposeKillOptions.builder().removeOrphans(true).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+
+            try (var client = DockerClientFactory.create(context)) {
+                String removedId = orphanId;
+                assertThrows(NotFoundException.class, () -> client.inspectContainerCmd(removedId).exec());
+            }
+        } finally {
+            if (orphanId != null) try (var client = DockerClientFactory.create(context)) {
+                try { client.removeContainerCmd(orphanId).withForce(true).exec(); }
+                catch (NotFoundException ignored) { }
+            }
         }
     }
 
