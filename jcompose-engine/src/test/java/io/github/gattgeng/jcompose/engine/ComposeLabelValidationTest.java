@@ -33,6 +33,12 @@ class ComposeLabelValidationTest {
     }
 
     @Test
+    void rejectsNegativeReplicaCountsDuringValidation() {
+        assertThrows(IllegalArgumentException.class,
+                () -> ComposeService.validateContainerNameScaling(new ServiceDefinition("app", Map.of()), -1));
+    }
+
+    @Test
     void rejectsSelectedServicesWithoutImageOrBuild() {
         ServiceDefinition profileService = new ServiceDefinition("helper", Map.of("profiles", java.util.List.of("tools")));
 

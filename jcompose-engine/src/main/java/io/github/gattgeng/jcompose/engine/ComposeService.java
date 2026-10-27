@@ -1535,6 +1535,8 @@ public final class ComposeService implements IComposeService {
     }
 
     static void validateContainerNameScaling(ServiceDefinition service, int replicas) {
+        if (replicas < 0) throw new IllegalArgumentException("Replica count must not be negative for service '"
+                + service.name() + "'.");
         if (replicas > 1 && service.configuration().get("container_name") != null)
             throw new IllegalArgumentException("Service '" + service.name()
                     + "' cannot be scaled beyond one container when container_name is set.");
@@ -1644,7 +1646,6 @@ public final class ComposeService implements IComposeService {
         validateRunnableService(service);
         validateContainerNameScaling(service, replicas);
         validateComposeLabels(stringMap(service.configuration().get("labels")));
-        if (replicas < 0) throw new IllegalArgumentException("Replica count must not be negative for service '" + service.name() + "'.");
         int effectiveStopTimeout = service.configuration().get("stop_grace_period") == null ? stopTimeoutSeconds
                 : parseDurationSeconds(String.valueOf(service.configuration().get("stop_grace_period")));
         List<Container> existing = projectContainers(client, context.projectName(), List.of(service.name()), true).stream()
@@ -4383,7 +4384,6 @@ public final class ComposeService implements IComposeService {
                     String serviceName = service.name();
                     int desired = requestedServices.contains(serviceName)
                             ? options.services().get(serviceName) : replicaCount(service);
-                    if (desired < 0) throw new IllegalArgumentException("Replica count must not be negative for service '" + serviceName + "'.");
                     validateContainerNameScaling(service, desired);
                     ensureServiceContainers(client, context, project, service, desired,
                             false, false, false, true, positiveTimeout(options.timeoutSeconds()), null);

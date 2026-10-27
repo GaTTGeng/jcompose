@@ -1100,7 +1100,7 @@ public final class ComposeFileLoader {
 
         Object deployValue = configuration.get("deploy");
         if (deployValue instanceof Map<?, ?> deploy) {
-            validateInteger(file, service, deploy, "replicas", path + ".deploy.replicas");
+            validateNonNegativeInteger(file, service, deploy, "replicas", path + ".deploy.replicas");
             validateOptionalMap(file, service, deploy, "resources", path + ".deploy.resources");
             validateOptionalMap(file, service, deploy, "restart_policy", path + ".deploy.restart_policy");
             validateOptionalMap(file, service, deploy, "update_config", path + ".deploy.update_config");
@@ -1582,6 +1582,13 @@ public final class ComposeFileLoader {
         } catch (NumberFormatException exception) {
             throw conversionFailure(file, service, path, value, "an integer value", exception);
         }
+    }
+
+    private static void validateNonNegativeInteger(Path file, String service, Map<?, ?> map, String key, String path) {
+        validateInteger(file, service, map, key, path);
+        Object value = map.get(key);
+        if (value != null && new BigInteger(String.valueOf(value)).signum() < 0)
+            throw conversionFailure(file, service, path, value, "a non-negative integer");
     }
 
     private static void validateNumeric(Path file, String service, Map<?, ?> map, String key, String path) {

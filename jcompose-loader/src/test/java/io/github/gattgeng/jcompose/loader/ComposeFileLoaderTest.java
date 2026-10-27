@@ -778,6 +778,7 @@ class ComposeFileLoaderTest {
                 Map.entry("healthcheck:\n      interval: eventually", "services.app.healthcheck.interval"),
                 Map.entry("shm_size: huge", "services.app.shm_size"),
                 Map.entry("deploy:\n      replicas: many", "services.app.deploy.replicas"),
+                Map.entry("deploy:\n      replicas: -1", "services.app.deploy.replicas"),
                 Map.entry("stop_signal: 15", "services.app.stop_signal"),
                 Map.entry("privileged: sometimes", "services.app.privileged"),
                 Map.entry("environment: invalid", "services.app.environment"),
