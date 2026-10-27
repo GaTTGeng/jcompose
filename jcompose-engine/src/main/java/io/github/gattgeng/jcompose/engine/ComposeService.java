@@ -2098,7 +2098,9 @@ public final class ComposeService implements IComposeService {
         List<com.github.dockerjava.api.model.Device> devices = deviceMappings(config.get("devices"));
         if (!devices.isEmpty()) host.withDevices(devices);
         applyDeviceCgroupRules(host, config);
-        List<String> securityOptions = asStringList(config.get("security_opt"));
+        List<String> securityOptions = new ArrayList<>(asStringList(config.get("security_opt")));
+        String credentialSpec = credentialSpecSecurityOption(service);
+        if (credentialSpec != null) securityOptions.add(credentialSpec);
         if (!securityOptions.isEmpty()) host.withSecurityOpts(securityOptions);
         List<String> groups = asStringList(config.get("group_add"));
         if (!groups.isEmpty()) host.withGroupAdd(groups);
@@ -2108,6 +2110,14 @@ public final class ComposeService implements IComposeService {
         applyBlockIoConfig(host, config.get("blkio_config"));
         applyResourceConfig(host, config);
         return host;
+    }
+
+    static String credentialSpecSecurityOption(ServiceDefinition service) {
+        Object configured = service.configuration().get("credential_spec");
+        if (!(configured instanceof Map<?, ?> spec)) return null;
+        if (spec.get("file") instanceof String file) return "credentialspec=file://" + file;
+        if (spec.get("registry") instanceof String registry) return "credentialspec=registry://" + registry;
+        return null;
     }
 
     private static void applyBlockIoConfig(com.github.dockerjava.api.model.HostConfig host, Object configured) {

@@ -181,21 +181,29 @@ class ComposeFileLoaderTest {
     }
 
     @Test
-    void diagnosesCredentialSpecsThatAreNotAppliedToDocker() throws Exception {
+    void appliesSupportedCredentialSpecFormsAndDiagnosesSwarmConfigForm() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:
-                  app:
+                  file-spec:
+                    image: windows/servercore
+                    credential_spec:
+                      file: gmsa-spec.json
+                  registry-spec:
                     image: windows/servercore
                     credential_spec:
                       registry: gmsa-spec
+                  swarm-spec:
+                    image: windows/servercore
+                    credential_spec:
+                      config: secret-config
                 """);
 
         var diagnostics = new ComposeFileLoader().load(directory, null).diagnostics();
 
         assertEquals(1, diagnostics.size());
-        assertEquals("services.app.credential_spec", diagnostics.getFirst().propertyPath());
+        assertEquals("services.swarm-spec.credential_spec.config", diagnostics.getFirst().propertyPath());
         assertEquals("unsupported-field", diagnostics.getFirst().code());
-        assertFalse(diagnostics.getFirst().message().contains("gmsa-spec"));
+        assertFalse(diagnostics.getFirst().message().contains("secret-config"));
     }
 
     @Test

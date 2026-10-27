@@ -7,7 +7,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 ## [Unreleased]
 
 ### Fixed
-- Report retained `credential_spec` values as unsupported instead of silently ignoring them during Docker operations.
+- Apply file- and registry-backed `credential_spec` values to Windows container security options, and diagnose the Swarm-only config form.
 - Honor service-level `scale` when creating/updating replica counts, require it to match `deploy.replicas` when both are set, and avoid recreating unchanged containers when only the replica count changes.
 - Apply the context compatibility flag to generated service and one-off container names, using legacy underscore separators, and recreate service containers when that mode changes.
 - Make `runAsync` with null options retain the exited one-off container by default, matching ComposeSharp's `Remove = false` default and Docker Compose's opt-in `--rm` behavior.

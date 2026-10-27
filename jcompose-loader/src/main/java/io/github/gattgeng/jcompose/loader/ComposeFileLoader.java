@@ -72,7 +72,7 @@ public final class ComposeFileLoader {
     private static final Set<String> UNSUPPORTED_SERVICE_FIELDS = Set.of(
             "secrets", "configs", "logging", "stop_signal", "stop_grace_period", "sysctls",
             "pull_policy", "dns", "dns_search", "links", "cpu_quota", "oom_kill_disable", "oom_score_adj",
-            "annotations", "extends", "develop", "credential_spec");
+            "annotations", "extends", "develop");
 
     /** Loads one Compose file. Conventional default names are discovered from the working directory upward. */
     public ComposeProject load(Path workingDirectory, String composeFileName) {
@@ -473,6 +473,11 @@ public final class ComposeFileLoader {
                                 servicePath + "." + field.getKey(), serviceName, field.getValue());
                         addDiagnostic(result, file, provenance, path, serviceName,
                                 "unsupported-field", "This service field is retained or parsed but is not applied to Docker resources.");
+                    }
+                    if ("credential_spec".equals(field.getKey()) && field.getValue() instanceof Map<?, ?> credentialSpec
+                            && meaningful(credentialSpec.get("config"))) {
+                        addDiagnostic(result, file, provenance, servicePath + ".credential_spec.config", serviceName,
+                                "unsupported-field", "The Swarm config credential spec form is not applied by the local container backend.");
                     }
                     if ("platform".equals(field.getKey()) && meaningful(field.getValue())
                             && servicePlatformUnapplied(service)) {
@@ -1070,6 +1075,7 @@ public final class ComposeFileLoader {
     private static void validateServiceFields(Path file, String service, Map<String, Object> configuration) {
         String path = "services." + service;
         validateNonNegativeInteger(file, service, configuration, "scale", path + ".scale");
+        validateCredentialSpec(file, service, configuration.get("credential_spec"), path + ".credential_spec");
         Object image = configuration.get("image");
         if (image != null && !isScalar(image))
             throw shapeFailure(file, service, path + ".image", "a scalar", image);
@@ -1156,6 +1162,17 @@ public final class ComposeFileLoader {
             for (String key : List.of("privileged", "pull", "no_cache"))
                 validateBoolean(file, service, build, key, path + ".build." + key);
         }
+    }
+
+    private static void validateCredentialSpec(Path file, String service, Object configured, String path) {
+        if (configured == null) return;
+        if (!(configured instanceof Map<?, ?> spec))
+            throw shapeFailure(file, service, path, "a mapping with one file, registry, or config string", configured);
+        List<String> forms = List.of("file", "registry", "config").stream().filter(spec::containsKey).toList();
+        if (forms.size() != 1 || !(spec.get(forms.isEmpty() ? "" : forms.getFirst()) instanceof String value)
+                || value.isBlank())
+            throw new ComposeValidationException(file, path, service,
+                    "credential_spec must contain exactly one nonblank file, registry, or config string.", null, null, null);
     }
 
     private static void validateHealthcheckTest(Path file, String service, Map<?, ?> healthcheck, String path) {
