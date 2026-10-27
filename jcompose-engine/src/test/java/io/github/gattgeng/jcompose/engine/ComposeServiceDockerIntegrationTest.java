@@ -758,6 +758,41 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void upResolvesNetworkModeServiceReferenceToCreatedContainer() throws Exception {
+        String projectName = "jcompose-service-network-mode-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: ["sh", "-c", "sleep 60"]
+                    network_mode: service:network-owner
+                  network-owner:
+                    image: busybox:1.36
+                    command: ["sh", "-c", "sleep 60"]
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            try (var client = DockerClientFactory.create(context)) {
+                var containers = client.listContainersCmd().withShowAll(true)
+                        .withLabelFilter(java.util.Map.of("com.docker.compose.project", projectName)).exec();
+                var appId = containers.stream()
+                        .filter(container -> "app".equals(container.getLabels().get("com.docker.compose.service")))
+                        .map(com.github.dockerjava.api.model.Container::getId).findFirst().orElseThrow();
+                var ownerId = containers.stream()
+                        .filter(container -> "network-owner".equals(container.getLabels().get("com.docker.compose.service")))
+                        .map(com.github.dockerjava.api.model.Container::getId).findFirst().orElseThrow();
+                assertEquals("container:" + ownerId,
+                        client.inspectContainerCmd(appId).exec().getHostConfig().getNetworkMode());
+            }
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
     void upPreservesMultipleHostIpBindingsForOneContainerPort() throws Exception {
         String projectName = "jcompose-multiple-port-bindings-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);

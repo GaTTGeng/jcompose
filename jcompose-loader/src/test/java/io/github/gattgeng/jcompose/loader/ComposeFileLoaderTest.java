@@ -79,6 +79,8 @@ class ComposeFileLoaderTest {
                       host.docker.internal: 192.0.2.1
                     devices:
                       - /dev/fuse:/dev/fuse:rwm
+                  proxy:
+                    image: alpine
                   networked:
                     image: alpine
                     networks:
@@ -88,9 +90,29 @@ class ComposeFileLoaderTest {
 
         var project = new ComposeFileLoader().load(directory, null);
 
-        assertEquals(List.of("name", "services.app.build.ssh", "services.app.network_mode", "services.app.extra_hosts",
+        assertEquals(List.of("name", "services.app.build.ssh", "services.app.extra_hosts",
                         "services.app.devices[0]"),
                 project.diagnostics().stream().map(diagnostic -> diagnostic.propertyPath()).toList());
+    }
+
+    @Test
+    void serviceNamespaceReferencesDoNotProduceUnsupportedDiagnostics() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    network_mode: service:network-owner
+                    ipc: service:ipc-owner
+                    pid: service:pid-owner
+                  network-owner:
+                    image: alpine
+                  ipc-owner:
+                    image: alpine
+                  pid-owner:
+                    image: alpine
+                """);
+
+        assertTrue(new ComposeFileLoader().load(directory, null).diagnostics().isEmpty());
     }
 
     @Test

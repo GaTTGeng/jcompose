@@ -544,10 +544,6 @@ public final class ComposeFileLoader {
                                             ? "This build option is retained but not applied to Docker."
                                             : "This build option is not retained by the loader or applied to Docker.");
                 }
-                for (String field : List.of("network_mode", "ipc", "pid"))
-                    if (service.get(field) instanceof String mode && mode.startsWith("service:"))
-                        addDiagnostic(result, file, provenance, servicePath + "." + field, serviceName,
-                                "partially-supported-field", "Service-container references are not resolved to a service container.");
                 Object extraHosts = service.get("extra_hosts");
                 if (extraHosts instanceof Map<?, ?> hostMap && !hostMap.isEmpty())
                     addDiagnostic(result, file, provenance, servicePath + ".extra_hosts", serviceName,
