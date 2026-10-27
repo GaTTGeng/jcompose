@@ -25,6 +25,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -64,8 +65,12 @@ public final class ComposeFileLoader {
             "oom_score_adj", "group_add", "annotations", "attach", "pre_start", "post_start", "pre_stop", "post_stop",
             "scale", "volumes_from", "external_links", "device_cgroup_rules", "blkio_config", "ulimits", "storage_opt",
             "isolation", "runtime", "credential_spec", "use_api_socket", "provider", "models");
+    private static final Set<String> KNOWN_BUILD_FIELDS = Set.of(
+            "context", "dockerfile", "args", "cache_from", "cache_to", "target", "tags", "labels",
+            "network", "extra_hosts", "privileged", "shm_size", "platforms", "pull", "no_cache",
+            "context_directory", "dockerfile_inline", "secrets", "ssh", "additional_contexts");
     private static final Set<String> UNSUPPORTED_SERVICE_FIELDS = Set.of(
-            "secrets", "configs", "logging", "stop_signal", "stop_grace_period", "sysctls", "platform",
+            "secrets", "configs", "logging", "stop_signal", "stop_grace_period", "sysctls",
             "pull_policy", "dns", "dns_search", "links", "cpu_quota", "oom_kill_disable", "oom_score_adj",
             "annotations", "extends", "develop");
 
@@ -462,10 +467,40 @@ public final class ComposeFileLoader {
                                 : servicePath + "[\"" + field.getKey().replace("\\", "\\\\").replace("\"", "\\\"") + "\"]";
                         addDiagnostic(result, file, provenance, propertyPath, serviceName,
                                 "unsupported-field", "This service field is not recognized and has no engine behavior.");
-                    } else if (UNSUPPORTED_SERVICE_FIELDS.contains(field.getKey()) && meaningful(field.getValue())) {
-                        addDiagnostic(result, file, provenance, servicePath + "." + field.getKey(), serviceName,
+                    } else if (UNSUPPORTED_SERVICE_FIELDS.contains(field.getKey()) && meaningful(field.getValue())
+                            && !isDefaultUnsupportedFieldValue(field.getKey(), field.getValue())) {
+                        String path = unsupportedFieldDiagnosticPath(file, provenance,
+                                servicePath + "." + field.getKey(), serviceName, field.getValue());
+                        addDiagnostic(result, file, provenance, path, serviceName,
                                 "unsupported-field", "This service field is retained or parsed but is not applied to Docker resources.");
                     }
+                    if ("platform".equals(field.getKey()) && meaningful(field.getValue())
+                            && servicePlatformUnapplied(service)) {
+                        addDiagnostic(result, file, provenance, servicePath + ".platform", serviceName,
+                                "unsupported-field", "The service platform is not applied to image pulls or container creation.");
+                    }
+                }
+                Object rawBuild = service.get("build");
+                if (rawBuild instanceof Map<?, ?> buildMap) {
+                    for (var buildField : buildMap.entrySet()) {
+                        String buildName = String.valueOf(buildField.getKey());
+                        if (!KNOWN_BUILD_FIELDS.contains(buildName) && !buildName.startsWith("x-")
+                                && meaningful(buildField.getValue()))
+                            addDiagnostic(result, file, provenance, appendPathSegment(servicePath + ".build", buildName),
+                                    serviceName, "unsupported-field", "This build option is not retained by the loader or applied to Docker.");
+                    }
+                }
+                if (service.get("env_file") instanceof List<?> envFiles) {
+                    for (int i = 0; i < envFiles.size(); i++)
+                        if (envFiles.get(i) instanceof Map<?, ?>)
+                            addDiagnostic(result, file, provenance, servicePath + ".env_file[" + i + "]", serviceName,
+                                    "partially-supported-field", "Long-form environment file options are not applied; use short syntax.");
+                }
+                if (service.get("volumes") instanceof List<?> volumes) {
+                    for (int i = 0; i < volumes.size(); i++)
+                        if (volumes.get(i) instanceof Map<?, ?>)
+                            addDiagnostic(result, file, provenance, servicePath + ".volumes[" + i + "]", serviceName,
+                                    "partially-supported-field", "Long-form service volumes are not applied correctly; use short syntax.");
                 }
                 for (String field : List.of("command", "entrypoint"))
                     if (service.get(field) instanceof String command && !command.isEmpty())
@@ -473,17 +508,28 @@ public final class ComposeFileLoader {
                                 "partially-supported-field", "Scalar commands are passed as one argument instead of shell-split arguments.");
                 Object ports = service.get("ports");
                 if (ports instanceof List<?> list) {
+                    Set<String> containerPorts = new HashSet<>();
                     for (int i = 0; i < list.size(); i++) {
-                        if (list.get(i) instanceof String port && port.chars().filter(c -> c == ':').count() >= 2)
+                        if (!(list.get(i) instanceof String port)) continue;
+                        if (port.chars().filter(c -> c == ':').count() >= 2)
                             addDiagnostic(result, file, provenance, servicePath + ".ports[" + i + "]", serviceName,
                                     "partially-supported-field", "Host IP port bindings are not preserved by the current port model.");
+                        String targetPort = targetPortKey(port);
+                        if (targetPort != null && !containerPorts.add(targetPort))
+                            addDiagnostic(result, file, provenance, servicePath + ".ports[" + i + "]", serviceName,
+                                    "partially-supported-field", "Multiple host mappings for the same container port are not applied.");
                     }
                 }
                 Object dependencies = service.get("depends_on");
                 if (dependencies instanceof Map<?, ?> dependencyMap) {
-                    for (var dependency : dependencyMap.entrySet()) if (meaningful(dependency.getValue()))
-                        addDiagnostic(result, file, provenance, servicePath + ".depends_on." + dependency.getKey(), serviceName,
-                                "partially-supported-field", "Long-form dependency conditions and options are not applied.");
+                    for (var dependency : dependencyMap.entrySet()) {
+                        String dependencyName = String.valueOf(dependency.getKey());
+                        if (meaningful(dependency.getValue())
+                                && !dependencyConditionApplied(dependency.getValue(), dependencyName, services))
+                            addDiagnostic(result, file, provenance,
+                                    appendPathSegment(servicePath + ".depends_on", dependencyName), serviceName,
+                                    "partially-supported-field", "Long-form dependency conditions and options are not applied.");
+                    }
                 }
                 Object deploy = service.get("deploy");
                 if (deploy instanceof Map<?, ?> deployMap) {
@@ -496,8 +542,12 @@ public final class ComposeFileLoader {
                     addDiagnostic(result, file, provenance, servicePath + ".build.cache_to", serviceName,
                             "partially-supported-field", "Build cache export is not applied.");
                 if (build instanceof Map<?, ?> buildMap) {
+                    if (buildMap.get("platforms") instanceof List<?> platforms && platforms.size() > 1)
+                        addDiagnostic(result, file, provenance, servicePath + ".build.platforms", serviceName,
+                                "partially-supported-field", "Docker Engine build requests support one platform at a time.");
                     for (String field : List.of("secrets", "ssh", "additional_contexts", "privileged"))
-                        if (meaningful(buildMap.get(field)))
+                        if (meaningful(buildMap.get(field))
+                                && !("privileged".equals(field) && isFalse(buildMap.get(field))))
                             addDiagnostic(result, file, provenance, servicePath + ".build." + field, serviceName,
                                     "privileged".equals(field) ? "partially-supported-field" : "unsupported-field",
                                     "privileged".equals(field)
@@ -518,18 +568,6 @@ public final class ComposeFileLoader {
                 if (extraHosts instanceof Map<?, ?> hostMap && !hostMap.isEmpty())
                     addDiagnostic(result, file, provenance, servicePath + ".extra_hosts", serviceName,
                             "partially-supported-field", "Mapping syntax loses host addresses and is not supported.");
-                Object serviceNetworks = service.get("networks");
-                if (serviceNetworks instanceof List<?> networkList && networkList.size() > 1)
-                    addDiagnostic(result, file, provenance, servicePath + ".networks", serviceName,
-                            "partially-supported-field", "Only the first declared network is attached to the service.");
-                else if (serviceNetworks instanceof Map<?, ?> networkMap) {
-                    if (networkMap.size() > 1)
-                        addDiagnostic(result, file, provenance, servicePath + ".networks", serviceName,
-                                "partially-supported-field", "Only the first declared network is attached to the service.");
-                    for (var network : networkMap.entrySet()) if (meaningful(network.getValue()))
-                        addDiagnostic(result, file, provenance, servicePath + ".networks." + network.getKey(), serviceName,
-                                "partially-supported-field", "Per-network options are not applied.");
-                }
                 Object devices = service.get("devices");
                 if (devices instanceof List<?> deviceList)
                     for (int i = 0; i < deviceList.size(); i++)
@@ -551,8 +589,8 @@ public final class ComposeFileLoader {
     private static void addResourceDiagnostics(List<ComposeDiagnostic> result, Path file, Map<String, Path> provenance,
                                                Map<String, Object> root, String section, String code, String message) {
         if (!(root.get(section) instanceof Map<?, ?> resources)) return;
-        for (var resource : resources.entrySet()) if (meaningful(resource.getValue()))
-            addDiagnostic(result, file, provenance, section + "." + resource.getKey(), null, code, message);
+        for (var resource : resources.entrySet()) if (meaningfulResourceDefinition(resource.getValue()))
+            addDiagnostic(result, file, provenance, appendPathSegment(section, String.valueOf(resource.getKey())), null, code, message);
     }
 
     private static void addDiagnostic(List<ComposeDiagnostic> result, Path file, Map<String, Path> provenance,
@@ -565,6 +603,87 @@ public final class ComposeFileLoader {
         if (value instanceof Map<?, ?> map) return map.values().stream().anyMatch(ComposeFileLoader::meaningful);
         if (value instanceof List<?> list) return list.stream().anyMatch(ComposeFileLoader::meaningful);
         return true;
+    }
+
+    private static boolean meaningfulResourceDefinition(Object value) {
+        if (!(value instanceof Map<?, ?> options)) return meaningful(value);
+        return options.entrySet().stream().anyMatch(option ->
+                !("external".equals(String.valueOf(option.getKey())) && isFalse(option.getValue()))
+                        && meaningful(option.getValue()));
+    }
+
+    private static boolean isFalse(Object value) {
+        if (Boolean.FALSE.equals(value)) return true;
+        return value instanceof String text && "false".equalsIgnoreCase(text);
+    }
+
+    private static boolean isTrue(Object value) {
+        return Boolean.TRUE.equals(value) || value instanceof String text && "true".equalsIgnoreCase(text);
+    }
+
+    private static boolean isDefaultUnsupportedFieldValue(String field, Object value) {
+        if ("privileged".equals(field) || "oom_kill_disable".equals(field)) return isFalse(value);
+        if (!Set.of("cpu_quota", "oom_score_adj").contains(field)) return false;
+        try {
+            return new BigDecimal(String.valueOf(value)).compareTo(BigDecimal.ZERO) == 0;
+        } catch (NumberFormatException ignored) {
+            return false;
+        }
+    }
+
+    private static boolean servicePlatformUnapplied(Map<String, Object> service) {
+        Object build = service.get("build");
+        if (!meaningful(build)) return true;
+        return build instanceof Map<?, ?> map && meaningful(map.get("platforms"));
+    }
+
+    private static boolean dependencyConditionApplied(Object dependencyValue, String dependencyName,
+                                                      Map<?, ?> services) {
+        if (!(dependencyValue instanceof Map<?, ?> options) || options.size() != 1
+                || !(options.get("condition") instanceof String condition)
+                || !(services.get(dependencyName) instanceof Map<?, ?> dependencyService)) return false;
+        Object rawHealthcheck = dependencyService.get("healthcheck");
+        boolean hasHealthcheck = rawHealthcheck instanceof Map<?, ?> healthcheck
+                && !isTrue(healthcheck.get("disable"))
+                && meaningful(healthcheck.get("test"))
+                && !disabledHealthcheckTest(healthcheck.get("test"));
+        return "service_healthy".equals(condition) && hasHealthcheck
+                || "service_started".equals(condition) && !hasHealthcheck;
+    }
+
+    private static boolean disabledHealthcheckTest(Object value) {
+        if (value instanceof String test) return "NONE".equalsIgnoreCase(test);
+        return value instanceof List<?> tests && !tests.isEmpty()
+                && "NONE".equalsIgnoreCase(String.valueOf(tests.getFirst()));
+    }
+
+    private static String unsupportedFieldDiagnosticPath(Path file, Map<String, Path> provenance,
+                                                          String path, String service, Object value) {
+        Path source = sourceFor(file, path, service, provenance);
+        for (String descendant : meaningfulDescendantPaths(path, value))
+            if (!sourceFor(file, descendant, service, provenance).equals(source)) return descendant;
+        return path;
+    }
+
+    private static List<String> meaningfulDescendantPaths(String path, Object value) {
+        List<String> result = new ArrayList<>();
+        if (value instanceof Map<?, ?> map) {
+            for (var entry : map.entrySet())
+                result.addAll(meaningfulDescendantPaths(appendPathSegment(path, String.valueOf(entry.getKey())), entry.getValue()));
+        } else if (value instanceof List<?> list) {
+            for (int i = 0; i < list.size(); i++) result.addAll(meaningfulDescendantPaths(path + "[" + i + "]", list.get(i)));
+        } else if (meaningful(value)) result.add(path);
+        return result;
+    }
+
+    private static String targetPortKey(String value) {
+        String text = value.trim();
+        int slash = text.lastIndexOf('/');
+        String protocol = slash < 0 ? "tcp" : text.substring(slash + 1).toLowerCase(Locale.ROOT);
+        if (slash >= 0) text = text.substring(0, slash);
+        int colon = text.lastIndexOf(':');
+        String target = colon < 0 ? text : text.substring(colon + 1);
+        return target.isBlank() ? null : target + "/" + protocol;
     }
 
     private static ComposeProject toProjectValidated(Path file, Map<String, Object> root,

@@ -8,9 +8,11 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 
 ### Added
 
-- Synced current ComposeSharp worktree changes based on `9a313d3` (not yet committed upstream): strict validation now covers direct Docker operations; field diagnostics include scalar entrypoints, unapplied build `privileged`, and additional service network attachments, while normalized scalar healthchecks and empty default-only nested values stay quiet.
+- Synced ComposeSharp validation refinements through `c718e60`: diagnose unapplied build, port, env-file, volume, platform, and dependency behavior; ignore extension/default values and preserve overlay provenance for nested diagnostics. Removed network warnings where jcompose already applies Docker Compose attachments and options. jcompose retains its Docker Compose support for inline Dockerfiles and service-platform build fallback.
 
-- Synced ComposeSharp `9a313d3` (`feat: surface unapplied configuration diagnostics`): report value-free diagnostics for unknown and partially applied Compose fields, including build options, healthcheck options, service-container references, extra hosts, network options, and device permissions; strict validation rejects projects with diagnostics before Docker operations.
+- Synced ComposeSharp changes based on `9a313d3`: strict validation now covers direct Docker operations; diagnostics include scalar entrypoints and unapplied build `privileged`, while normalized scalar healthchecks and empty default-only nested values stay quiet.
+
+- Synced ComposeSharp `9a313d3` (`feat: surface unapplied configuration diagnostics`): report value-free diagnostics for unknown and partially applied Compose fields, including build options, healthcheck options, service-container references, extra hosts, and device permissions; strict validation rejects projects with diagnostics before Docker operations.
 
 - Applied explicit `attach.detachKeys` sequences to forwarded stdin so callers can detach without sending the key bytes to the container.
 

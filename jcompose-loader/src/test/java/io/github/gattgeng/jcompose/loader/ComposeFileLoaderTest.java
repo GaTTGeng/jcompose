@@ -90,12 +90,12 @@ class ComposeFileLoaderTest {
 
         assertEquals(List.of("name", "services.app.build.ssh", "services.app.healthcheck.start_interval",
                         "services.app.network_mode", "services.app.extra_hosts",
-                        "services.app.devices[0]", "services.networked.networks.backend"),
+                        "services.app.devices[0]"),
                 project.diagnostics().stream().map(diagnostic -> diagnostic.propertyPath()).toList());
     }
 
     @Test
-    void diagnosesOnlyUnsupportedBuildAndAdditionalNetworkBehavior() throws Exception {
+    void diagnosesUnsupportedBuildAndCommandBehaviorWithoutFlaggingSupportedNetworks() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 networks:
                   front: {}
@@ -122,8 +122,7 @@ class ComposeFileLoaderTest {
 
         var diagnostics = new ComposeFileLoader().load(directory, null).diagnostics();
 
-        assertEquals(List.of("services.list.command", "services.list.entrypoint", "services.list.networks",
-                        "services.mapping.networks", "services.built.build.privileged"),
+        assertEquals(List.of("services.list.command", "services.list.entrypoint", "services.built.build.privileged"),
                 diagnostics.stream().map(diagnostic -> diagnostic.propertyPath()).toList());
         assertEquals("partially-supported-field", diagnostics.getLast().code());
     }
@@ -140,6 +139,110 @@ class ComposeFileLoaderTest {
         var diagnostic = new ComposeFileLoader().load(directory, null).diagnostics().getFirst();
 
         assertEquals("services.app[\"access.token\"]", diagnostic.propertyPath());
+    }
+
+    @Test
+    void reportsUnappliedLoaderOptionsWithoutFlaggingDefaults() throws Exception {
+        Files.writeString(directory.resolve("app.env"), "EXAMPLE=value\n");
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  built:
+                    build:
+                      context: .
+                      platforms: [linux/amd64, linux/arm64]
+                      x-cache-key: local
+                    platform: linux/amd64
+                    privileged: false
+                    oom_kill_disable: "false"
+                  image_only:
+                    image: app
+                    platform: linux/arm64
+                    env_file:
+                      - path: ./app.env
+                        required: true
+                  ports:
+                    image: app
+                    ports: ["8080:80", "8081:80"]
+                    volumes:
+                      - type: bind
+                        source: ./data
+                        target: /data
+                  api:
+                    image: api
+                    cpu_quota: 0
+                    oom_score_adj: 0
+                volumes:
+                  data:
+                    external: false
+                """);
+
+        var diagnostics = new ComposeFileLoader().load(directory, null).diagnostics();
+        var paths = diagnostics.stream().map(diagnostic -> diagnostic.propertyPath()).toList();
+
+        assertTrue(paths.containsAll(List.of("services.built.build.platforms", "services.built.platform",
+                "services.image_only.platform", "services.image_only.env_file[0]", "services.ports.ports[1]",
+                "services.ports.volumes[0]")));
+        assertEquals(6, diagnostics.size());
+    }
+
+    @Test
+    void onlyReportsDependencyConditionsThatDoNotMatchCurrentReadiness() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: app
+                    depends_on:
+                      healthy:
+                        condition: service_healthy
+                      started:
+                        condition: service_started
+                      completed:
+                        condition: service_completed_successfully
+                  healthy:
+                    image: db
+                    healthcheck:
+                      test: [CMD, "true"]
+                  started:
+                    image: cache
+                  completed:
+                    image: worker
+                """);
+
+        var diagnostic = new ComposeFileLoader().load(directory, null).diagnostics().getFirst();
+
+        assertEquals("services.app.depends_on.completed", diagnostic.propertyPath());
+    }
+
+    @Test
+    void mergedMapDiagnosticUsesOverlayValueProvenanceAndEscapedResourcePaths() throws Exception {
+        Path base = directory.resolve("compose.yaml");
+        Path overlay = directory.resolve("compose.override.yaml");
+        Files.writeString(base, """
+                services:
+                  api:
+                    image: app
+                    logging: {}
+                networks:
+                  front: {}
+                """);
+        Files.writeString(overlay, """
+                services:
+                  api:
+                    logging:
+                      driver: json-file
+                networks:
+                  front.prod:
+                    driver: bridge
+                """);
+
+        var diagnostics = new ComposeFileLoader().loadMerged(directory,
+                List.of(base.getFileName().toString(), overlay.getFileName().toString())).diagnostics();
+
+        assertEquals(2, diagnostics.size());
+        assertEquals(overlay.toAbsolutePath().normalize().toString(), diagnostics.getFirst().sourceFile());
+        assertEquals("services.api.logging.driver", diagnostics.getFirst().propertyPath());
+        assertEquals(overlay.toAbsolutePath().normalize().toString(), diagnostics.get(1).sourceFile());
+        assertEquals("networks[\"front.prod\"]", diagnostics.get(1).propertyPath());
     }
 
     @Test
