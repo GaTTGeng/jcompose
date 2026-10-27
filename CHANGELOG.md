@@ -7,6 +7,9 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 ## [Unreleased]
 
 ### Fixed
+- Honor `publishAsync`'s explicit OCI version: OCI 1.0 artifacts use the Compose config media type without the OCI 1.1 artifact type, while OCI 1.1 remains the default.
+
+### Fixed
 - Honor `ComposeKillOptions.removeOrphans` by force-removing project containers whose service names are absent from the loaded Compose project.
 - Apply file- and registry-backed `credential_spec` values to Windows container security options, and diagnose the Swarm-only config form.
 - Honor service-level `scale` when creating/updating replica counts, require it to match `deploy.replicas` when both are set, and avoid recreating unchanged containers when only the replica count changes.

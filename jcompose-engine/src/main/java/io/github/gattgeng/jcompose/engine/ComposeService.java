@@ -4790,9 +4790,9 @@ public final class ComposeService implements IComposeService {
             if (context.offline()) throw new IllegalStateException("Cannot publish when the Compose project context is offline.");
             ComposePublishOptions effectiveOptions = options == null
                     ? ComposePublishOptions.builder().build() : options;
-            if (effectiveOptions.ocIVersion() != null) {
-                throw new UnsupportedOperationException(
-                        "Custom OCI versions are not supported yet.");
+            String ociVersion = effectiveOptions.ocIVersion();
+            if (ociVersion != null && !ociVersion.equals("1.0") && !ociVersion.equals("1.1")) {
+                throw new IllegalArgumentException("OCI version must be 1.0 or 1.1.");
             }
             ComposeProject project = loadComposeProject(context);
             List<ServiceDefinition> services = allConfigurationServices(project);
@@ -4840,6 +4840,10 @@ public final class ComposeService implements IComposeService {
                         annotations,
                         land.oras.Config.empty(), land.oras.OCI.PushOptions.defaults(),
                         artifactLayers.toArray(land.oras.LocalPath[]::new));
+                if ("1.0".equals(ociVersion)) {
+                    manifest = asOci10ComposeArtifact(manifest);
+                    manifest = registry.pushManifest(target, manifest);
+                }
                 return new PublishResult(repository, manifest.getDescriptor().getDigest().toString());
             } catch (java.io.IOException exception) {
                 throw new java.io.UncheckedIOException(exception);
@@ -4847,6 +4851,12 @@ public final class ComposeService implements IComposeService {
                 deletePublishDirectory(publishDirectory);
             }
         });
+    }
+
+    static land.oras.Manifest asOci10ComposeArtifact(land.oras.Manifest manifest) {
+        return manifest.withArtifactType(null)
+                .withConfig(land.oras.Config.empty()
+                        .withMediaType("application/vnd.docker.compose.config.empty.v1+json"));
     }
 
     static void deletePublishDirectory(java.nio.file.Path directory) {

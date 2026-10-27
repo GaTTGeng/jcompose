@@ -55,15 +55,26 @@ class ComposePublishCompatibilityTest {
     }
 
     @Test
-    void rejectsUnsupportedCustomOciVersion() {
+    void rejectsInvalidCustomOciVersionBeforeDockerAccess() {
         ComposeProjectContext context = new ComposeProjectContext("publish-test", Path.of("."));
 
         CompletionException versionFailure = assertThrows(CompletionException.class,
                 () -> new ComposeService().publishAsync(context, "example/application",
-                        ComposePublishOptions.builder().ocIVersion("1.1").build()).join());
+                        ComposePublishOptions.builder().ocIVersion("2.0").build()).join());
 
-        assertEquals(UnsupportedOperationException.class, versionFailure.getCause().getClass());
-        assertEquals("Custom OCI versions are not supported yet.", versionFailure.getCause().getMessage());
+        assertEquals(IllegalArgumentException.class, versionFailure.getCause().getClass());
+        assertEquals("OCI version must be 1.0 or 1.1.", versionFailure.getCause().getMessage());
+    }
+
+    @Test
+    void createsOci10ComposeArtifactManifest() {
+        land.oras.Manifest oci11Manifest = land.oras.Manifest.empty()
+                .withArtifactType(land.oras.ArtifactType.from("application/vnd.docker.compose.project"));
+
+        land.oras.Manifest oci10Manifest = ComposeService.asOci10ComposeArtifact(oci11Manifest);
+
+        assertTrue(oci10Manifest.toJson().contains("application/vnd.docker.compose.config.empty.v1+json"));
+        assertFalse(oci10Manifest.toJson().contains("artifactType"));
     }
 
     @Test
