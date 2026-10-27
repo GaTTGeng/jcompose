@@ -1145,6 +1145,24 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void rejectsNonBooleanLongFormEnvFileRequiredValue() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: app
+                    env_file:
+                      - path: app.env
+                        required: "false"
+                """);
+
+        var exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, null));
+
+        assertEquals("services.app.env_file", exception.propertyPath());
+        assertTrue(exception.getMessage().contains("required must be a boolean"));
+    }
+
+    @Test
     void envFileBareEntryPassesThroughProcessValueOrIsOmittedWhenUnset() throws Exception {
         String variable = "JC_ENV_FILE_BARE_" + java.util.UUID.randomUUID().toString().replace("-", "");
         Files.writeString(directory.resolve("app.env"), variable + "\n");

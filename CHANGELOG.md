@@ -8,6 +8,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 
 ### Fixed
 - Removed the false partial-support diagnostic for long-form service `env_file` entries that the loader already resolves.
+- Rejected non-boolean values for long-form service `env_file.required` instead of silently treating them as enabled.
 
 ### Added
 

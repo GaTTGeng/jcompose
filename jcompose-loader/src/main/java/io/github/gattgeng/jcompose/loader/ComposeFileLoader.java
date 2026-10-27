@@ -1963,8 +1963,11 @@ public final class ComposeFileLoader {
                         throw new IOException("env_file entries must define a non-empty path.");
                     path = value;
                     Object rawRequired = mapping.get("required");
-                    if (Boolean.FALSE.equals(rawRequired) || "false".equalsIgnoreCase(String.valueOf(rawRequired)))
-                        required = false;
+                    if (rawRequired != null) {
+                        if (!(rawRequired instanceof Boolean requiredValue))
+                            throw new IOException("env_file required must be a boolean.");
+                        required = requiredValue;
+                    }
                     Object format = mapping.get("format");
                     if (format != null) {
                         if (!(format instanceof String formatName) || !"raw".equals(formatName))
