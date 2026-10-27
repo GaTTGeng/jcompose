@@ -145,6 +145,50 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void createUsesServiceScaleAndPreservesExistingReplicasWhenScalingUp() throws Exception {
+        String projectName = "jcompose-service-scale-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Path composeFile = directory.resolve("compose.yaml");
+        Files.writeString(composeFile, """
+                services:
+                  app:
+                    image: busybox:1.36
+                    scale: 1
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            service.createAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            String firstId;
+            try (var client = DockerClientFactory.create(context)) {
+                firstId = client.listContainersCmd().withShowAll(true)
+                        .withLabelFilter(java.util.Map.of("com.docker.compose.project", projectName,
+                                "com.docker.compose.service", "app"))
+                        .exec().getFirst().getId();
+            }
+
+            Files.writeString(composeFile, """
+                    services:
+                      app:
+                        image: busybox:1.36
+                        scale: 2
+                    """);
+            service.createAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+
+            try (var client = DockerClientFactory.create(context)) {
+                var containers = client.listContainersCmd().withShowAll(true)
+                        .withLabelFilter(java.util.Map.of("com.docker.compose.project", projectName,
+                                "com.docker.compose.service", "app"))
+                        .exec();
+                assertEquals(2, containers.size());
+                assertTrue(containers.stream().anyMatch(container -> firstId.equals(container.getId())));
+            }
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
     void appliesMappingFormExtraHostsToCreatedContainer() throws Exception {
         String projectName = "jcompose-extra-hosts-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);

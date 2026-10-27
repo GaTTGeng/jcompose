@@ -1069,6 +1069,7 @@ public final class ComposeFileLoader {
 
     private static void validateServiceFields(Path file, String service, Map<String, Object> configuration) {
         String path = "services." + service;
+        validateNonNegativeInteger(file, service, configuration, "scale", path + ".scale");
         Object image = configuration.get("image");
         if (image != null && !isScalar(image))
             throw shapeFailure(file, service, path + ".image", "a scalar", image);
@@ -1101,6 +1102,12 @@ public final class ComposeFileLoader {
         Object deployValue = configuration.get("deploy");
         if (deployValue instanceof Map<?, ?> deploy) {
             validateNonNegativeInteger(file, service, deploy, "replicas", path + ".deploy.replicas");
+            Object scale = configuration.get("scale");
+            Object replicas = deploy.get("replicas");
+            if (scale != null && replicas != null
+                    && !new BigInteger(String.valueOf(scale)).equals(new BigInteger(String.valueOf(replicas))))
+                throw new ComposeValidationException(file, path + ".scale", service,
+                        "scale must match deploy.replicas when both are specified.", null, null, null);
             validateOptionalMap(file, service, deploy, "resources", path + ".deploy.resources");
             validateOptionalMap(file, service, deploy, "restart_policy", path + ".deploy.restart_policy");
             validateOptionalMap(file, service, deploy, "update_config", path + ".deploy.update_config");

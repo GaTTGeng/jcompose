@@ -60,6 +60,40 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void acceptsMatchingServiceScaleAndDeployReplicas() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    scale: 2
+                    deploy:
+                      replicas: 2
+                """);
+
+        var project = new ComposeFileLoader().load(directory, null);
+
+        assertEquals(2, project.services().get("app").configuration().get("scale"));
+    }
+
+    @Test
+    void rejectsDifferentServiceScaleAndDeployReplicas() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    scale: 2
+                    deploy:
+                      replicas: 3
+                """);
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, null));
+
+        assertEquals("services.app.scale", exception.propertyPath());
+        assertEquals("app", exception.serviceName());
+    }
+
+    @Test
     void reportsKnownFieldsWhoseOptionsAreNotApplied() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 name: declared-name
@@ -777,6 +811,7 @@ class ComposeFileLoaderTest {
         for (var invalid : List.of(
                 Map.entry("healthcheck:\n      interval: eventually", "services.app.healthcheck.interval"),
                 Map.entry("shm_size: huge", "services.app.shm_size"),
+                Map.entry("scale: -1", "services.app.scale"),
                 Map.entry("deploy:\n      replicas: many", "services.app.deploy.replicas"),
                 Map.entry("deploy:\n      replicas: -1", "services.app.deploy.replicas"),
                 Map.entry("stop_signal: 15", "services.app.stop_signal"),

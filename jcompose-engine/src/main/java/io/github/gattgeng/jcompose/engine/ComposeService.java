@@ -1527,10 +1527,12 @@ public final class ComposeService implements IComposeService {
         }
     }
 
-    private static int replicaCount(ServiceDefinition service) {
+    static int replicaCount(ServiceDefinition service) {
+        Object configuredScale = service.configuration().get("scale");
+        if (configuredScale != null) return Integer.parseInt(String.valueOf(configuredScale));
         Object deploy = service.configuration().get("deploy");
-        if (deploy instanceof Map<?, ?> map && map.get("replicas") instanceof Number replicas)
-            return Math.max(0, replicas.intValue());
+        if (deploy instanceof Map<?, ?> map && map.get("replicas") != null)
+            return Integer.parseInt(String.valueOf(map.get("replicas")));
         return 1;
     }
 
@@ -3166,15 +3168,27 @@ public final class ComposeService implements IComposeService {
         return projectName + separator + service.name() + separator + index;
     }
 
-    private static String configHash(ServiceDefinition service) {
-        return configHash(service.configuration().toString());
+    static String configHash(ServiceDefinition service) {
+        return configHash(containerConfiguration(service).toString());
     }
 
     private static String configHash(ServiceDefinition service, ComposeProject project) {
         String aliases = serviceNetworks(service).stream()
                 .map(network -> network + "=" + networkAliases(project, service, network, true))
                 .collect(java.util.stream.Collectors.joining(";"));
-        return configHash(service.configuration() + "\u0000networkAliases=" + aliases);
+        return configHash(containerConfiguration(service) + "\u0000networkAliases=" + aliases);
+    }
+
+    private static Map<String, Object> containerConfiguration(ServiceDefinition service) {
+        Map<String, Object> configuration = new LinkedHashMap<>(service.configuration());
+        configuration.remove("scale");
+        if (configuration.get("deploy") instanceof Map<?, ?> rawDeploy) {
+            Map<String, Object> deploy = stringKeyMap(rawDeploy);
+            deploy.remove("replicas");
+            if (deploy.isEmpty()) configuration.remove("deploy");
+            else configuration.put("deploy", deploy);
+        }
+        return configuration;
     }
 
     private static String configHash(String configuration) {
@@ -3995,7 +4009,7 @@ public final class ComposeService implements IComposeService {
             for (ServiceDefinition service : selected) {
                 validateRunnableService(service);
                 int replicas = effective.scale() != null && effective.scale().containsKey(service.name())
-                        ? effective.scale().get(service.name()) : 1;
+                        ? effective.scale().get(service.name()) : replicaCount(service);
                 validateContainerNameScaling(service, replicas);
             }
             List<ServiceDefinition> buildServices = selected.stream()
@@ -4014,7 +4028,7 @@ public final class ComposeService implements IComposeService {
                             service.configuration().get("pull_refresh_after")))
                         pullImage(client, context.registryAuth(), image, stringValue(service.configuration().get("platform"), null));
                     int replicas = effective.scale() != null && effective.scale().containsKey(service.name())
-                            ? effective.scale().get(service.name()) : 1;
+                            ? effective.scale().get(service.name()) : replicaCount(service);
                     ensureServiceContainers(client, context, project, service, replicas,
                             effective.forceRecreate(), effective.noRecreate(), false, false,
                             positiveTimeout(effective.timeoutSeconds()), null);
