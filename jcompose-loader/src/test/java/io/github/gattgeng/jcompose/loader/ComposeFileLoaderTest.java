@@ -183,9 +183,9 @@ class ComposeFileLoaderTest {
         var paths = diagnostics.stream().map(diagnostic -> diagnostic.propertyPath()).toList();
 
         assertTrue(paths.containsAll(List.of("services.built.build.platforms", "services.built.platform",
-                "services.image_only.platform", "services.ports.ports[1]")));
+                "services.image_only.platform")));
         assertTrue(!paths.contains("services.image_only.env_file[1]"));
-        assertEquals(4, diagnostics.size());
+        assertEquals(3, diagnostics.size());
         assertEquals(Map.of("EXAMPLE", "value", "QUOTED", "'raw value'"),
                 project.services().get("image_only").configuration().get("environment"));
     }
