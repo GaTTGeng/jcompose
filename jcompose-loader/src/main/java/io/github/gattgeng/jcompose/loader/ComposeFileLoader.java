@@ -507,17 +507,6 @@ public final class ComposeFileLoader {
                     if (service.get(field) instanceof String command && !command.isEmpty())
                         addDiagnostic(result, file, provenance, servicePath + "." + field, serviceName,
                                 "partially-supported-field", "Scalar commands are passed as one argument instead of shell-split arguments.");
-                Object ports = service.get("ports");
-                if (ports instanceof List<?> list) {
-                    Set<String> containerPorts = new HashSet<>();
-                    for (int i = 0; i < list.size(); i++) {
-                        if (!(list.get(i) instanceof String port)) continue;
-                        String targetPort = targetPortKey(port);
-                        if (targetPort != null && !containerPorts.add(targetPort))
-                            addDiagnostic(result, file, provenance, servicePath + ".ports[" + i + "]", serviceName,
-                                    "partially-supported-field", "Multiple host mappings for the same container port are not applied.");
-                    }
-                }
                 Object dependencies = service.get("depends_on");
                 if (dependencies instanceof Map<?, ?> dependencyMap) {
                     for (var dependency : dependencyMap.entrySet()) {
@@ -682,16 +671,6 @@ public final class ComposeFileLoader {
             for (int i = 0; i < list.size(); i++) result.addAll(meaningfulDescendantPaths(path + "[" + i + "]", list.get(i)));
         } else if (meaningful(value)) result.add(path);
         return result;
-    }
-
-    private static String targetPortKey(String value) {
-        String text = value.trim();
-        int slash = text.lastIndexOf('/');
-        String protocol = slash < 0 ? "tcp" : text.substring(slash + 1).toLowerCase(Locale.ROOT);
-        if (slash >= 0) text = text.substring(0, slash);
-        int colon = text.lastIndexOf(':');
-        String target = colon < 0 ? text : text.substring(colon + 1);
-        return target.isBlank() ? null : target + "/" + protocol;
     }
 
     private static ComposeProject toProjectValidated(Path file, Map<String, Object> root,

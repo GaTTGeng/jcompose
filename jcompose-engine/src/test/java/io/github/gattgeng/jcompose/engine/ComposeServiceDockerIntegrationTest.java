@@ -758,6 +758,41 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void upPreservesMultipleHostIpBindingsForOneContainerPort() throws Exception {
+        String projectName = "jcompose-multiple-port-bindings-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: ["sh", "-c", "sleep 60"]
+                    ports:
+                      - "127.0.0.1:0:8080"
+                      - "127.0.0.2:0:8080"
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            try (var client = DockerClientFactory.create(context)) {
+                var containers = client.listContainersCmd().withShowAll(true)
+                        .withLabelFilter(java.util.Map.of("com.docker.compose.project", projectName)).exec();
+                assertEquals(1, containers.size());
+                var bindings = client.inspectContainerCmd(containers.getFirst().getId()).exec()
+                        .getHostConfig().getPortBindings().getBindings()
+                        .get(com.github.dockerjava.api.model.ExposedPort.tcp(8080));
+                assertEquals(2, bindings.length);
+                assertEquals(java.util.Set.of("127.0.0.1", "127.0.0.2"),
+                        java.util.Arrays.stream(bindings)
+                                .map(com.github.dockerjava.api.model.Ports.Binding::getHostIp)
+                                .collect(java.util.stream.Collectors.toSet()));
+            }
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
     void runForwardsStandardInputWhenInteractive() throws Exception {
         String projectName = "jcompose-run-stdin-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);

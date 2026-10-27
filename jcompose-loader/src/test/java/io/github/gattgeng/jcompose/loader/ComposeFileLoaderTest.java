@@ -258,6 +258,7 @@ class ComposeFileLoaderTest {
                     image: alpine
                     ports:
                       - "127.0.0.1:8080:80"
+                      - "127.0.0.2:8080:80"
                 """);
 
         assertTrue(new ComposeFileLoader().load(directory, null).diagnostics().isEmpty());
