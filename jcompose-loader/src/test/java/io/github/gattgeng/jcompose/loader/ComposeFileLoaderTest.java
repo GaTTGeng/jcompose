@@ -237,7 +237,7 @@ class ComposeFileLoaderTest {
     }
 
     @Test
-    void onlyReportsDependencyConditionsThatDoNotMatchCurrentReadiness() throws Exception {
+    void diagnosesOnlyHealthyDependenciesWithExplicitlyDisabledHealthchecks() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:
                   app:
@@ -251,6 +251,14 @@ class ComposeFileLoaderTest {
                         condition: service_started
                       completed:
                         condition: service_completed_successfully
+                      inherited:
+                        condition: service_healthy
+                      optional:
+                        condition: service_started
+                        restart: true
+                        required: false
+                      unhealthy:
+                        condition: service_healthy
                   healthy:
                     image: db
                     healthcheck:
@@ -263,11 +271,19 @@ class ComposeFileLoaderTest {
                     image: worker
                     healthcheck:
                       disable: true
+                  inherited:
+                    image: image-with-healthcheck
+                  optional:
+                    image: optional
+                  unhealthy:
+                    image: worker
+                    healthcheck:
+                      test: [NONE]
                 """);
 
         var diagnostics = new ComposeFileLoader().load(directory, null).diagnostics();
 
-        assertEquals(List.of("services.app.depends_on.started", "services.app.depends_on.completed"),
+        assertEquals(List.of("services.app.depends_on.unhealthy"),
                 diagnostics.stream().map(diagnostic -> diagnostic.propertyPath()).toList());
     }
 

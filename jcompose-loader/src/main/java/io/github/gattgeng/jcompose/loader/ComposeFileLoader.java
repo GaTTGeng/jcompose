@@ -626,18 +626,13 @@ public final class ComposeFileLoader {
 
     private static boolean dependencyConditionApplied(Object dependencyValue, String dependencyName,
                                                       Map<?, ?> services) {
-        if (!(dependencyValue instanceof Map<?, ?> options) || options.size() != 1
+        if (!(dependencyValue instanceof Map<?, ?> options)
                 || !(options.get("condition") instanceof String condition)
                 || !(services.get(dependencyName) instanceof Map<?, ?> dependencyService)) return false;
         Object rawHealthcheck = dependencyService.get("healthcheck");
-        boolean hasHealthcheck = rawHealthcheck instanceof Map<?, ?> healthcheck
-                && !isTrue(healthcheck.get("disable"))
-                && meaningful(healthcheck.get("test"))
-                && !disabledHealthcheckTest(healthcheck.get("test"));
         boolean healthcheckDisabled = rawHealthcheck instanceof Map<?, ?> healthcheck
                 && (isTrue(healthcheck.get("disable")) || disabledHealthcheckTest(healthcheck.get("test")));
-        return "service_healthy".equals(condition) && hasHealthcheck
-                || "service_started".equals(condition) && healthcheckDisabled;
+        return !"service_healthy".equals(condition) || !healthcheckDisabled;
     }
 
     private static boolean disabledHealthcheckTest(Object value) {

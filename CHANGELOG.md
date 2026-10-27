@@ -13,6 +13,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Added Docker Compose `exec` detach-key handling for interactive stdin; the configured sequence is consumed and the exec client detaches without sending those bytes into the container.
 
 ### Fixed
+- Corrected `depends_on` diagnostics to accept implemented `service_started` and `service_completed_successfully` conditions, image-inherited health checks, and supported `restart`/`required` options.
 - Removed the false partial-support diagnostic for long-form service `env_file` entries that the loader already resolves.
 - Removed the false partial-support diagnostic for mapping-form service `extra_hosts`, which the engine already applies.
 - Rejected non-boolean values for long-form service `env_file.required` instead of silently treating them as enabled.
@@ -21,7 +22,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 
 - Applied long-form named-volume `volume.nocopy` options for service and one-off `run` containers; supported long-form bind and volume mounts no longer produce blanket partial-support diagnostics.
 
-- Synced ComposeSharp validation refinements through `e0765e6`: diagnose unapplied build, port, env-file, volume, platform, and dependency behavior; ignore nested extension/default values and preserve overlay provenance for nested diagnostics. `service_started` now warns when an image may supply an inherited health check. Removed network warnings where jcompose already applies Docker Compose attachments and options. jcompose retains its Docker Compose support for inline Dockerfiles and service-platform build fallback.
+- Synced ComposeSharp validation refinements through `e0765e6`: diagnose unapplied build, port, env-file, volume, and platform behavior; ignore nested extension/default values and preserve overlay provenance for nested diagnostics. Dependency-condition diagnostics now follow Docker Compose semantics for `service_started`, image-inherited health checks, and supported long-form options. Removed network warnings where jcompose already applies Docker Compose attachments and options. jcompose retains its Docker Compose support for inline Dockerfiles and service-platform build fallback.
 
 - Synced ComposeSharp changes based on `9a313d3`: strict validation now covers direct Docker operations; diagnostics include scalar entrypoints and unapplied build `privileged`, while normalized scalar healthchecks and empty default-only nested values stay quiet.
 

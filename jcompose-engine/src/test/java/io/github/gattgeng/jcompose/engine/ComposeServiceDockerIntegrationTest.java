@@ -1419,6 +1419,51 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void serviceStartedDoesNotWaitForAnInheritedHealthcheck() throws Exception {
+        String projectName = "jcompose-dependency-started-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("Dockerfile"), """
+                FROM busybox:1.36
+                HEALTHCHECK --interval=1s --timeout=1s --start-period=1m --retries=3 CMD false
+                CMD ["sleep", "60"]
+                """);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: ["sleep", "60"]
+                    depends_on:
+                      database:
+                        condition: service_started
+                  database:
+                    build: .
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            service.upAsync(context, io.github.gattgeng.jcompose.api.ComposeUpOptions.builder()
+                            .dependencyWaitTimeoutSeconds(5).build())
+                    .get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            try (var client = DockerClientFactory.create(context)) {
+                var containers = client.listContainersCmd().withShowAll(true)
+                        .withLabelFilter(java.util.Map.of("com.docker.compose.project", projectName))
+                        .exec();
+                var database = containers.stream()
+                        .filter(container -> "database".equals(container.getLabels().get("com.docker.compose.service")))
+                        .findFirst().orElseThrow();
+                var app = containers.stream()
+                        .filter(container -> "app".equals(container.getLabels().get("com.docker.compose.service")))
+                        .findFirst().orElseThrow();
+                assertEquals("starting", client.inspectContainerCmd(database.getId()).exec()
+                        .getState().getHealth().getStatus());
+                assertTrue(client.inspectContainerCmd(app.getId()).exec().getState().getRunning());
+            }
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
     void commitCreatesTaggedImageThroughDockerEngine() throws Exception {
         String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         String projectName = "jcompose-managed-commit-" + suffix;
