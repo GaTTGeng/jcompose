@@ -557,12 +557,6 @@ public final class ComposeFileLoader {
                                             ? "This build option is retained but not applied to Docker."
                                             : "This build option is not retained by the loader or applied to Docker.");
                 }
-                Object healthcheck = service.get("healthcheck");
-                if (healthcheck instanceof Map<?, ?> healthcheckMap) {
-                    if (meaningful(healthcheckMap.get("start_interval")))
-                        addDiagnostic(result, file, provenance, servicePath + ".healthcheck.start_interval", serviceName,
-                                "unsupported-field", "Health check start_interval is not retained or applied.");
-                }
                 for (String field : List.of("network_mode", "ipc", "pid"))
                     if (service.get(field) instanceof String mode && mode.startsWith("service:"))
                         addDiagnostic(result, file, provenance, servicePath + "." + field, serviceName,
