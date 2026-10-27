@@ -251,6 +251,19 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void shortSyntaxHostIpPortBindingsDoNotProduceUnsupportedDiagnostics() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    ports:
+                      - "127.0.0.1:8080:80"
+                """);
+
+        assertTrue(new ComposeFileLoader().load(directory, null).diagnostics().isEmpty());
+    }
+
+    @Test
     void nestedExtensionFieldsDoNotProduceDiagnostics() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 volumes:

@@ -512,9 +512,6 @@ public final class ComposeFileLoader {
                     Set<String> containerPorts = new HashSet<>();
                     for (int i = 0; i < list.size(); i++) {
                         if (!(list.get(i) instanceof String port)) continue;
-                        if (port.chars().filter(c -> c == ':').count() >= 2)
-                            addDiagnostic(result, file, provenance, servicePath + ".ports[" + i + "]", serviceName,
-                                    "partially-supported-field", "Host IP port bindings are not preserved by the current port model.");
                         String targetPort = targetPortKey(port);
                         if (targetPort != null && !containerPorts.add(targetPort))
                             addDiagnostic(result, file, provenance, servicePath + ".ports[" + i + "]", serviceName,
