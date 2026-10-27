@@ -3712,6 +3712,33 @@ public final class ComposeService implements IComposeService {
         return hosts;
     }
 
+    static Map<String, String> buildArgs(Object configured, Map<String, String> processEnvironment,
+                                         Map<String, String> projectEnvironment, Map<String, String> overrides) {
+        Map<String, String> arguments = new LinkedHashMap<>();
+        if (configured instanceof Map<?, ?> mapping) {
+            mapping.forEach((key, value) -> {
+                String name = String.valueOf(key);
+                if (value != null) arguments.put(name, String.valueOf(value));
+                else {
+                    String resolved = processEnvironment.get(name);
+                    if (resolved == null) resolved = projectEnvironment.get(name);
+                    if (resolved != null) arguments.put(name, resolved);
+                }
+            });
+        } else if (configured instanceof List<?> list) {
+            for (Object item : list) {
+                String pair = String.valueOf(item);
+                int separator = pair.indexOf('=');
+                String name = separator < 0 ? pair : pair.substring(0, separator);
+                String value = separator < 0 ? processEnvironment.getOrDefault(name, projectEnvironment.get(name))
+                        : pair.substring(separator + 1);
+                if (value != null) arguments.put(name, value);
+            }
+        }
+        if (overrides != null) arguments.putAll(overrides);
+        return arguments;
+    }
+
     private record ProjectResources(java.util.Set<String> networks, java.util.Set<String> volumes,
                                     java.util.Set<String> services) { }
 
@@ -3772,8 +3799,8 @@ public final class ComposeService implements IComposeService {
                         String platform = options != null && options.platform() != null
                                 ? options.platform() : buildPlatform(service, build);
                         if (platform != null) command.withPlatform(platform);
-                        Map<String, String> buildArgs = new LinkedHashMap<>(stringMap(build.get("args")));
-                        if (options != null && options.buildArgs() != null) buildArgs.putAll(options.buildArgs());
+                        Map<String, String> buildArgs = buildArgs(build.get("args"), System.getenv(), project.environment(),
+                                options == null ? null : options.buildArgs());
                         buildArgs.forEach(command::withBuildArg);
                         Map<String, String> labels = new LinkedHashMap<>(stringMap(build.get("labels")));
                         if (options != null && options.labels() != null) labels.putAll(options.labels());

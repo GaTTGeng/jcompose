@@ -73,6 +73,8 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 
 ### Fixed
 
+- Resolved key-only `build.args` from the host environment first and the project's `.env` values second, while preserving explicit Compose and operation-level argument precedence.
+
 - Stopped reporting `healthcheck.start_interval` as unsupported; the loader retains it and Docker container creation already applies it.
 
 - Verified that service `restart: on-failure:N` applies Docker's maximum retry count; malformed and out-of-range counts are rejected during loading.

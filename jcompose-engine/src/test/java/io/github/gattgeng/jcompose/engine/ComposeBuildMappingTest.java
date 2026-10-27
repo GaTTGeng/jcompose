@@ -40,6 +40,27 @@ class ComposeBuildMappingTest {
     }
 
     @Test
+    void resolvesOmittedBuildArgsFromProcessThenProjectEnvironment() {
+        Map<String, Object> configured = new LinkedHashMap<>();
+        configured.put("PROCESS_VALUE", null);
+        configured.put("DOTENV_VALUE", null);
+        configured.put("EXPLICIT_VALUE", "compose");
+        Map<String, String> process = Map.of("PROCESS_VALUE", "process", "EXPLICIT_VALUE", "process");
+        Map<String, String> project = Map.of("PROCESS_VALUE", "dotenv", "DOTENV_VALUE", "dotenv");
+
+        assertEquals(Map.of("PROCESS_VALUE", "process", "DOTENV_VALUE", "dotenv", "EXPLICIT_VALUE", "compose"),
+                ComposeService.buildArgs(configured, process, project, null));
+    }
+
+    @Test
+    void resolvesListBuildArgsAndAppliesOperationOverridesLast() {
+        assertEquals(Map.of("DOTENV_VALUE", "override", "EMPTY_VALUE", ""),
+                ComposeService.buildArgs(List.of("DOTENV_VALUE", "EMPTY_VALUE="), Map.of(),
+                        Map.of("DOTENV_VALUE", "dotenv", "EMPTY_VALUE", "dotenv"),
+                        Map.of("DOTENV_VALUE", "override")));
+    }
+
+    @Test
     void includesPrimaryImageAndAllDistinctBuildTags() {
         assertEquals(List.of("example/app:latest", "example/app:stable", "example/app:release"),
                 List.copyOf(ComposeService.buildTags("example/app:latest",
