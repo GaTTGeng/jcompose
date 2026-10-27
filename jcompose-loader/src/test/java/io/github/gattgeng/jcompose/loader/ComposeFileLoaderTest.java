@@ -382,7 +382,7 @@ class ComposeFileLoaderTest {
                       driver: json-file
                 networks:
                   front.prod:
-                    driver: bridge
+                    custom_option: retained
                 """);
 
         var diagnostics = new ComposeFileLoader().loadMerged(directory,
@@ -392,7 +392,7 @@ class ComposeFileLoaderTest {
         assertEquals(overlay.toAbsolutePath().normalize().toString(), diagnostics.getFirst().sourceFile());
         assertEquals("services.api.logging.driver", diagnostics.getFirst().propertyPath());
         assertEquals(overlay.toAbsolutePath().normalize().toString(), diagnostics.get(1).sourceFile());
-        assertEquals("networks[\"front.prod\"]", diagnostics.get(1).propertyPath());
+        assertEquals("networks[\"front.prod\"].custom_option", diagnostics.get(1).propertyPath());
     }
 
     @Test
