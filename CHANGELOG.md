@@ -6,6 +6,9 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 
 ## [Unreleased]
 
+### Fixed
+- Removed the false partial-support diagnostic for long-form service `env_file` entries that the loader already resolves.
+
 ### Added
 
 - Applied long-form named-volume `volume.subpath` options to Docker Engine mounts for service and one-off `run` containers. The configured subdirectory must already exist in the volume.

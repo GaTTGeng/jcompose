@@ -142,7 +142,7 @@ class ComposeFileLoaderTest {
 
     @Test
     void reportsUnappliedLoaderOptionsWithoutFlaggingDefaults() throws Exception {
-        Files.writeString(directory.resolve("app.env"), "EXAMPLE=value\n");
+        Files.writeString(directory.resolve("app.env"), "EXAMPLE=value\nQUOTED='raw value'\n");
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:
                   built:
@@ -157,8 +157,11 @@ class ComposeFileLoaderTest {
                     image: app
                     platform: linux/arm64
                     env_file:
+                      - path: ./missing.env
+                        required: false
                       - path: ./app.env
                         required: true
+                        format: raw
                   ports:
                     image: app
                     ports: ["8080:80", "8081:80"]
@@ -175,12 +178,16 @@ class ComposeFileLoaderTest {
                     external: false
                 """);
 
-        var diagnostics = new ComposeFileLoader().load(directory, null).diagnostics();
+        var project = new ComposeFileLoader().load(directory, null);
+        var diagnostics = project.diagnostics();
         var paths = diagnostics.stream().map(diagnostic -> diagnostic.propertyPath()).toList();
 
         assertTrue(paths.containsAll(List.of("services.built.build.platforms", "services.built.platform",
-                "services.image_only.platform", "services.image_only.env_file[0]", "services.ports.ports[1]")));
-        assertEquals(5, diagnostics.size());
+                "services.image_only.platform", "services.ports.ports[1]")));
+        assertTrue(!paths.contains("services.image_only.env_file[1]"));
+        assertEquals(4, diagnostics.size());
+        assertEquals(Map.of("EXAMPLE", "value", "QUOTED", "'raw value'"),
+                project.services().get("image_only").configuration().get("environment"));
     }
 
     @Test

@@ -490,12 +490,6 @@ public final class ComposeFileLoader {
                                     serviceName, "unsupported-field", "This build option is not retained by the loader or applied to Docker.");
                     }
                 }
-                if (service.get("env_file") instanceof List<?> envFiles) {
-                    for (int i = 0; i < envFiles.size(); i++)
-                        if (envFiles.get(i) instanceof Map<?, ?>)
-                            addDiagnostic(result, file, provenance, servicePath + ".env_file[" + i + "]", serviceName,
-                                    "partially-supported-field", "Long-form environment file options are not applied; use short syntax.");
-                }
                 if (service.get("volumes") instanceof List<?> volumes) {
                     for (int i = 0; i < volumes.size(); i++) {
                         if (volumes.get(i) instanceof Map<?, ?> mount) {
