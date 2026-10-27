@@ -1436,11 +1436,15 @@ class ComposeServiceDockerIntegrationTest {
                       database:
                         condition: service_started
                   database:
+                    image: %s-database:latest
                     build: .
-                """);
+                """.formatted(projectName));
 
         IComposeService service = new ComposeService();
         try {
+            service.buildAsync(context, io.github.gattgeng.jcompose.api.ComposeBuildOptions.builder()
+                            .services(java.util.List.of("database")).build())
+                    .get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
             service.upAsync(context, io.github.gattgeng.jcompose.api.ComposeUpOptions.builder()
                             .dependencyWaitTimeoutSeconds(5).build())
                     .get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
