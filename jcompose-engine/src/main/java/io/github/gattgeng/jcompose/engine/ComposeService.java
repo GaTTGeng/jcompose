@@ -4058,8 +4058,10 @@ public final class ComposeService implements IComposeService {
                     pullImage(client, context.registryAuth(), image, stringValue(service.configuration().get("platform"), null));
 
                 int index = effective.index() == null ? 0 : effective.index();
+                String separator = context.compatibility() ? "_" : "-";
                 String name = effective.name() == null || effective.name().isBlank()
-                        ? context.projectName() + "-" + serviceName + "-run-" + java.util.UUID.randomUUID().toString().substring(0, 8)
+                        ? context.projectName() + separator + serviceName + separator + "run" + separator
+                                + java.util.UUID.randomUUID().toString().substring(0, 8)
                         : effective.name();
                 Map<String, String> labels = new LinkedHashMap<>();
                 labels.put(ComposeConstants.PROJECT_LABEL, context.projectName());

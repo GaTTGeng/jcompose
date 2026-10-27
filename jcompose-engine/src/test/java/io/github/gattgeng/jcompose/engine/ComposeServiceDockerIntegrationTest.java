@@ -80,6 +80,7 @@ class ComposeServiceDockerIntegrationTest {
                 """);
 
         IComposeService service = new ComposeService();
+        String runContainerId = null;
         try {
             service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
             try (var client = DockerClientFactory.create(context)) {
@@ -89,7 +90,19 @@ class ComposeServiceDockerIntegrationTest {
                         .findFirst().orElseThrow();
                 assertTrue(java.util.Arrays.asList(container.getNames()).contains("/" + projectName + "_web_1"));
             }
+            runContainerId = service.runAsync(context, "web", ComposeRunOptions.builder()
+                            .command(java.util.List.of("true")).noDeps(true).detach(true).tty(false).interactive(false).build())
+                    .get(Duration.ofSeconds(45).toMillis(), TimeUnit.MILLISECONDS);
+            try (var client = DockerClientFactory.create(context)) {
+                String runName = client.inspectContainerCmd(runContainerId).exec().getName();
+                String runNamePrefix = "/" + projectName + "_web_run_";
+                assertTrue(runName.startsWith(runNamePrefix));
+                assertEquals(runNamePrefix.length() + 8, runName.length());
+            }
         } finally {
+            if (runContainerId != null) try (var client = DockerClientFactory.create(context)) {
+                client.removeContainerCmd(runContainerId).withForce(true).withRemoveVolumes(false).exec();
+            }
             service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
         }
     }
