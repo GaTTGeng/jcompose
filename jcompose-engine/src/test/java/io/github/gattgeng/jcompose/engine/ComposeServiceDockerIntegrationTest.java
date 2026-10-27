@@ -1,7 +1,9 @@
 package io.github.gattgeng.jcompose.engine;
 
+import com.github.dockerjava.api.exception.NotFoundException;
 import io.github.gattgeng.jcompose.api.ComposeEvent;
 import io.github.gattgeng.jcompose.api.ComposeCopyOptions;
+import io.github.gattgeng.jcompose.api.ComposeCommitOptions;
 import io.github.gattgeng.jcompose.api.ComposeDownOptions;
 import io.github.gattgeng.jcompose.api.ComposeExecOptions;
 import io.github.gattgeng.jcompose.api.ComposeExportOptions;
@@ -1313,6 +1315,49 @@ class ComposeServiceDockerIntegrationTest {
             assertTrue(cause.getMessage().contains("database"));
         } finally {
             service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
+    void commitCreatesTaggedImageThroughDockerEngine() throws Exception {
+        String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        String projectName = "jcompose-managed-commit-" + suffix;
+        String reference = "jcompose-managed-commit-image-" + suffix + ":latest";
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: ["sleep", "300"]
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            service.execAsync(context, "app", ComposeExecOptions.builder()
+                            .command(java.util.List.of("sh", "-c", "echo committed > /marker")).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+
+            String imageReference = service.commitAsync(context, ComposeCommitOptions.builder()
+                            .service("app").reference(reference).author("jcompose tests")
+                            .message("managed commit").pause(true).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+
+            assertEquals(reference, imageReference);
+            try (var client = DockerClientFactory.create(context)) {
+                var image = client.inspectImageCmd(reference).exec();
+                assertTrue(image.getRepoTags() != null && java.util.Arrays.asList(image.getRepoTags()).contains(reference));
+            }
+        } finally {
+            try {
+                service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+            } finally {
+                try (var client = DockerClientFactory.create(context)) {
+                    try {
+                        client.removeImageCmd(reference).withForce(true).exec();
+                    } catch (NotFoundException ignored) { }
+                }
+            }
         }
     }
 
