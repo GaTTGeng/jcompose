@@ -7,6 +7,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 ## [Unreleased]
 
 ### Fixed
+- Apply the context compatibility flag to generated service container names, using legacy underscore separators.
 - Make `runAsync` with null options retain the exited one-off container by default, matching ComposeSharp's `Remove = false` default and Docker Compose's opt-in `--rm` behavior.
 
 ### Changed

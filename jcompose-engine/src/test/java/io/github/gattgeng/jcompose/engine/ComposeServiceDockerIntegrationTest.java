@@ -68,6 +68,33 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void compatibilityModeUsesLegacyServiceContainerNameSeparators() throws Exception {
+        String projectName = "jcompose-compatibility-names-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory, "compose.yaml",
+                null, null, null, false, true);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  web:
+                    image: busybox:1.36
+                    command: ["sh", "-c", "sleep 60"]
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            try (var client = DockerClientFactory.create(context)) {
+                var container = client.listContainersCmd().withShowAll(true)
+                        .withLabelFilter(java.util.Map.of("com.docker.compose.project", projectName)).exec()
+                        .stream().filter(candidate -> "web".equals(candidate.getLabels().get("com.docker.compose.service")))
+                        .findFirst().orElseThrow();
+                assertTrue(java.util.Arrays.asList(container.getNames()).contains("/" + projectName + "_web_1"));
+            }
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
     void appliesOnFailureRetryCountToCreatedContainer() throws Exception {
         String projectName = "jcompose-restart-retries-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);

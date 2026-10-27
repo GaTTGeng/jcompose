@@ -1735,7 +1735,7 @@ public final class ComposeService implements IComposeService {
 
             com.github.dockerjava.api.model.HostConfig host = serviceHostConfig(client, project, context.projectName(), service,
                     anonymousVolumes.getOrDefault(index, Map.of()));
-            var command = client.createContainerCmd(image).withName(containerName(context.projectName(), service, replicas, index))
+            var command = client.createContainerCmd(image).withName(containerName(context.projectName(), service, replicas, index, context.compatibility()))
                     .withLabels(labels).withHostConfig(host);
             com.github.dockerjava.api.model.HealthCheck healthcheck = serviceHealthcheck(service);
             if (healthcheck != null) command.withHealthcheck(healthcheck);
@@ -1774,7 +1774,7 @@ public final class ComposeService implements IComposeService {
                 client.startContainerCmd(id).exec();
                 runLifecycleHooks(client, id, service, "post_start");
             }
-            if (logConsumer != null) logConsumer.onStatus(service.name(), (start ? "Started " : "Created ") + containerName(context.projectName(), service, replicas, index));
+            if (logConsumer != null) logConsumer.onStatus(service.name(), (start ? "Started " : "Created ") + containerName(context.projectName(), service, replicas, index, context.compatibility()));
         }
     }
 
@@ -3156,10 +3156,11 @@ public final class ComposeService implements IComposeService {
         return List.of(String.valueOf(value));
     }
 
-    private static String containerName(String projectName, ServiceDefinition service, int replicas, int index) {
+    private static String containerName(String projectName, ServiceDefinition service, int replicas, int index, boolean compatibility) {
         if (replicas == 1 && service.configuration().get("container_name") != null)
             return String.valueOf(service.configuration().get("container_name"));
-        return projectName + "-" + service.name() + "-" + index;
+        String separator = compatibility ? "_" : "-";
+        return projectName + separator + service.name() + separator + index;
     }
 
     private static String configHash(ServiceDefinition service) {
