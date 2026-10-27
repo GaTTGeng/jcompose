@@ -1,8 +1,10 @@
 package io.github.gattgeng.jcompose.engine;
 
 import io.github.gattgeng.jcompose.api.ComposeEvent;
+import io.github.gattgeng.jcompose.api.ComposeCopyOptions;
 import io.github.gattgeng.jcompose.api.ComposeDownOptions;
 import io.github.gattgeng.jcompose.api.ComposeExecOptions;
+import io.github.gattgeng.jcompose.api.ComposeExportOptions;
 import io.github.gattgeng.jcompose.api.ComposeEventsOptions;
 import io.github.gattgeng.jcompose.api.ComposeListOptions;
 import io.github.gattgeng.jcompose.api.ComposePauseOptions;
@@ -16,6 +18,8 @@ import io.github.gattgeng.jcompose.api.ComposeTopOptions;
 import io.github.gattgeng.jcompose.api.ComposeUpOptions;
 import io.github.gattgeng.jcompose.api.IComposeService;
 import io.github.gattgeng.jcompose.api.ILogConsumer;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -82,6 +86,85 @@ class ComposeServiceDockerIntegrationTest {
             }
         } finally {
             service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
+    void copiesAndExportsFilesThroughDockerArchiveEndpoints() throws Exception {
+        String projectName = "jcompose-archive-transfer-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        String contents = "archive-data";
+        Path sourcePath = directory.resolve("fixture.txt");
+        Path copiedDirectory = directory.resolve("copied");
+        Path exportPath = directory.resolve("filesystem.tar");
+        Path stoppedExportPath = directory.resolve("stopped-filesystem.tar");
+        Files.writeString(sourcePath, contents);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: ["sh", "-c", "mkdir -p /data && sleep 300"]
+                    deploy:
+                      replicas: 2
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            var intoContainer = service.copyAsync(context, ComposeCopyOptions.builder()
+                    .source(sourcePath.toString()).destination("app:/data").all(true).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertEquals(contents.length() * 2L, intoContainer.bytesCopied());
+            assertEquals(0, intoContainer.exitCode());
+
+            var outOfContainer = service.copyAsync(context, ComposeCopyOptions.builder()
+                    .source("app:/data").destination(copiedDirectory.toString()).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertTrue(outOfContainer.directory());
+            assertEquals(contents.length(), outOfContainer.bytesCopied());
+            assertEquals(contents, Files.readString(copiedDirectory.resolve("data/fixture.txt")));
+
+            Path secondReplicaDirectory = directory.resolve("copied-replica-two");
+            service.copyAsync(context, ComposeCopyOptions.builder().source("app:/data")
+                            .destination(secondReplicaDirectory.toString()).index(2).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertEquals(contents, Files.readString(secondReplicaDirectory.resolve("data/fixture.txt")));
+
+            service.exportAsync(context, ComposeExportOptions.builder().service("app")
+                            .outputPath(exportPath.toString()).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertTrue(archiveContains(exportPath, "data/fixture.txt"));
+
+            service.stopAsync(context, null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            var copiedToStoppedContainer = service.copyAsync(context, ComposeCopyOptions.builder()
+                    .source(sourcePath.toString()).destination("app:/data").all(true).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertEquals(contents.length() * 2L, copiedToStoppedContainer.bytesCopied());
+
+            Path stoppedCopy = directory.resolve("stopped-copy");
+            service.copyAsync(context, ComposeCopyOptions.builder().source("app:/data")
+                            .destination(stoppedCopy.toString()).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertEquals(contents, Files.readString(stoppedCopy.resolve("data/fixture.txt")));
+
+            service.exportAsync(context, ComposeExportOptions.builder().service("app")
+                            .outputPath(stoppedExportPath.toString()).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertTrue(Files.size(stoppedExportPath) > 0);
+        } finally {
+            service.downAsync(context, ComposeDownOptions.builder().removeVolumes(true).build())
+                    .get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    private static boolean archiveContains(Path archivePath, String expectedPath) throws Exception {
+        try (var input = Files.newInputStream(archivePath);
+             var archive = new TarArchiveInputStream(input)) {
+            TarArchiveEntry entry;
+            while ((entry = archive.getNextEntry()) != null) {
+                if (entry.getName().replace('\\', '/').replaceFirst("^/+", "").endsWith(expectedPath)) return true;
+            }
+            return false;
         }
     }
 
