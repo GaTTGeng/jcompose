@@ -235,6 +235,56 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void appliesLongFormVolumeNoCopyToServiceAndRunContainers() throws Exception {
+        String projectName = "jcompose-volume-nocopy-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: [sh, -c, 'sleep 300']
+                    volumes:
+                      - type: volume
+                        source: data
+                        target: /data
+                        volume:
+                          nocopy: true
+                volumes:
+                  data: {}
+                """);
+
+        IComposeService service = new ComposeService();
+        String runContainerId = null;
+        try {
+            service.createAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            try (var client = DockerClientFactory.create(context)) {
+                var containers = client.listContainersCmd().withShowAll(true)
+                        .withLabelFilter(java.util.Map.of("com.docker.compose.project", projectName,
+                                "com.docker.compose.service", "app"))
+                        .exec();
+                assertNoCopyVolume(client.inspectContainerCmd(containers.getFirst().getId()).exec().getHostConfig());
+            }
+
+            runContainerId = service.runAsync(context, "app", ComposeRunOptions.builder()
+                            .noDeps(true).detach(true).tty(false).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            try (var client = DockerClientFactory.create(context)) {
+                assertNoCopyVolume(client.inspectContainerCmd(runContainerId).exec().getHostConfig());
+            }
+        } finally {
+            if (runContainerId != null) try (var client = DockerClientFactory.create(context)) {
+                client.removeContainerCmd(runContainerId).withForce(true).withRemoveVolumes(true).exec();
+            }
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    private static void assertNoCopyVolume(com.github.dockerjava.api.model.HostConfig config) {
+        assertTrue(config.getMounts().stream().anyMatch(mount -> "/data".equals(mount.getTarget())
+                && mount.getVolumeOptions() != null && Boolean.TRUE.equals(mount.getVolumeOptions().getNoCopy())));
+    }
+
+    @Test
     void scaleStartsDependenciesUnlessNoDepsIsSet() throws Exception {
         String projectName = "jcompose-scale-deps-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
