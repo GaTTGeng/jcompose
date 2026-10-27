@@ -14,6 +14,7 @@ import java.util.Objects;
  * @param workdir Working directory for the command inside the container.
  * @param tty Allocate a TTY for the command.
  * @param interactive Keep standard input open for the command.
+ * @param detachKeys Key sequence that detaches the client, in Docker's detach-keys format; null uses Docker's default.
  */
 public record ComposeExecOptions(
         List<String> command,
@@ -24,11 +25,18 @@ public record ComposeExecOptions(
         String user,
         String workdir,
         boolean tty,
-        boolean interactive) {
+        boolean interactive,
+        String detachKeys) {
     public ComposeExecOptions {
         Objects.requireNonNull(command, "command");
         command = command == null ? null : List.copyOf(command);
         env = env == null ? null : List.copyOf(env);
+    }
+
+    /** Preserves the original constructor for callers compiled against the initial options shape. */
+    public ComposeExecOptions(List<String> command, boolean detach, List<String> env, Integer index,
+                              boolean privileged, String user, String workdir, boolean tty, boolean interactive) {
+        this(command, detach, env, index, privileged, user, workdir, tty, interactive, null);
     }
 
     public static Builder builder() { return new Builder(); }
@@ -42,8 +50,9 @@ public record ComposeExecOptions(
         private boolean privileged;
         private String user;
         private String workdir;
-        private boolean tty;
-        private boolean interactive;
+        private boolean tty = true;
+        private boolean interactive = true;
+        private String detachKeys;
 
         /**
          * Command and arguments to run inside the container.
@@ -108,7 +117,14 @@ public record ComposeExecOptions(
          */
         public Builder interactive(boolean value) { this.interactive = value; return this; }
 
+        /**
+         * Key sequence that detaches the client, in Docker's detach-keys format.
+         * @param value Key sequence that detaches the client; null uses Docker's default
+         * @return this builder
+         */
+        public Builder detachKeys(String value) { this.detachKeys = value; return this; }
+
         /** @return the immutable operation options */
-        public ComposeExecOptions build() { return new ComposeExecOptions(command, detach, env, index, privileged, user, workdir, tty, interactive); }
+        public ComposeExecOptions build() { return new ComposeExecOptions(command, detach, env, index, privileged, user, workdir, tty, interactive, detachKeys); }
     }
 }

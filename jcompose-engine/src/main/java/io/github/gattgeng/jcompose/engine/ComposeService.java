@@ -4201,6 +4201,7 @@ public final class ComposeService implements IComposeService {
             java.util.Objects.requireNonNull(options, "options");
             if (service == null || service.isBlank()) throw new IllegalArgumentException("Service must not be blank.");
             if (options.command().isEmpty()) throw new IllegalArgumentException("Exec command must not be empty.");
+            if (options.detachKeys() != null) DetachKeyInputStream.parse(options.detachKeys());
             try (DockerClient client = createDockerClient(context)) {
                 List<Container> running = projectContainers(client, context.projectName(), List.of(service), false).stream()
                         .filter(container -> !"true".equalsIgnoreCase(label(container, ComposeConstants.ONE_OFF_LABEL)))
@@ -4216,14 +4217,26 @@ public final class ComposeService implements IComposeService {
                 if (options.workdir() != null) create.withWorkingDir(options.workdir());
                 String execId = create.exec().getId();
                 var start = client.execStartCmd(execId).withDetach(options.detach()).withTty(options.tty());
-                if (options.interactive()) start.withStdIn(System.in);
                 if (options.detach()) {
                     start.exec(new Adapter<>());
                     return new ExecResult(0, "", "");
                 }
                 ExecOutput callback = new ExecOutput();
+                java.util.concurrent.atomic.AtomicBoolean detached = new java.util.concurrent.atomic.AtomicBoolean();
+                if (options.interactive()) {
+                    String detachKeys = options.detachKeys() == null ? "ctrl-p,ctrl-q" : options.detachKeys();
+                    start.withStdIn(new DetachKeyInputStream(System.in, detachKeys, () -> {
+                        detached.set(true);
+                        try {
+                            callback.close();
+                        } catch (java.io.IOException exception) {
+                            throw new java.io.UncheckedIOException(exception);
+                        }
+                    }));
+                }
                 start.exec(callback);
                 await(callback);
+                if (detached.get()) return new ExecResult(0, callback.stdout.toString(), callback.stderr.toString());
                 var inspected = client.inspectExecCmd(execId).exec();
                 int exitCode = inspected.getExitCode() == null ? -1 : inspected.getExitCode();
                 return new ExecResult(exitCode, callback.stdout.toString(), callback.stderr.toString());

@@ -6,11 +6,16 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 
 ## [Unreleased]
 
-### Fixed
-- Removed the false partial-support diagnostic for long-form service `env_file` entries that the loader already resolves.
-- Rejected non-boolean values for long-form service `env_file.required` instead of silently treating them as enabled.
+### Changed
+- Matched Docker Compose `exec` defaults by enabling interactive stdin and TTY allocation in the options builder; callers can disable either explicitly.
 
 ### Added
+- Added Docker Compose `exec` detach-key handling for interactive stdin; the configured sequence is consumed and the exec client detaches without sending those bytes into the container.
+
+### Fixed
+- Removed the false partial-support diagnostic for long-form service `env_file` entries that the loader already resolves.
+- Removed the false partial-support diagnostic for mapping-form service `extra_hosts`, which the engine already applies.
+- Rejected non-boolean values for long-form service `env_file.required` instead of silently treating them as enabled.
 
 - Applied long-form named-volume `volume.subpath` options to Docker Engine mounts for service and one-off `run` containers. The configured subdirectory must already exist in the volume.
 
