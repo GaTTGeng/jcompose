@@ -95,6 +95,40 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void diagnosesOnlyUnappliedProjectResourceOptions() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                networks:
+                  backend:
+                    driver: bridge
+                    driver_opts:
+                      com.example.option: enabled
+                    attachable: true
+                    custom_option: retained
+                volumes:
+                  data:
+                    name: shared-data
+                    driver: local
+                    driver_opts:
+                      type: nfs
+                secrets:
+                  credentials:
+                    file: ./credentials.txt
+                configs:
+                  settings:
+                    content: inline
+                services:
+                  app:
+                    image: alpine
+                """);
+
+        var diagnostics = new ComposeFileLoader().load(directory, null).diagnostics();
+
+        assertEquals(List.of("networks.backend.custom_option", "configs.settings.content"),
+                diagnostics.stream().map(diagnostic -> diagnostic.propertyPath()).toList());
+        assertTrue(diagnostics.stream().allMatch(diagnostic -> diagnostic.code().equals("unsupported-field")));
+    }
+
+    @Test
     void serviceNamespaceReferencesDoNotProduceUnsupportedDiagnostics() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:

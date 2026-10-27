@@ -552,22 +552,38 @@ public final class ComposeFileLoader {
                                     "partially-supported-field", "Device permission suffixes are not modeled correctly.");
             }
         }
-        addResourceDiagnostics(result, file, provenance, root, "volumes", "partially-supported-field",
-                "Only the resource name is retained; resource options are not applied.");
-        addResourceDiagnostics(result, file, provenance, root, "networks", "partially-supported-field",
-                "Only the resource name is retained; resource options are not applied.");
-        for (String section : List.of("secrets", "configs"))
-            if (resourceSectionMeaningful(root.get(section)))
-            addDiagnostic(result, file, provenance, section, null, "unsupported-field",
-                    "Project resources are named in the loaded model but are not provisioned or mounted.");
+        addResourceDiagnostics(result, file, provenance, root, "volumes");
+        addResourceDiagnostics(result, file, provenance, root, "networks");
+        addResourceDiagnostics(result, file, provenance, root, "secrets");
+        addResourceDiagnostics(result, file, provenance, root, "configs");
         return List.copyOf(result);
     }
 
     private static void addResourceDiagnostics(List<ComposeDiagnostic> result, Path file, Map<String, Path> provenance,
-                                               Map<String, Object> root, String section, String code, String message) {
+                                               Map<String, Object> root, String section) {
         if (!(root.get(section) instanceof Map<?, ?> resources)) return;
-        for (var resource : resources.entrySet()) if (meaningfulResourceDefinition(resource.getValue()))
-            addDiagnostic(result, file, provenance, appendPathSegment(section, String.valueOf(resource.getKey())), null, code, message);
+        for (var resource : resources.entrySet()) {
+            if (!(resource.getValue() instanceof Map<?, ?> definition)) continue;
+            for (var option : definition.entrySet()) {
+                String optionName = String.valueOf(option.getKey());
+                if (!isAppliedProjectResourceOption(section, optionName) && meaningful(option.getValue())) {
+                    String path = appendPathSegment(appendPathSegment(section, String.valueOf(resource.getKey())), optionName);
+                    addDiagnostic(result, file, provenance, path, null,
+                            "unsupported-field", "This project resource option is retained but not applied to Docker resources.");
+                }
+            }
+        }
+    }
+
+    private static boolean isAppliedProjectResourceOption(String section, String option) {
+        if (isExtensionField(option)) return true;
+        return switch (section) {
+            case "networks" -> Set.of("name", "external", "driver", "driver_opts", "internal", "enable_ipv6",
+                    "attachable", "ipam", "labels").contains(option);
+            case "volumes" -> Set.of("name", "external", "driver", "driver_opts", "labels").contains(option);
+            case "secrets", "configs" -> Set.of("name", "file").contains(option);
+            default -> false;
+        };
     }
 
     private static void addDiagnostic(List<ComposeDiagnostic> result, Path file, Map<String, Path> provenance,
@@ -588,11 +604,6 @@ public final class ComposeFileLoader {
                 !isExtensionField(option.getKey())
                         && !("external".equals(String.valueOf(option.getKey())) && isFalse(option.getValue()))
                         && meaningful(option.getValue()));
-    }
-
-    private static boolean resourceSectionMeaningful(Object value) {
-        if (!(value instanceof Map<?, ?> resources)) return meaningful(value);
-        return resources.values().stream().anyMatch(ComposeFileLoader::meaningfulResourceDefinition);
     }
 
     private static boolean isExtensionField(Object key) {
