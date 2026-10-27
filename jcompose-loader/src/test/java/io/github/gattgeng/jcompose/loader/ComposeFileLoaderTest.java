@@ -90,8 +90,25 @@ class ComposeFileLoaderTest {
 
         var project = new ComposeFileLoader().load(directory, null);
 
-        assertEquals(List.of("name", "services.app.build.ssh", "services.app.devices[0]"),
+        assertEquals(List.of("name", "services.app.build.ssh"),
                 project.diagnostics().stream().map(diagnostic -> diagnostic.propertyPath()).toList());
+    }
+
+    @Test
+    void diagnosesInvalidDevicePermissionSuffixesButAcceptsComposeModes() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    devices:
+                      - /dev/input:/dev/input:rwm
+                      - /dev/invalid:/dev/invalid:rx
+                """);
+
+        var diagnostics = new ComposeFileLoader().load(directory, null).diagnostics();
+
+        assertEquals(List.of("services.app.devices[1]"),
+                diagnostics.stream().map(diagnostic -> diagnostic.propertyPath()).toList());
     }
 
     @Test

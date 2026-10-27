@@ -547,7 +547,9 @@ public final class ComposeFileLoader {
                 Object devices = service.get("devices");
                 if (devices instanceof List<?> deviceList)
                     for (int i = 0; i < deviceList.size(); i++)
-                        if (deviceList.get(i) instanceof String device && device.chars().filter(c -> c == ':').count() >= 2)
+                        if (deviceList.get(i) instanceof String device
+                                && device.split(":", -1).length == 3
+                                && !isDevicePermissions(device.substring(device.lastIndexOf(':') + 1)))
                             addDiagnostic(result, file, provenance, servicePath + ".devices[" + i + "]", serviceName,
                                     "partially-supported-field", "Device permission suffixes are not modeled correctly.");
             }
@@ -584,6 +586,22 @@ public final class ComposeFileLoader {
             case "secrets", "configs" -> Set.of("name", "file").contains(option);
             default -> false;
         };
+    }
+
+    private static boolean isDevicePermissions(String permissions) {
+        if (permissions.isEmpty()) return false;
+        boolean[] seen = new boolean[3];
+        for (int i = 0; i < permissions.length(); i++) {
+            int index = switch (permissions.charAt(i)) {
+                case 'r' -> 0;
+                case 'w' -> 1;
+                case 'm' -> 2;
+                default -> -1;
+            };
+            if (index < 0 || seen[index]) return false;
+            seen[index] = true;
+        }
+        return true;
     }
 
     private static void addDiagnostic(List<ComposeDiagnostic> result, Path file, Map<String, Path> provenance,
