@@ -506,10 +506,6 @@ public final class ComposeFileLoader {
                             if (meaningful(mount.get("consistency")))
                                 addDiagnostic(result, file, provenance, servicePath + ".volumes[" + i + "].consistency", serviceName,
                                         "unsupported-field", "Mount consistency hints are not applied by this Docker Engine backend.");
-                            if (mount.get("volume") instanceof Map<?, ?> volumeOptions
-                                    && meaningful(volumeOptions.get("subpath")))
-                                addDiagnostic(result, file, provenance, servicePath + ".volumes[" + i + "].volume.subpath", serviceName,
-                                        "unsupported-field", "Volume subpath mounts are not supported by the configured Docker Engine client.");
                         }
                     }
                 }

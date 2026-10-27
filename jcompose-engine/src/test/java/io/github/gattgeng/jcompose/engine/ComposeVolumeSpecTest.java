@@ -97,7 +97,7 @@ class ComposeVolumeSpecTest {
 
     @Test
     void mapsLongSyntaxVolumeNoCopyAndReadOnlyOptions() {
-        var mounts = ComposeService.longSyntaxVolumeNoCopyMounts(List.of(Map.of(
+        var mounts = ComposeService.longSyntaxVolumeOptionMounts(List.of(Map.of(
                 "type", "volume", "source", "data", "target", "/data", "read_only", true,
                 "volume", Map.of("nocopy", true))));
 
@@ -107,6 +107,18 @@ class ComposeVolumeSpecTest {
         assertEquals("/data", mounts.getFirst().getTarget());
         assertEquals(true, mounts.getFirst().getReadOnly());
         assertEquals(true, mounts.getFirst().getVolumeOptions().getNoCopy());
+    }
+
+    @Test
+    void mapsLongSyntaxVolumeSubpathToEngineMountOptions() throws Exception {
+        var mounts = ComposeService.longSyntaxVolumeOptionMounts(List.of(Map.of(
+                "type", "volume", "source", "data", "target", "/data/logs",
+                "volume", Map.of("subpath", "logs/app"))));
+
+        assertEquals("logs/app", ((ComposeService.EngineVolumeOptions) mounts.getFirst()
+                .getVolumeOptions()).getSubpath());
+        String json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(mounts.getFirst());
+        assertTrue(json.contains("logs/app"), json);
     }
 
     @Test
