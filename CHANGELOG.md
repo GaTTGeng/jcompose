@@ -6,6 +6,9 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 
 ## [Unreleased]
 
+### Fixed
+- Make `runAsync` with null options retain the exited one-off container by default, matching ComposeSharp's `Remove = false` default and Docker Compose's opt-in `--rm` behavior.
+
 ### Changed
 - Matched Docker Compose `exec` defaults by enabling interactive stdin and TTY allocation in the options builder; callers can disable either explicitly.
 

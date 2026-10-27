@@ -788,6 +788,35 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void runWithNullOptionsRetainsTheExitedOneOffContainer() throws Exception {
+        String projectName = "jcompose-run-default-retention-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: ["true"]
+                """);
+
+        IComposeService service = new ComposeService();
+        String containerId = null;
+        try {
+            containerId = service.runAsync(context, "app", null)
+                    .get(Duration.ofSeconds(45).toMillis(), TimeUnit.MILLISECONDS);
+            try (var client = DockerClientFactory.create(context)) {
+                var container = client.inspectContainerCmd(containerId).exec();
+                assertEquals("exited", container.getState().getStatus());
+                assertEquals("true", container.getConfig().getCmd()[0]);
+            }
+        } finally {
+            if (containerId != null) try (var client = DockerClientFactory.create(context)) {
+                client.removeContainerCmd(containerId).withForce(true).withRemoveVolumes(false).exec();
+            }
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
     void upResolvesNetworkModeServiceReferenceToCreatedContainer() throws Exception {
         String projectName = "jcompose-service-network-mode-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);

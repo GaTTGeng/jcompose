@@ -4182,7 +4182,7 @@ public final class ComposeService implements IComposeService {
                                 });
                         await(callback);
                     }
-                    if (options == null || effective.remove()) client.removeContainerCmd(containerId).withForce(true).withRemoveVolumes(false).exec();
+                    if (effective.remove()) client.removeContainerCmd(containerId).withForce(true).withRemoveVolumes(false).exec();
                 } else {
                     client.startContainerCmd(containerId).exec();
                     runLifecycleHooks(client, containerId, service, "post_start");
