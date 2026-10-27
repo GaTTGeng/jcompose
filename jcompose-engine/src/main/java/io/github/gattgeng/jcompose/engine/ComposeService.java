@@ -1664,13 +1664,19 @@ public final class ComposeService implements IComposeService {
         if (recreate) {
             if (!renewAnonVolumes) {
                 List<com.github.dockerjava.api.model.Bind> configuredBinds = serviceBinds(project, context.projectName(), service);
-                java.util.Set<String> configuredTargets = configuredBinds.stream()
+                java.util.Set<String> configuredTargets = new java.util.LinkedHashSet<>(configuredBinds.stream()
                         .map(bind -> bind.getVolume().getPath())
-                        .collect(java.util.stream.Collectors.toSet());
-                java.util.Set<String> anonymousTargets = configuredBinds.stream()
+                        .toList());
+                List<com.github.dockerjava.api.model.Mount> noCopyVolumeMounts =
+                        longSyntaxVolumeNoCopyMounts(service.configuration().get("volumes"));
+                configuredTargets.addAll(noCopyVolumeMounts.stream().map(com.github.dockerjava.api.model.Mount::getTarget).toList());
+                java.util.Set<String> anonymousTargets = new java.util.LinkedHashSet<>(configuredBinds.stream()
                         .filter(bind -> bind.getPath() == null || bind.getPath().isBlank())
                         .map(bind -> bind.getVolume().getPath())
-                        .collect(java.util.stream.Collectors.toSet());
+                        .toList());
+                anonymousTargets.addAll(noCopyVolumeMounts.stream()
+                        .filter(mount -> mount.getSource() == null || mount.getSource().isBlank())
+                        .map(com.github.dockerjava.api.model.Mount::getTarget).toList());
                 var imageConfig = client.inspectImageCmd(image).exec().getConfig();
                 if (imageConfig != null && imageConfig.getVolumes() != null)
                     imageConfig.getVolumes().keySet().stream().filter(target -> !configuredTargets.contains(target))
@@ -2031,6 +2037,11 @@ public final class ComposeService implements IComposeService {
         List<com.github.dockerjava.api.model.Bind> binds = serviceBinds(project, projectName, service);
         List<com.github.dockerjava.api.model.Bind> configuredBinds = new ArrayList<>(binds);
         Map<String, com.github.dockerjava.api.model.Mount> volumeMounts = new LinkedHashMap<>();
+        for (var mount : longSyntaxVolumeNoCopyMounts(config.get("volumes"))) {
+            String source = mount.getSource();
+            if (source != null && !source.isBlank()) mount.withSource(engineVolumeName(projectName, project, source));
+            volumeMounts.put(mount.getTarget(), mount);
+        }
         for (com.github.dockerjava.api.model.Bind bind : configuredBinds) {
             if (bind.getPath() != null && !bind.getPath().isBlank()) continue;
             String target = bind.getVolume().getPath();
@@ -2045,9 +2056,13 @@ public final class ComposeService implements IComposeService {
                     .anyMatch(bind -> (bind.getPath() == null || bind.getPath().isBlank())
                             && target.equals(bind.getVolume().getPath())
                             && bind.getAccessMode() == com.github.dockerjava.api.model.AccessMode.ro);
-            volumeMounts.put(target, new com.github.dockerjava.api.model.Mount()
+            var mount = new com.github.dockerjava.api.model.Mount()
                     .withType(com.github.dockerjava.api.model.MountType.VOLUME)
-                    .withSource(source).withTarget(target).withReadOnly(readOnly));
+                    .withSource(source).withTarget(target).withReadOnly(readOnly);
+            longSyntaxVolumeNoCopyMounts(config.get("volumes")).stream()
+                    .filter(configured -> target.equals(configured.getTarget()))
+                    .findFirst().ifPresent(configured -> mount.withVolumeOptions(configured.getVolumeOptions()));
+            volumeMounts.put(target, mount);
         });
         if (!volumeMounts.isEmpty()) host.withMounts(new ArrayList<>(volumeMounts.values()));
         if (!binds.isEmpty()) host.withBinds(binds);
@@ -2630,6 +2645,9 @@ public final class ComposeService implements IComposeService {
         List<com.github.dockerjava.api.model.Bind> binds = new ArrayList<>();
         if (raw instanceof List<?> volumes) for (Object volume : volumes) {
             if (volume instanceof Map<?, ?> map) {
+                if ("volume".equals(String.valueOf(map.get("type")))
+                        && map.get("volume") instanceof Map<?, ?> volumeOptions
+                        && Boolean.TRUE.equals(volumeOptions.get("nocopy"))) continue;
                 Object target = map.get("target"), source = map.get("source");
                 if (target == null) continue;
                 if ("tmpfs".equals(String.valueOf(map.get("type")))) continue;
@@ -2663,6 +2681,27 @@ public final class ComposeService implements IComposeService {
         addFileResourceBinds(project, service, "secrets", project.secretDefinitions(), binds);
         addFileResourceBinds(project, service, "configs", project.configDefinitions(), binds);
         return binds;
+    }
+
+    static List<com.github.dockerjava.api.model.Mount> longSyntaxVolumeNoCopyMounts(Object configuredVolumes) {
+        if (!(configuredVolumes instanceof List<?> volumes)) return List.of();
+        List<com.github.dockerjava.api.model.Mount> mounts = new ArrayList<>();
+        for (Object raw : volumes) {
+            if (!(raw instanceof Map<?, ?> mount) || !"volume".equals(String.valueOf(mount.get("type")))
+                    || !(mount.get("volume") instanceof Map<?, ?> options) || !Boolean.TRUE.equals(options.get("nocopy"))) continue;
+            Object target = mount.get("target");
+            if (target == null || String.valueOf(target).isBlank())
+                throw new IllegalArgumentException("Long-form volume mount with volume.nocopy requires a target.");
+            Object source = mount.get("source");
+            var volumeMount = new com.github.dockerjava.api.model.Mount()
+                    .withType(com.github.dockerjava.api.model.MountType.VOLUME)
+                    .withTarget(String.valueOf(target))
+                    .withReadOnly(Boolean.TRUE.equals(mount.get("read_only")))
+                    .withVolumeOptions(new com.github.dockerjava.api.model.VolumeOptions().withNoCopy(true));
+            if (source != null && !String.valueOf(source).isBlank()) volumeMount.withSource(String.valueOf(source));
+            mounts.add(volumeMount);
+        }
+        return List.copyOf(mounts);
     }
 
     static void prepareBindSource(Path source, boolean createHostPath) {
@@ -4017,6 +4056,12 @@ public final class ComposeService implements IComposeService {
                 for (String volume : effective.volumes() == null ? List.<String>of() : effective.volumes())
                     binds.add(parseRunBind(volume));
                 List<com.github.dockerjava.api.model.Mount> anonymousMounts = new ArrayList<>();
+                for (var mount : longSyntaxVolumeNoCopyMounts(service.configuration().get("volumes"))) {
+                    String source = mount.getSource();
+                    if (source != null && !source.isBlank())
+                        mount.withSource(engineVolumeName(context.projectName(), project, source));
+                    anonymousMounts.add(mount);
+                }
                 for (com.github.dockerjava.api.model.Bind bind : binds) {
                     if (bind.getPath() != null && !bind.getPath().isBlank()) continue;
                     anonymousMounts.add(new com.github.dockerjava.api.model.Mount()

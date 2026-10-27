@@ -179,9 +179,33 @@ class ComposeFileLoaderTest {
         var paths = diagnostics.stream().map(diagnostic -> diagnostic.propertyPath()).toList();
 
         assertTrue(paths.containsAll(List.of("services.built.build.platforms", "services.built.platform",
-                "services.image_only.platform", "services.image_only.env_file[0]", "services.ports.ports[1]",
-                "services.ports.volumes[0]")));
-        assertEquals(6, diagnostics.size());
+                "services.image_only.platform", "services.image_only.env_file[0]", "services.ports.ports[1]")));
+        assertEquals(5, diagnostics.size());
+    }
+
+    @Test
+    void supportsLongFormBindAndVolumeMountOptionsWithoutWarnings() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                volumes:
+                  data: {}
+                services:
+                  app:
+                    image: app
+                    volumes:
+                      - type: volume
+                        source: data
+                        target: /data
+                        volume:
+                          nocopy: true
+                      - type: bind
+                        source: ./source
+                        target: /source
+                        bind:
+                          create_host_path: false
+                          propagation: rshared
+                """);
+
+        assertTrue(new ComposeFileLoader().load(directory, null).diagnostics().isEmpty());
     }
 
     @Test

@@ -8,6 +8,8 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 
 ### Added
 
+- Applied long-form named-volume `volume.nocopy` options for service and one-off `run` containers; supported long-form bind and volume mounts no longer produce blanket partial-support diagnostics.
+
 - Synced ComposeSharp validation refinements through `e0765e6`: diagnose unapplied build, port, env-file, volume, platform, and dependency behavior; ignore nested extension/default values and preserve overlay provenance for nested diagnostics. `service_started` now warns when an image may supply an inherited health check. Removed network warnings where jcompose already applies Docker Compose attachments and options. jcompose retains its Docker Compose support for inline Dockerfiles and service-platform build fallback.
 
 - Synced ComposeSharp changes based on `9a313d3`: strict validation now covers direct Docker operations; diagnostics include scalar entrypoints and unapplied build `privileged`, while normalized scalar healthchecks and empty default-only nested values stay quiet.

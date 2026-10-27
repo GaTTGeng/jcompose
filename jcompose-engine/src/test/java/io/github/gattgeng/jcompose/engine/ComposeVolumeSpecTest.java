@@ -96,6 +96,20 @@ class ComposeVolumeSpecTest {
     }
 
     @Test
+    void mapsLongSyntaxVolumeNoCopyAndReadOnlyOptions() {
+        var mounts = ComposeService.longSyntaxVolumeNoCopyMounts(List.of(Map.of(
+                "type", "volume", "source", "data", "target", "/data", "read_only", true,
+                "volume", Map.of("nocopy", true))));
+
+        assertEquals(1, mounts.size());
+        assertEquals(com.github.dockerjava.api.model.MountType.VOLUME, mounts.getFirst().getType());
+        assertEquals("data", mounts.getFirst().getSource());
+        assertEquals("/data", mounts.getFirst().getTarget());
+        assertEquals(true, mounts.getFirst().getReadOnly());
+        assertEquals(true, mounts.getFirst().getVolumeOptions().getNoCopy());
+    }
+
+    @Test
     void rejectsTmpfsMountWithoutTarget() {
         assertThrows(IllegalArgumentException.class, () -> ComposeService.longSyntaxTmpfsMounts(List.of(
                 Map.of("type", "tmpfs", "tmpfs", Map.of("size", 1024)))));

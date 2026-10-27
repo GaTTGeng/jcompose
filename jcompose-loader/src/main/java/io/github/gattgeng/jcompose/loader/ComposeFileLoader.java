@@ -497,10 +497,21 @@ public final class ComposeFileLoader {
                                     "partially-supported-field", "Long-form environment file options are not applied; use short syntax.");
                 }
                 if (service.get("volumes") instanceof List<?> volumes) {
-                    for (int i = 0; i < volumes.size(); i++)
-                        if (volumes.get(i) instanceof Map<?, ?>)
-                            addDiagnostic(result, file, provenance, servicePath + ".volumes[" + i + "]", serviceName,
-                                    "partially-supported-field", "Long-form service volumes are not applied correctly; use short syntax.");
+                    for (int i = 0; i < volumes.size(); i++) {
+                        if (volumes.get(i) instanceof Map<?, ?> mount) {
+                            String mountType = mount.get("type") == null ? null : String.valueOf(mount.get("type"));
+                            if (mountType != null && !List.of("bind", "volume", "tmpfs").contains(mountType))
+                                addDiagnostic(result, file, provenance, servicePath + ".volumes[" + i + "].type", serviceName,
+                                        "unsupported-field", "This long-form mount type is not applied to Docker.");
+                            if (meaningful(mount.get("consistency")))
+                                addDiagnostic(result, file, provenance, servicePath + ".volumes[" + i + "].consistency", serviceName,
+                                        "unsupported-field", "Mount consistency hints are not applied by this Docker Engine backend.");
+                            if (mount.get("volume") instanceof Map<?, ?> volumeOptions
+                                    && meaningful(volumeOptions.get("subpath")))
+                                addDiagnostic(result, file, provenance, servicePath + ".volumes[" + i + "].volume.subpath", serviceName,
+                                        "unsupported-field", "Volume subpath mounts are not supported by the configured Docker Engine client.");
+                        }
+                    }
                 }
                 for (String field : List.of("command", "entrypoint"))
                     if (service.get(field) instanceof String command && !command.isEmpty())
@@ -1185,6 +1196,12 @@ public final class ComposeFileLoader {
             Object bind = mount.get("bind");
             if (bind instanceof Map<?, ?> options)
                 validateBoolean(file, service, options, "create_host_path", path + "." + index + ".bind.create_host_path");
+            Object volumeOptions = mount.get("volume");
+            if (volumeOptions != null) {
+                validateOptionalMap(file, service, mount, "volume", path + "." + index + ".volume");
+                if (volumeOptions instanceof Map<?, ?> options)
+                    validateBoolean(file, service, options, "nocopy", path + "." + index + ".volume.nocopy");
+            }
             if ("tmpfs".equals(String.valueOf(mount.get("type")))) {
                 validateOptionalMap(file, service, mount, "tmpfs", path + "." + index + ".tmpfs");
                 if (mount.get("tmpfs") instanceof Map<?, ?> options) {
