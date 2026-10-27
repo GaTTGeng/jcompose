@@ -1438,6 +1438,7 @@ class ComposeServiceDockerIntegrationTest {
                   database:
                     image: %s-database:latest
                     build: .
+                    pull_policy: never
                 """.formatted(projectName));
 
         IComposeService service = new ComposeService();
