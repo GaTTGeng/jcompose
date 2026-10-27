@@ -4835,14 +4835,25 @@ public final class ComposeService implements IComposeService {
                 artifactLayers.add(land.oras.LocalPath.of(composeFile, "application/vnd.docker.compose.file+yaml"));
                 artifactLayers.addAll(envFiles.layers());
                 land.oras.Annotations annotations = composeArtifactFileAnnotations(artifactLayers);
-                land.oras.Manifest manifest = registry.pushArtifact(target,
-                        land.oras.ArtifactType.from("application/vnd.docker.compose.project"),
-                        annotations,
-                        land.oras.Config.empty(), land.oras.OCI.PushOptions.defaults(),
-                        artifactLayers.toArray(land.oras.LocalPath[]::new));
+                land.oras.Manifest manifest;
                 if ("1.0".equals(ociVersion)) {
-                    manifest = asOci10ComposeArtifact(manifest);
-                    manifest = registry.pushManifest(target, manifest);
+                    List<land.oras.Layer> layers = new ArrayList<>();
+                    for (land.oras.LocalPath artifactLayer : artifactLayers) {
+                        String name = artifactLayer.getPath().getFileName().toString();
+                        Map<String, String> layerAnnotations = annotations.getFileAnnotations(name);
+                        land.oras.Layer layer = registry.pushBlob(target, artifactLayer.getPath(), layerAnnotations)
+                                .withMediaType(artifactLayer.getMediaType())
+                                .withAnnotations(layerAnnotations);
+                        layers.add(layer);
+                    }
+                    land.oras.Layer configLayer = registry.pushBlob(target, "{}".getBytes(StandardCharsets.UTF_8));
+                    manifest = registry.pushManifest(target, oci10ComposeArtifact(layers, configLayer));
+                } else {
+                    manifest = registry.pushArtifact(target,
+                            land.oras.ArtifactType.from("application/vnd.docker.compose.project"),
+                            annotations,
+                            land.oras.Config.empty(), land.oras.OCI.PushOptions.defaults(),
+                            artifactLayers.toArray(land.oras.LocalPath[]::new));
                 }
                 return new PublishResult(repository, manifest.getDescriptor().getDigest().toString());
             } catch (java.io.IOException exception) {
@@ -4853,10 +4864,17 @@ public final class ComposeService implements IComposeService {
         });
     }
 
-    static land.oras.Manifest asOci10ComposeArtifact(land.oras.Manifest manifest) {
-        return manifest.withArtifactType(null)
-                .withConfig(land.oras.Config.empty()
-                        .withMediaType("application/vnd.docker.compose.config.empty.v1+json"));
+    static land.oras.Manifest oci10ComposeArtifact(
+            List<land.oras.Layer> layers, land.oras.Layer configLayer) {
+        land.oras.Config config = land.oras.Config.fromBlob(
+                "application/vnd.docker.compose.config.empty.v1+json", configLayer);
+        land.oras.Manifest manifest = land.oras.Manifest.empty()
+                .withArtifactType(null)
+                .withConfig(config)
+                .withLayers(layers)
+                .withAnnotations(Map.of("org.opencontainers.image.created", java.time.Instant.now().toString()));
+        return manifest.withDescriptor(land.oras.ManifestDescriptor.of(manifest)
+                .withAnnotations(Map.of(ComposeConstants.VERSION_LABEL, "3.0.0")));
     }
 
     static void deletePublishDirectory(java.nio.file.Path directory) {

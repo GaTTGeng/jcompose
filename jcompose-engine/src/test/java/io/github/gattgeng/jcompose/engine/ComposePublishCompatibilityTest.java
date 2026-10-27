@@ -68,13 +68,13 @@ class ComposePublishCompatibilityTest {
 
     @Test
     void createsOci10ComposeArtifactManifest() {
-        land.oras.Manifest oci11Manifest = land.oras.Manifest.empty()
-                .withArtifactType(land.oras.ArtifactType.from("application/vnd.docker.compose.project"));
-
-        land.oras.Manifest oci10Manifest = ComposeService.asOci10ComposeArtifact(oci11Manifest);
+        land.oras.Layer layer = land.oras.Layer.empty().withMediaType("application/vnd.docker.compose.file+yaml");
+        land.oras.Manifest oci10Manifest = ComposeService.oci10ComposeArtifact(
+                List.of(layer), land.oras.Layer.empty());
 
         assertTrue(oci10Manifest.toJson().contains("application/vnd.docker.compose.config.empty.v1+json"));
         assertFalse(oci10Manifest.toJson().contains("artifactType"));
+        assertEquals("3.0.0", oci10Manifest.getDescriptor().getAnnotations().get("com.docker.compose.version"));
     }
 
     @Test
