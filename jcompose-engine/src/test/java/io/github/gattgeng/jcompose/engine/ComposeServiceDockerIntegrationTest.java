@@ -94,6 +94,35 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void appliesMappingFormExtraHostsToCreatedContainer() throws Exception {
+        String projectName = "jcompose-extra-hosts-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    extra_hosts:
+                      internal.example: 192.0.2.10
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            service.createAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            try (var client = DockerClientFactory.create(context)) {
+                var containers = client.listContainersCmd().withShowAll(true)
+                        .withLabelFilter(java.util.Map.of("com.docker.compose.project", projectName,
+                                "com.docker.compose.service", "app"))
+                        .exec();
+                assertEquals(java.util.List.of("internal.example:192.0.2.10"),
+                        client.inspectContainerCmd(containers.getFirst().getId()).exec()
+                                .getHostConfig().getExtraHosts());
+            }
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
     void copiesAndExportsFilesThroughDockerArchiveEndpoints() throws Exception {
         String projectName = "jcompose-archive-transfer-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);

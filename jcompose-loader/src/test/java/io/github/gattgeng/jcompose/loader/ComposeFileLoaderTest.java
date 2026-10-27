@@ -90,8 +90,7 @@ class ComposeFileLoaderTest {
 
         var project = new ComposeFileLoader().load(directory, null);
 
-        assertEquals(List.of("name", "services.app.build.ssh", "services.app.extra_hosts",
-                        "services.app.devices[0]"),
+        assertEquals(List.of("name", "services.app.build.ssh", "services.app.devices[0]"),
                 project.diagnostics().stream().map(diagnostic -> diagnostic.propertyPath()).toList());
     }
 

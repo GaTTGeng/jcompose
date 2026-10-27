@@ -544,10 +544,6 @@ public final class ComposeFileLoader {
                                             ? "This build option is retained but not applied to Docker."
                                             : "This build option is not retained by the loader or applied to Docker.");
                 }
-                Object extraHosts = service.get("extra_hosts");
-                if (extraHosts instanceof Map<?, ?> hostMap && !hostMap.isEmpty())
-                    addDiagnostic(result, file, provenance, servicePath + ".extra_hosts", serviceName,
-                            "partially-supported-field", "Mapping syntax loses host addresses and is not supported.");
                 Object devices = service.get("devices");
                 if (devices instanceof List<?> deviceList)
                     for (int i = 0; i < deviceList.size(); i++)
