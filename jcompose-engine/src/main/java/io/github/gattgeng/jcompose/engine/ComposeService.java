@@ -4835,25 +4835,26 @@ public final class ComposeService implements IComposeService {
                 artifactLayers.add(land.oras.LocalPath.of(composeFile, "application/vnd.docker.compose.file+yaml"));
                 artifactLayers.addAll(envFiles.layers());
                 land.oras.Annotations annotations = composeArtifactFileAnnotations(artifactLayers);
+                List<land.oras.Layer> layers = new ArrayList<>();
+                for (land.oras.LocalPath artifactLayer : artifactLayers) {
+                    String name = artifactLayer.getPath().getFileName().toString();
+                    Map<String, String> layerAnnotations = annotations.getFileAnnotations(name);
+                    land.oras.Layer layer = registry.pushBlob(target, artifactLayer.getPath(), layerAnnotations)
+                            .withMediaType(artifactLayer.getMediaType())
+                            .withAnnotations(layerAnnotations);
+                    layers.add(layer);
+                }
+                land.oras.Layer configLayer = registry.pushBlob(target, "{}".getBytes(StandardCharsets.UTF_8));
                 land.oras.Manifest manifest;
                 if ("1.0".equals(ociVersion)) {
-                    List<land.oras.Layer> layers = new ArrayList<>();
-                    for (land.oras.LocalPath artifactLayer : artifactLayers) {
-                        String name = artifactLayer.getPath().getFileName().toString();
-                        Map<String, String> layerAnnotations = annotations.getFileAnnotations(name);
-                        land.oras.Layer layer = registry.pushBlob(target, artifactLayer.getPath(), layerAnnotations)
-                                .withMediaType(artifactLayer.getMediaType())
-                                .withAnnotations(layerAnnotations);
-                        layers.add(layer);
-                    }
-                    land.oras.Layer configLayer = registry.pushBlob(target, "{}".getBytes(StandardCharsets.UTF_8));
-                    manifest = registry.pushManifest(target, oci10ComposeArtifact(layers, configLayer));
+                    manifest = registry.pushManifest(target, composeArtifactManifest(layers, configLayer, false));
                 } else {
-                    manifest = registry.pushArtifact(target,
-                            land.oras.ArtifactType.from("application/vnd.docker.compose.project"),
-                            annotations,
-                            land.oras.Config.empty(), land.oras.OCI.PushOptions.defaults(),
-                            artifactLayers.toArray(land.oras.LocalPath[]::new));
+                    try {
+                        manifest = registry.pushManifest(target, composeArtifactManifest(layers, configLayer, true));
+                    } catch (land.oras.exception.OrasException exception) {
+                        if (ociVersion != null || !isNonAuthClientError(exception.getStatusCode())) throw exception;
+                        manifest = registry.pushManifest(target, composeArtifactManifest(layers, configLayer, false));
+                    }
                 }
                 return new PublishResult(repository, manifest.getDescriptor().getDigest().toString());
             } catch (java.io.IOException exception) {
@@ -4864,17 +4865,22 @@ public final class ComposeService implements IComposeService {
         });
     }
 
-    static land.oras.Manifest oci10ComposeArtifact(
-            List<land.oras.Layer> layers, land.oras.Layer configLayer) {
-        land.oras.Config config = land.oras.Config.fromBlob(
-                "application/vnd.docker.compose.config.empty.v1+json", configLayer);
+    static land.oras.Manifest composeArtifactManifest(
+            List<land.oras.Layer> layers, land.oras.Layer configLayer, boolean oci11) {
+        String configMediaType = oci11
+                ? "application/vnd.oci.empty.v1+json"
+                : "application/vnd.docker.compose.config.empty.v1+json";
         land.oras.Manifest manifest = land.oras.Manifest.empty()
-                .withArtifactType(null)
-                .withConfig(config)
+                .withConfig(land.oras.Config.fromBlob(configMediaType, configLayer))
                 .withLayers(layers)
                 .withAnnotations(Map.of("org.opencontainers.image.created", java.time.Instant.now().toString()));
-        return manifest.withDescriptor(land.oras.ManifestDescriptor.of(manifest)
-                .withAnnotations(Map.of(ComposeConstants.VERSION_LABEL, "3.0.0")));
+        return oci11 ? manifest.withArtifactType(
+                land.oras.ArtifactType.from("application/vnd.docker.compose.project")) : manifest;
+    }
+
+    static boolean isNonAuthClientError(Integer statusCode) {
+        return statusCode != null && statusCode >= 400 && statusCode < 500
+                && statusCode != 401 && statusCode != 403 && statusCode != 407;
     }
 
     static void deletePublishDirectory(java.nio.file.Path directory) {

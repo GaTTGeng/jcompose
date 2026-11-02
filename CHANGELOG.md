@@ -7,7 +7,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 ## [Unreleased]
 
 ### Fixed
-- Honor `publishAsync`'s explicit OCI version: OCI 1.0 artifacts use the Compose config media type without the OCI 1.1 artifact type, while OCI 1.1 remains the default.
+- Honor `publishAsync`'s explicit OCI version and retry OCI 1.1 registry rejections using the OCI 1.0 Compose config media type; authentication failures are never retried as compatibility fallbacks.
 
 ### Fixed
 - Honor `ComposeKillOptions.removeOrphans` by force-removing project containers whose service names are absent from the loaded Compose project.

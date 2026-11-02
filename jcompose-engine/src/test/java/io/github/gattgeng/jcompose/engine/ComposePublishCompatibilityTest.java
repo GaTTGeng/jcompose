@@ -67,14 +67,27 @@ class ComposePublishCompatibilityTest {
     }
 
     @Test
-    void createsOci10ComposeArtifactManifest() {
+    void createsOci10AndOci11ComposeArtifactManifests() {
         land.oras.Layer layer = land.oras.Layer.empty().withMediaType("application/vnd.docker.compose.file+yaml");
-        land.oras.Manifest oci10Manifest = ComposeService.oci10ComposeArtifact(
-                List.of(layer), land.oras.Layer.empty());
+        land.oras.Layer config = land.oras.Layer.empty();
+        land.oras.Manifest oci10Manifest = ComposeService.composeArtifactManifest(List.of(layer), config, false);
+        land.oras.Manifest oci11Manifest = ComposeService.composeArtifactManifest(List.of(layer), config, true);
 
         assertTrue(oci10Manifest.toJson().contains("application/vnd.docker.compose.config.empty.v1+json"));
         assertFalse(oci10Manifest.toJson().contains("artifactType"));
-        assertEquals("3.0.0", oci10Manifest.getDescriptor().getAnnotations().get("com.docker.compose.version"));
+        assertTrue(oci11Manifest.toJson().contains("application/vnd.oci.empty.v1+json"));
+        assertTrue(oci11Manifest.toJson().contains("application/vnd.docker.compose.project"));
+    }
+
+    @Test
+    void fallsBackOnlyForNonAuthenticationRegistryClientErrors() {
+        assertTrue(ComposeService.isNonAuthClientError(400));
+        assertTrue(ComposeService.isNonAuthClientError(404));
+        assertFalse(ComposeService.isNonAuthClientError(401));
+        assertFalse(ComposeService.isNonAuthClientError(403));
+        assertFalse(ComposeService.isNonAuthClientError(407));
+        assertFalse(ComposeService.isNonAuthClientError(500));
+        assertFalse(ComposeService.isNonAuthClientError(null));
     }
 
     @Test
