@@ -351,6 +351,8 @@ class ComposeFileLoaderTest {
     @Test
     void diagnosesWindowsDriveLetterVolumeSourcesWithoutLeakingThePath() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
+                volumes:
+                  named: {}
                 services:
                   app:
                     image: app
