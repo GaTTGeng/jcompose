@@ -30,6 +30,14 @@ class ComposeHealthcheckMappingTest {
     }
 
     @Test
+    void treatsScalarNoneAsAShellCommand() {
+        ServiceDefinition service = new ServiceDefinition("app", Map.of(
+                "healthcheck", Map.of("test", "NONE")));
+
+        assertEquals(List.of("CMD-SHELL", "NONE"), ComposeService.serviceHealthcheck(service).getTest());
+    }
+
+    @Test
     void disabledHealthcheckOverridesStringTest() {
         ServiceDefinition service = new ServiceDefinition("app", Map.of(
                 "healthcheck", Map.of("test", "curl -f http://localhost/health", "disable", true)));

@@ -92,6 +92,8 @@ Configure optional defaults with `jcompose.default-project-name` and `jcompose.d
 
 The loader reads Compose YAML, `.env`, and service `env_file` inputs, performs variable interpolation, and creates project/service models. The current implementation is an incremental subset, not a complete Compose Specification parser. `ComposeProjectConfig.diagnostics()` reports unknown fields and fields that are not fully applied without including their configured values. Pass `ComposeValidationMode.STRICT` to the `ComposeProjectContext` constructor to reject projects with diagnostics before Docker operations begin. Raw service mappings remain available for fields without a fully typed Java representation.
 
+Diagnostics flag Windows drive-letter volume sources that the current backend cannot apply correctly. Scalar `healthcheck.test: NONE` is interpreted as a shell check; list-form `[NONE]` disables the check. Dependency-condition diagnostics use the same distinction.
+
 ### Variable interpolation and environment files
 
 The loader supports `$NAME`, `${NAME}`, `$$`, and the `:-`, `-`, `:?`, `?`, `:+`, and `+` interpolation operators. The process environment takes precedence over project `.env` values. Engine operations expose the project name from `ComposeProjectContext` as `COMPOSE_PROJECT_NAME` for interpolation, taking precedence over process and `.env` values. Service `env_file` values contribute to that service's container environment; they are not an interpolation source. Inline environment values take precedence over values from those files.

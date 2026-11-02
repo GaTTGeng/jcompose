@@ -497,7 +497,10 @@ public final class ComposeFileLoader {
                 }
                 if (service.get("volumes") instanceof List<?> volumes) {
                     for (int i = 0; i < volumes.size(); i++) {
-                        if (volumes.get(i) instanceof Map<?, ?> mount) {
+                        if (volumes.get(i) instanceof String volume && isWindowsDriveBind(volume)) {
+                            addDiagnostic(result, file, provenance, servicePath + ".volumes[" + i + "]", serviceName,
+                                    "partially-supported-field", "Windows drive-letter volume sources are not applied correctly.");
+                        } else if (volumes.get(i) instanceof Map<?, ?> mount) {
                             String mountType = mount.get("type") == null ? null : String.valueOf(mount.get("type"));
                             if (mountType != null && !List.of("bind", "volume", "tmpfs").contains(mountType))
                                 addDiagnostic(result, file, provenance, servicePath + ".volumes[" + i + "].type", serviceName,
@@ -670,9 +673,14 @@ public final class ComposeFileLoader {
     }
 
     private static boolean disabledHealthcheckTest(Object value) {
-        if (value instanceof String test) return "NONE".equalsIgnoreCase(test);
         return value instanceof List<?> tests && !tests.isEmpty()
                 && "NONE".equalsIgnoreCase(String.valueOf(tests.getFirst()));
+    }
+
+    private static boolean isWindowsDriveBind(String volume) {
+        return volume.length() > 2 && ((volume.charAt(0) >= 'A' && volume.charAt(0) <= 'Z')
+                || (volume.charAt(0) >= 'a' && volume.charAt(0) <= 'z')) && volume.charAt(1) == ':'
+                && (volume.charAt(2) == '\\' || volume.charAt(2) == '/') && volume.indexOf(':', 2) >= 0;
     }
 
     private static String unsupportedFieldDiagnosticPath(Path file, Map<String, Path> provenance,

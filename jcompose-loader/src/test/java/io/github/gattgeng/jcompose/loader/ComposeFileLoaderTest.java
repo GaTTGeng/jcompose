@@ -349,6 +349,30 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void diagnosesWindowsDriveLetterVolumeSourcesWithoutLeakingThePath() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: app
+                    volumes:
+                      - 'C:\\data:/data'
+                      - 'd:/cache:/cache:ro'
+                      - 'C:/logs:/logs'
+                      - '/host/data:/host-data'
+                      - './relative:/relative'
+                      - 'named:/named'
+                """);
+
+        var diagnostics = new ComposeFileLoader().load(directory, null).diagnostics();
+
+        assertEquals(List.of("services.app.volumes[0]", "services.app.volumes[1]", "services.app.volumes[2]"),
+                diagnostics.stream().map(diagnostic -> diagnostic.propertyPath()).toList());
+        assertTrue(diagnostics.stream().allMatch(diagnostic -> diagnostic.code().equals("partially-supported-field")));
+        assertTrue(diagnostics.stream().noneMatch(diagnostic -> diagnostic.message().contains("data")
+                || diagnostic.message().contains("cache") || diagnostic.message().contains("logs")));
+    }
+
+    @Test
     void diagnosesOnlyHealthyDependenciesWithExplicitlyDisabledHealthchecks() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:
@@ -371,6 +395,10 @@ class ComposeFileLoaderTest {
                         required: false
                       unhealthy:
                         condition: service_healthy
+                      scalar_started:
+                        condition: service_started
+                      scalar_healthy:
+                        condition: service_healthy
                   healthy:
                     image: db
                     healthcheck:
@@ -391,6 +419,14 @@ class ComposeFileLoaderTest {
                     image: worker
                     healthcheck:
                       test: [NONE]
+                  scalar_started:
+                    image: worker
+                    healthcheck:
+                      test: NONE
+                  scalar_healthy:
+                    image: worker
+                    healthcheck:
+                      test: NONE
                 """);
 
         var diagnostics = new ComposeFileLoader().load(directory, null).diagnostics();

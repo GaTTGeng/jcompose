@@ -7,6 +7,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 ## [Unreleased]
 
 ### Fixed
+- Synced ComposeSharp `987503e`: diagnose unsupported Windows drive-letter volume sources and treat scalar `healthcheck.test: NONE` as a shell check, distinct from list-form `[NONE]`.
 - Honor `publishAsync`'s explicit OCI version and retry OCI 1.1 registry rejections using the OCI 1.0 Compose config media type; authentication failures are never retried as compatibility fallbacks.
 
 ### Fixed
