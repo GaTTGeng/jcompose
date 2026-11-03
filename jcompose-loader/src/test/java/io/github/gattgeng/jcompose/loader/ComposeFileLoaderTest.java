@@ -512,6 +512,80 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void mergedResourceDiagnosticsKeepTheSourceOfTheUnsupportedOption() throws Exception {
+        Path base = directory.resolve("compose.yaml");
+        Path overlay = directory.resolve("compose.override.yaml");
+        Files.writeString(base, """
+                configs:
+                  settings:
+                    content: private-option-value
+                services:
+                  api:
+                    image: app
+                """);
+        Files.writeString(overlay, """
+                configs:
+                  settings:
+                    external: false
+                    x-note: private-extension-value
+                """);
+
+        var diagnostics = new ComposeFileLoader().loadMerged(directory,
+                List.of(base.getFileName().toString(), overlay.getFileName().toString())).diagnostics();
+
+        assertEquals(1, diagnostics.size());
+        var diagnostic = diagnostics.getFirst();
+        assertEquals(base.toAbsolutePath().normalize().toString(), diagnostic.sourceFile());
+        assertEquals("configs.settings.content", diagnostic.propertyPath());
+        assertEquals("unsupported-field", diagnostic.code());
+        assertFalse(diagnostic.message().contains("private-option-value"));
+        assertFalse(diagnostic.message().contains("private-extension-value"));
+    }
+
+    @Test
+    void mergedResourceDiagnosticAttributesAnUnsupportedOverlayOptionToTheOverlay() throws Exception {
+        Path base = directory.resolve("compose.yaml");
+        Path overlay = directory.resolve("compose.override.yaml");
+        Files.writeString(base, """
+                configs:
+                  settings: {}
+                services:
+                  api:
+                    image: app
+                """);
+        Files.writeString(overlay, """
+                configs:
+                  settings:
+                    content: private-option-value
+                """);
+
+        var diagnostics = new ComposeFileLoader().loadMerged(directory,
+                List.of(base.getFileName().toString(), overlay.getFileName().toString())).diagnostics();
+
+        assertEquals(1, diagnostics.size());
+        var diagnostic = diagnostics.getFirst();
+        assertEquals(overlay.toAbsolutePath().normalize().toString(), diagnostic.sourceFile());
+        assertEquals("configs.settings.content", diagnostic.propertyPath());
+        assertEquals("unsupported-field", diagnostic.code());
+        assertFalse(diagnostic.message().contains("private-option-value"));
+    }
+
+    @Test
+    void defaultAndExtensionOnlyResourceOptionsDoNotProduceDiagnostics() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                configs:
+                  settings:
+                    external: false
+                    x-note: private-extension-value
+                services:
+                  api:
+                    image: app
+                """);
+
+        assertTrue(new ComposeFileLoader().load(directory, null).diagnostics().isEmpty());
+    }
+
+    @Test
     void includesLocalComposeResourcesAndRebasesTheirRelativePaths() throws Exception {
         Path includedDirectory = Files.createDirectories(directory.resolve("backend"));
         Files.writeString(directory.resolve("compose.yaml"), """

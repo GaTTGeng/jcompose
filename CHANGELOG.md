@@ -10,6 +10,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Synced ComposeSharp diagnostic refinements through `c01006f` and added Docker-backed coverage for services using the implicit project default network alongside declared project networks.
 
 ### Fixed
+- Reviewed ComposeSharp `b26daa0a7151c139020d72253bc72cd5cbefd3f9` resource-diagnostic provenance refinement and added regression coverage confirming unsupported resource options retain the contributing file source across overlay defaults and extensions.
 - Remove duplicate service `env_file` entries across Compose overlays while preserving the resolved environment.
 - Merge list-form build `args`, service `annotations`, and `sysctls` by key so later Compose files replace values for matching keys.
 - Remove duplicate `dns`, `dns_search`, and `tmpfs` entries across Compose overlays, matching ComposeSharp list merging and Docker Compose's normalized configuration.
