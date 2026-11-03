@@ -129,7 +129,8 @@ public final class ComposeFileLoader {
 
     /**
      * Applies a documented incremental merge with per-call interpolation values that take
-     * precedence over the process environment and each file's adjacent {@code .env} values.
+     * precedence over the process environment and the project {@code .env} beside the first Compose file.
+     * Every file in the merge uses that same project interpolation environment.
      * The supplied values are never written to the process environment.
      */
     public ComposeProject loadMerged(Path workingDirectory, List<String> composeFiles,
