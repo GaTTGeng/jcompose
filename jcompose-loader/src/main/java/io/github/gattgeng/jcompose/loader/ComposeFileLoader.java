@@ -42,7 +42,7 @@ public final class ComposeFileLoader {
             "docker-compose.yaml", "docker-compose.override.yaml",
             "docker-compose.yml", "docker-compose.override.yml");
     private static final Set<String> REPLACE_FIELDS = Set.of("command", "entrypoint", "test");
-    private static final Set<String> KEYED_LIST_FIELDS = Set.of("environment", "labels");
+    private static final Set<String> KEYED_LIST_FIELDS = Set.of("annotations", "args", "environment", "labels", "sysctls");
     private static final Set<String> TARGETED_LIST_FIELDS = Set.of("volumes", "secrets", "configs");
     private static final Set<String> DEDUPLICATED_LIST_FIELDS = Set.of("cap_add", "cap_drop",
             "constraints", "device_cgroup_rules", "dns", "dns_search", "expose", "external_links",

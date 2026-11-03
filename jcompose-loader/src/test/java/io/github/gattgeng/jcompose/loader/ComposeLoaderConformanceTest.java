@@ -572,6 +572,44 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
+    void mergesListFormBuildArgsSysctlsAndAnnotationsByKey() throws IOException {
+        Path directory = temporaryDirectory.resolve("overlay-keyed-lists");
+        Files.createDirectories(directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: example/app
+                    build:
+                      context: .
+                      args: [APP_MODE=base, LOG_LEVEL=info]
+                    sysctls: [net.ipv4.ip_forward=0, kernel.shm_rmid_forced=0]
+                    annotations: [com.example.mode=base, com.example.owner=team-a]
+                    extra_hosts: [service.local:127.0.0.1]
+                """);
+        Files.writeString(directory.resolve("compose.override.yaml"), """
+                services:
+                  app:
+                    build:
+                      args: [APP_MODE=release, DEBUG=0]
+                    sysctls: [net.ipv4.ip_forward=1, kernel.threads-max=4096]
+                    annotations: [com.example.mode=release, com.example.owner=team-a]
+                    extra_hosts: [service.local:127.0.0.2]
+                """);
+
+        ServiceDefinition app = new ComposeFileLoader().loadMerged(directory,
+                List.of("compose.yaml", "compose.override.yaml")).services().get("app");
+        Map<?, ?> build = (Map<?, ?>) app.configuration().get("build");
+
+        assertEquals(List.of("APP_MODE=release", "LOG_LEVEL=info", "DEBUG=0"), build.get("args"));
+        assertEquals(List.of("net.ipv4.ip_forward=1", "kernel.shm_rmid_forced=0", "kernel.threads-max=4096"),
+                app.configuration().get("sysctls"));
+        assertEquals(List.of("com.example.mode=release", "com.example.owner=team-a"),
+                app.configuration().get("annotations"));
+        assertEquals(List.of("service.local:127.0.0.1", "service.local:127.0.0.2"),
+                app.configuration().get("extra_hosts"));
+    }
+
+    @Test
     void resetMergeTagClearsInheritedSequence() throws IOException {
         Path directory = temporaryDirectory.resolve("reset-merge-tag");
         Files.createDirectories(directory);
