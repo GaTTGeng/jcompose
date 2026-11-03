@@ -610,6 +610,30 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
+    void removesDuplicateEnvFileEntriesWhenMergingComposeFiles() throws IOException {
+        Path directory = temporaryDirectory.resolve("overlay-env-file");
+        Files.createDirectories(directory);
+        Files.writeString(directory.resolve("app.env"), "FROM_FILE=loaded\n");
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: example/app
+                    env_file: [app.env, app.env]
+                """);
+        Files.writeString(directory.resolve("compose.override.yaml"), """
+                services:
+                  app:
+                    env_file: [app.env]
+                """);
+
+        ServiceDefinition app = new ComposeFileLoader().loadMerged(directory,
+                List.of("compose.yaml", "compose.override.yaml")).services().get("app");
+
+        assertEquals(List.of("app.env"), app.configuration().get("env_file"));
+        assertEquals("loaded", ((Map<?, ?>) app.configuration().get("environment")).get("FROM_FILE"));
+    }
+
+    @Test
     void resetMergeTagClearsInheritedSequence() throws IOException {
         Path directory = temporaryDirectory.resolve("reset-merge-tag");
         Files.createDirectories(directory);
