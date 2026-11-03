@@ -45,8 +45,8 @@ public final class ComposeFileLoader {
     private static final Set<String> KEYED_LIST_FIELDS = Set.of("environment", "labels");
     private static final Set<String> TARGETED_LIST_FIELDS = Set.of("volumes", "secrets", "configs");
     private static final Set<String> DEDUPLICATED_LIST_FIELDS = Set.of("cap_add", "cap_drop",
-            "constraints", "device_cgroup_rules", "expose", "external_links", "generic_resources",
-            "preferences", "security_opt");
+            "constraints", "device_cgroup_rules", "dns", "dns_search", "expose", "external_links",
+            "generic_resources", "preferences", "security_opt", "tmpfs");
     private static final Set<String> PORT_MAPPING_FIELDS = Set.of(
             "target", "published", "host_ip", "protocol", "mode", "name", "app_protocol");
     private static final Set<String> EXTENDS_UNIQUE_LIST_FIELDS = Set.of("cap_add", "cap_drop", "configs",

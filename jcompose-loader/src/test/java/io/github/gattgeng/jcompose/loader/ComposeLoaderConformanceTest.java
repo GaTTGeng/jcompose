@@ -514,7 +514,7 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
-    void deduplicatesComposeUniqueOverlaySequencesAndAppendsOrdinarySequences() throws IOException {
+    void deduplicatesComposeUniqueOverlaySequences() throws IOException {
         Path directory = temporaryDirectory.resolve("overlay-sequences");
         Files.createDirectories(directory);
         Files.writeString(directory.resolve("compose.yaml"), """
@@ -524,7 +524,6 @@ class ComposeLoaderConformanceTest {
                     cap_add: [SYS_ADMIN, CHOWN]
                     expose: [80, 443]
                     security_opt: [label=role:ROLE]
-                    dns: [1.1.1.1, 8.8.8.8]
                 """);
         Files.writeString(directory.resolve("compose.override.yaml"), """
                 services:
@@ -532,7 +531,6 @@ class ComposeLoaderConformanceTest {
                     cap_add: [CHOWN, NET_ADMIN]
                     expose: [443, 8080]
                     security_opt: [label=role:ROLE, no-new-privileges:true]
-                    dns: [8.8.8.8, 9.9.9.9]
                 """);
 
         ServiceDefinition app = new ComposeFileLoader().loadMerged(directory,
@@ -542,7 +540,35 @@ class ComposeLoaderConformanceTest {
         assertEquals(List.of(80, 443, 8080), app.configuration().get("expose"));
         assertEquals(List.of("label=role:ROLE", "no-new-privileges:true"),
                 app.configuration().get("security_opt"));
-        assertEquals(List.of("1.1.1.1", "8.8.8.8", "8.8.8.8", "9.9.9.9"), app.configuration().get("dns"));
+    }
+
+    @Test
+    void removesDuplicateDnsAndTmpfsEntriesWhenMergingComposeFiles() throws IOException {
+        Path directory = temporaryDirectory.resolve("overlay-dns-tmpfs");
+        Files.createDirectories(directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: example/app
+                    dns: [1.1.1.1, 8.8.8.8]
+                    dns_search: [example.test, internal.test]
+                    tmpfs: [/tmp, /run]
+                """);
+        Files.writeString(directory.resolve("compose.override.yaml"), """
+                services:
+                  app:
+                    dns: [8.8.8.8, 9.9.9.9]
+                    dns_search: [internal.test, staging.test]
+                    tmpfs: [/run, /dev/shm]
+                """);
+
+        ServiceDefinition app = new ComposeFileLoader().loadMerged(directory,
+                List.of("compose.yaml", "compose.override.yaml")).services().get("app");
+
+        assertEquals(List.of("1.1.1.1", "8.8.8.8", "9.9.9.9"), app.configuration().get("dns"));
+        assertEquals(List.of("example.test", "internal.test", "staging.test"),
+                app.configuration().get("dns_search"));
+        assertEquals(List.of("/tmp", "/run", "/dev/shm"), app.configuration().get("tmpfs"));
     }
 
     @Test
