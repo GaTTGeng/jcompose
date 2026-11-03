@@ -41,7 +41,7 @@ The API exposes the synchronized operation surface, while each engine method cur
 - Implement the Spring Boot starter with predictable configuration and lifecycle behavior. The starter auto-configures `IComposeService`, binds `jcompose.*` defaults, and provides `JComposeContextFactory`; focused tests cover property binding, context defaults, and back-off for a custom service. Lifecycle review found no service-level resources to close: operations own and close their Docker clients, callers cancel operation futures, and Flow subscriptions release stream resources when cancelled, so the bean needs no shutdown hook.
 - Build a usable Java API example and document supported JDK, Maven, and Docker Engine versions.
 - Configure cross-platform CI and Docker-backed integration verification.
-- Decide and document Maven artifact hosting, namespace ownership, source/Javadoc packaging, signing, and release automation before the first publication.
+- Maven Central's Sonatype Central Portal is selected, source/Javadoc jars and GPG signing are configured, and a tag-triggered validation workflow is in place. Namespace ownership, protected CI secrets, and a successful non-publishing Central validation remain release gates.
 
 ## Completion criteria
 

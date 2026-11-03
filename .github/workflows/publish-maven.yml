@@ -1,0 +1,62 @@
+name: Publish Maven release
+
+on:
+  push:
+    tags:
+      - '*.*.*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: maven-central-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'GaTTGeng/jcompose'
+    runs-on: ubuntu-24.04
+    environment: maven-central
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          server-id: central
+          server-username: CENTRAL_USERNAME
+          server-password: CENTRAL_PASSWORD
+      - name: Validate release tag and POM version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME}"
+          [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          python3 - "$version" <<'PY'
+          import pathlib
+          import sys
+          import xml.etree.ElementTree as ET
+
+          namespace = "{http://maven.apache.org/POM/4.0.0}"
+          version = sys.argv[1]
+          for pom in [pathlib.Path("pom.xml"), *pathlib.Path(".").glob("*/pom.xml")]:
+              project = ET.parse(pom).getroot()
+              project_version = project.find(f"{namespace}version")
+              parent_version = project.find(f"{namespace}parent/{namespace}version")
+              actual = project_version if project_version is not None else parent_version
+              if actual is None or actual.text != version:
+                  raise SystemExit(f"{pom} must use release version {version}")
+          PY
+      - name: Import release signing key
+        shell: bash
+        env:
+          MAVEN_GPG_PRIVATE_KEY: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+        run: printf '%s' "$MAVEN_GPG_PRIVATE_KEY" | gpg --batch --import
+      - name: Publish bundle for Central validation
+        shell: bash
+        env:
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+          MAVEN_GPG_KEY_FINGERPRINT: ${{ secrets.MAVEN_GPG_KEY_FINGERPRINT }}
+          CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
+          CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
+        run: mvn --batch-mode --no-transfer-progress -Prelease deploy

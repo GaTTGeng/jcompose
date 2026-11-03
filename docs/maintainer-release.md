@@ -20,7 +20,13 @@ This repository targets JDK users and Maven artifacts. **Publishing a JDK releas
 
 ## Publication configuration
 
-The repository does not yet have a completed Maven Central publishing workflow. Before the release step, confirm ownership of the `io.github.gattgeng.jcompose` namespace, choose the Maven repository, configure artifact signing and CI publication credentials, and exercise the workflow without publishing a release. Add the exact workflow and recovery procedure here once it exists. Do not create a release tag or publish JDK artifacts while this section is incomplete.
+Maven Central's Sonatype Central Portal is the selected artifact host. The reactor attaches source and Javadoc jars during `package`. The `release` Maven profile signs artifacts with GnuPG and uploads them to a Central deployment for validation; automatic public release is disabled, so a maintainer must review the validated deployment in the Central Portal and explicitly publish it.
+
+The [Maven release workflow](../.github/workflows/publish-maven.yml) runs only for a plain SemVer tag such as `3.0.0`. It checks that the root project and every module parent reference use the same non-snapshot version, imports the signing key, runs the complete Maven `deploy` lifecycle, and waits for Central validation. It neither creates tags nor automatically publishes a validated deployment.
+
+Before creating the release tag, register and verify the `io.github.gattgeng.jcompose` namespace in the Sonatype Central Portal, add a protected GitHub environment named `maven-central` with a reviewer, and configure these environment secrets: `CENTRAL_USERNAME`, `CENTRAL_PASSWORD`, `MAVEN_GPG_PRIVATE_KEY`, `MAVEN_GPG_PASSPHRASE`, and `MAVEN_GPG_KEY_FINGERPRINT`. Keep the release tag's POM versions aligned across all modules. The workflow has not been run against Central and must not be triggered until the final JDK release step.
+
+If a deployment fails validation, correct the source and release metadata and use a new version before retrying. After Central publishes a version, treat it as immutable; reconcile any partial upload in the Portal before attempting another release.
 
 ## Release execution
 
