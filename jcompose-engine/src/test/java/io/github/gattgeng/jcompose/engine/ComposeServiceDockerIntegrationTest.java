@@ -737,6 +737,36 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void serviceWithoutNetworksUsesImplicitDefaultAlongsideDeclaredProjectNetworks() throws Exception {
+        String projectName = "jcompose-it-default-network-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: ["sh", "-c", "sleep 60"]
+                networks:
+                  frontend: {}
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            try (var client = DockerClientFactory.create(context)) {
+                var containers = client.listContainersCmd().withShowAll(true)
+                        .withLabelFilter(java.util.Map.of("com.docker.compose.project", projectName)).exec();
+                assertEquals(1, containers.size());
+                var attachedNetworks = client.inspectContainerCmd(containers.getFirst().getId()).exec()
+                        .getNetworkSettings().getNetworks().keySet();
+                assertTrue(attachedNetworks.contains(projectName + "_default"));
+                assertFalse(attachedNetworks.contains(projectName + "_frontend"));
+            }
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
     void downWithVolumesRemovesAnonymousAndDeclaredVolumes() throws Exception {
         String projectName = "jcompose-down-volumes-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
