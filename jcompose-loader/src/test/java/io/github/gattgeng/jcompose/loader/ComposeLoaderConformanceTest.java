@@ -47,6 +47,33 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
+    void interpolatesSingleQuotedAndBlockScalarsLikeDockerCompose() throws IOException {
+        String variable = "JCOMPOSE_BLOCK_SCALAR_INTERPOLATION";
+        Files.writeString(temporaryDirectory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: example/app
+                    command: |
+                      echo ${JCOMPOSE_BLOCK_SCALAR_INTERPOLATION:-literal-default}
+                    entrypoint: >-
+                      echo ${JCOMPOSE_BLOCK_SCALAR_INTERPOLATION:-folded-default}
+                    environment:
+                      BLOCK_VALUE: |
+                        ${JCOMPOSE_BLOCK_SCALAR_INTERPOLATION:-block-default}
+                      LITERAL_VALUE: '${JCOMPOSE_BLOCK_SCALAR_INTERPOLATION:-single-quoted}'
+                """);
+
+        ServiceDefinition app = new ComposeFileLoader().load(temporaryDirectory, "compose.yaml", Map.of(variable, ""))
+                .services().get("app");
+        Map<?, ?> environment = (Map<?, ?>) app.configuration().get("environment");
+
+        assertEquals("echo literal-default\n", app.configuration().get("command"));
+        assertEquals("echo folded-default", app.configuration().get("entrypoint"));
+        assertEquals("block-default\n", environment.get("BLOCK_VALUE"));
+        assertEquals("single-quoted", environment.get("LITERAL_VALUE"));
+    }
+
+    @Test
     void rejectsNonStringTopLevelProjectName() throws IOException {
         Path file = temporaryDirectory.resolve("compose.yaml");
         Files.writeString(file, """

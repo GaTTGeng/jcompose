@@ -12,7 +12,7 @@ Invalid input raises `ComposeValidationException`. The exception exposes `source
 
 ## Variable interpolation
 
-Interpolation runs on each Compose file before multi-file merging. It applies to unquoted and double-quoted YAML scalar values; mapping keys, comments, single-quoted values, and literal/folded block scalars are preserved without interpolation. The loader currently recognizes:
+Interpolation runs on each Compose file before multi-file merging. It applies to YAML scalar values in all styles, including single-quoted, literal block, and folded block values; mapping keys and comments are preserved. YAML scalar quoting does not disable Compose interpolation. This differs from `.env` and service `env_file` parsing, where single-quoted values are literal. Docker Compose CLI v5.5.1 and `ComposeLoaderConformanceTest.interpolatesSingleQuotedAndBlockScalarsLikeDockerCompose` verify these YAML cases. The loader currently recognizes:
 
 | Form | Current behavior |
 | --- | --- |

@@ -402,7 +402,10 @@ public final class ComposeFileLoader {
         }
         if (node instanceof ScalarNode scalar
                 && (scalar.getScalarStyle() == DumperOptions.ScalarStyle.PLAIN
-                || scalar.getScalarStyle() == DumperOptions.ScalarStyle.DOUBLE_QUOTED)) {
+                || scalar.getScalarStyle() == DumperOptions.ScalarStyle.DOUBLE_QUOTED
+                || scalar.getScalarStyle() == DumperOptions.ScalarStyle.SINGLE_QUOTED
+                || scalar.getScalarStyle() == DumperOptions.ScalarStyle.LITERAL
+                || scalar.getScalarStyle() == DumperOptions.ScalarStyle.FOLDED)) {
             try {
                 return new ScalarNode(scalar.getTag(), interpolate(scalar.getValue(), dotenv, process),
                         scalar.getStartMark(), scalar.getEndMark(), scalar.getScalarStyle());
