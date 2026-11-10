@@ -20,6 +20,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Documented the Java asynchronous service operations with parameter and result contracts aligned to the ComposeSharp API surface.
 
 ### Fixed
+- Apply Compose service `cgroup` namespace and platform-specific `isolation` settings to Docker Engine host configuration for service and one-off containers.
 - Match Docker Compose container-to-host copy behavior for directory sources ending in `/.`, placing the source contents directly into the destination directory.
 - Match Docker Compose container-to-host copy destination semantics for new file paths, new directories, and existing destination directories; reject directory-to-file copies and do not create missing destination parents.
 - Tokenize scalar service, one-off, lifecycle-hook, and watch `sync+exec` commands using Compose shell-word rules without invoking a shell, preserve explicit empty service command overrides, and reject malformed quoting during project loading.

@@ -2207,9 +2207,23 @@ public final class ComposeService implements IComposeService {
         return List.copyOf(devices);
     }
 
-    private static void applyRuntimeOptions(com.github.dockerjava.api.model.HostConfig host, Map<String, Object> config) {
+    static void applyRuntimeOptions(com.github.dockerjava.api.model.HostConfig host, Map<String, Object> config) {
         if (config.get("userns_mode") != null) host.withUsernsMode(String.valueOf(config.get("userns_mode")));
         if (config.get("runtime") != null) host.withRuntime(String.valueOf(config.get("runtime")));
+        if (config.get("cgroup") != null) {
+            String cgroup = String.valueOf(config.get("cgroup"));
+            if (!cgroup.equals("host") && !cgroup.equals("private"))
+                throw new IllegalArgumentException("Service 'cgroup' must be 'host' or 'private'.");
+            host.withCgroupnsMode(cgroup);
+        }
+        if (config.get("isolation") != null) {
+            String isolation = String.valueOf(config.get("isolation"));
+            com.github.dockerjava.api.model.Isolation value =
+                    com.github.dockerjava.api.model.Isolation.fromValue(isolation);
+            if (value == null)
+                throw new IllegalArgumentException("Service 'isolation' must be 'default', 'process', or 'hyperv'.");
+            host.withIsolation(value);
+        }
         Object configuredStorageOptions = config.get("storage_opt");
         if (configuredStorageOptions != null) {
             if (!(configuredStorageOptions instanceof Map<?, ?> storageOptions)) {
