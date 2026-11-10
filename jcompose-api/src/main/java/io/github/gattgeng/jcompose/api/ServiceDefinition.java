@@ -14,6 +14,10 @@ public record ServiceDefinition(String name, Map<String, Object> configuration) 
     public String image() { return string("image"); }
     public String containerName() { return string("container_name"); }
     public Object build() { return configuration.get("build"); }
+    /** Returns environment entries with null values preserved for host passthrough. */
+    public Map<String, Object> environment() { return stringObjectMap(configuration.get("environment")); }
+    /** Returns service labels as immutable string values. */
+    public Map<String, String> labels() { return stringMap(configuration.get("labels")); }
     /** Returns a scalar Compose command as one item, without shell-splitting it. */
     public List<String> command() { return stringList(configuration.get("command")); }
     /** Returns a scalar Compose entrypoint as one item, without shell-splitting it. */
@@ -36,9 +40,21 @@ public record ServiceDefinition(String name, Map<String, Object> configuration) 
         if (!(value instanceof List<?> list)) return List.of();
         return list.stream().map(ServiceDefinition::port).toList();
     }
+    /** Returns volume declarations while preserving long-form mapping entries. */
+    public List<?> volumes() { return objectList(configuration.get("volumes")); }
     public List<String> profiles() {
         return stringList(configuration.get("profiles"));
     }
+    public List<String> extraHosts() { return keyValueList(configuration.get("extra_hosts"), ":"); }
+    public List<String> capAdd() { return stringList(configuration.get("cap_add")); }
+    public List<String> capDrop() { return stringList(configuration.get("cap_drop")); }
+    public List<String> devices() { return stringList(configuration.get("devices")); }
+    public List<String> securityOpt() { return stringList(configuration.get("security_opt")); }
+    public List<String> dns() { return stringList(configuration.get("dns")); }
+    public List<String> dnsOpt() { return stringList(configuration.get("dns_opt")); }
+    public List<String> dnsSearch() { return stringList(configuration.get("dns_search")); }
+    public List<String> groupAdd() { return stringList(configuration.get("group_add")); }
+    public List<String> links() { return stringList(configuration.get("links")); }
     public String restart() { return string("restart"); }
     public String networkMode() { return string("network_mode"); }
     public String ipc() { return string("ipc"); }
@@ -64,9 +80,53 @@ public record ServiceDefinition(String name, Map<String, Object> configuration) 
     public String extendsFile() {
         return configuration.get("extends") instanceof Map<?, ?> value ? text(value.get("file")) : null;
     }
+    private static List<?> objectList(Object value) {
+        if (value instanceof List<?> list) return List.copyOf(list);
+        return value == null ? List.of() : List.of(value);
+    }
     private static List<String> stringList(Object value) {
         if (value instanceof List<?> list) return list.stream().map(String::valueOf).toList();
         return value == null ? List.of() : List.of(String.valueOf(value));
+    }
+    private static Map<String, Object> stringObjectMap(Object value) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (value instanceof Map<?, ?> mapping) {
+            mapping.forEach((key, entry) -> result.put(String.valueOf(key), entry));
+        } else if (value instanceof List<?> list) {
+            for (Object item : list) {
+                String entry = String.valueOf(item);
+                int separator = entry.indexOf('=');
+                result.put(separator < 0 ? entry : entry.substring(0, separator),
+                        separator < 0 ? null : entry.substring(separator + 1));
+            }
+        }
+        return Collections.unmodifiableMap(result);
+    }
+    private static Map<String, String> stringMap(Object value) {
+        if (value instanceof Map<?, ?> mapping) {
+            Map<String, String> result = new LinkedHashMap<>();
+            mapping.forEach((key, entry) -> result.put(String.valueOf(key), entry == null ? "" : String.valueOf(entry)));
+            return Collections.unmodifiableMap(result);
+        }
+        if (value instanceof List<?> list) {
+            Map<String, String> result = new LinkedHashMap<>();
+            for (Object item : list) {
+                String label = String.valueOf(item);
+                int separator = label.indexOf('=');
+                result.put(separator < 0 ? label : label.substring(0, separator),
+                        separator < 0 ? "" : label.substring(separator + 1));
+            }
+            return Collections.unmodifiableMap(result);
+        }
+        return Map.of();
+    }
+    private static List<String> keyValueList(Object value, String separator) {
+        if (value instanceof Map<?, ?> mapping) {
+            return mapping.entrySet().stream()
+                    .map(entry -> String.valueOf(entry.getKey()) + separator + String.valueOf(entry.getValue()))
+                    .toList();
+        }
+        return stringList(value);
     }
     private String string(String key) {
         Object value = configuration.get(key);

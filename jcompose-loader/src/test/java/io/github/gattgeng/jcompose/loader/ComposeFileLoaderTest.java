@@ -563,6 +563,14 @@ class ComposeFileLoaderTest {
                     init: false
                     restart: unless-stopped
                     working_dir: /srv/app
+                    environment:
+                      APP_MODE: test
+                      HOST_VALUE: null
+                    labels:
+                      com.example.role: frontend
+                    cap_add: [NET_ADMIN]
+                    extra_hosts: ["internal.example:192.0.2.10"]
+                    volumes: ["./data:/data:ro"]
                     depends_on:
                       database:
                         condition: service_healthy
@@ -573,6 +581,10 @@ class ComposeFileLoaderTest {
                     image: example/worker
                     command: ["worker", "--once"]
                     entrypoint: /bin/worker
+                    environment: [WORKER_MODE=background, HOST_PASS]
+                    labels: [example.worker=yes, example.empty]
+                    extra_hosts:
+                      host.internal: 192.0.2.11
                     depends_on: [database]
                     networks: [back]
                 """);
@@ -592,12 +604,23 @@ class ComposeFileLoaderTest {
         assertEquals(Boolean.FALSE, app.init());
         assertEquals("unless-stopped", app.restart());
         assertEquals("/srv/app", app.workingDir());
+        assertEquals("test", app.environment().get("APP_MODE"));
+        assertNull(app.environment().get("HOST_VALUE"));
+        assertEquals("frontend", app.labels().get("com.example.role"));
+        assertEquals(List.of("NET_ADMIN"), app.capAdd());
+        assertEquals(List.of("internal.example:192.0.2.10"), app.extraHosts());
+        assertEquals(1, app.volumes().size());
 
         var worker = services.get("worker");
         assertEquals(List.of("worker", "--once"), worker.command());
         assertEquals(List.of("/bin/worker"), worker.entrypoint());
         assertEquals(List.of("database"), worker.dependsOn());
         assertEquals(List.of("back"), worker.networks());
+        assertEquals("background", worker.environment().get("WORKER_MODE"));
+        assertNull(worker.environment().get("HOST_PASS"));
+        assertEquals("yes", worker.labels().get("example.worker"));
+        assertEquals("", worker.labels().get("example.empty"));
+        assertEquals(List.of("host.internal:192.0.2.11"), worker.extraHosts());
     }
 
     @Test
