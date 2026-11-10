@@ -1086,8 +1086,8 @@ class ComposeServiceDockerIntegrationTest {
             var container = client.inspectContainerCmd(containerId).exec();
             assertEquals(Boolean.TRUE, container.getHostConfig().getAutoRemove());
             anonymousVolume = container.getMounts().stream()
-                    .filter(mount -> "/cache".equals(mount.getDestination()))
-                    .map(com.github.dockerjava.api.model.ContainerMount::getName)
+                    .filter(mount -> "/cache".equals(mount.getDestination().getPath()))
+                    .map(mount -> mount.getName())
                     .filter(name -> name != null && !name.isBlank())
                     .findFirst().orElseThrow();
             client.stopContainerCmd(containerId).exec();
