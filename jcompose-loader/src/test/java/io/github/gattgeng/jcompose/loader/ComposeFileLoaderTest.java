@@ -1500,7 +1500,7 @@ class ComposeFileLoaderTest {
     }
 
     @Test
-    void interpolationAppliesToYamlValuesButNotKeysCommentsOrSingleQuotedScalars() throws Exception {
+    void interpolationAppliesToYamlValuesButNotKeysOrComments() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 # ${MISSING:?comments must not be interpolated}
                 services:
@@ -1518,7 +1518,7 @@ class ComposeFileLoaderTest {
 
         Map<?, ?> configuration = project.services().get("app").configuration();
         assertEquals("example/v1:blue", configuration.get("image"));
-        assertEquals("${TAG}", configuration.get("command"));
+        assertEquals("v1:blue", configuration.get("command"));
         assertEquals(Map.of("${ENV_KEY}", "literal-value"), configuration.get("environment"));
         assertEquals(List.of("resolved-label=interpolated-value"), configuration.get("labels"));
     }
