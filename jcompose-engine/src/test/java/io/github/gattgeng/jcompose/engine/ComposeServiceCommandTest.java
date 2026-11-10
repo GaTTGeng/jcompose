@@ -25,6 +25,13 @@ class ComposeServiceCommandTest {
     }
 
     @Test
+    void representsEmptyComposeEntrypointsWithTheDockerEngineResetValue() {
+        assertEquals(List.of(""), ComposeService.composeEntrypoint(""));
+        assertEquals(List.of(""), ComposeService.composeEntrypoint(List.of()));
+        assertEquals(List.of("sh", "-c"), ComposeService.composeEntrypoint("sh -c"));
+    }
+
+    @Test
     void rejectsUnmatchedQuotesAndEscapes() {
         assertThrows(IllegalArgumentException.class, () -> ComposeService.composeCommand("echo 'unfinished"));
         assertThrows(IllegalArgumentException.class, () -> ComposeService.composeCommand("echo \\"));

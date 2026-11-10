@@ -1095,29 +1095,25 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
-    void serviceEmptyEntrypointClearsTheImageEntrypoint() throws Exception {
+    void serviceEmptyEntrypointsSendTheDockerEngineResetValue() throws Exception {
         String projectName = "jcompose-service-empty-entrypoint-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:
                   empty_string:
-                    image: %s-image
-                    build: .
+                    image: busybox:1.36
+                    pull_policy: never
                     entrypoint: ""
                     command: ["sh", "-c", "exit 0"]
                   empty_list:
-                    image: %s-image
+                    image: busybox:1.36
+                    pull_policy: never
                     entrypoint: []
                     command: ["sh", "-c", "exit 0"]
-                """.formatted(projectName, projectName));
-        Files.writeString(directory.resolve("Dockerfile"), """
-                FROM busybox:1.36
-                ENTRYPOINT ["sh", "-c", "exit 42"]
                 """);
 
         IComposeService service = new ComposeService();
         try {
-            service.buildAsync(context, null).get(Duration.ofMinutes(3).toMillis(), TimeUnit.MILLISECONDS);
             service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
             try (var client = DockerClientFactory.create(context)) {
                 for (String name : java.util.List.of("empty_string", "empty_list")) {
@@ -1127,6 +1123,7 @@ class ComposeServiceDockerIntegrationTest {
                                     "com.docker.compose.service", name))
                             .exec().stream().findFirst().orElseThrow();
                     var inspected = client.inspectContainerCmd(container.getId()).exec();
+                    assertArrayEquals(new String[]{""}, inspected.getConfig().getEntrypoint(), name);
                     assertEquals(0, inspected.getState().getExitCodeLong(), name);
                 }
             }

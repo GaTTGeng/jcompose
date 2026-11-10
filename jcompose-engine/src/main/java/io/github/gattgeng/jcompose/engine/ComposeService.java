@@ -3370,7 +3370,7 @@ public final class ComposeService implements IComposeService {
         return asStringList(value);
     }
 
-    private static List<String> composeEntrypoint(Object value) {
+    static List<String> composeEntrypoint(Object value) {
         List<String> entrypoint = composeCommand(value);
         return entrypoint.isEmpty() ? List.of("") : entrypoint;
     }
