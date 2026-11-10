@@ -581,6 +581,11 @@ class ComposeFileLoaderTest {
                       net.core.somaxconn: "1024"
                     annotations: [example.note=visible]
                     tmpfs: [/run]
+                    shm_size: 64m
+                    mem_limit: 1g
+                    memswap_limit: -1
+                    mem_reservation: 256m
+                    oom_kill_disable: false
                     depends_on:
                       database:
                         condition: service_healthy
@@ -591,6 +596,7 @@ class ComposeFileLoaderTest {
                     image: example/worker
                     command: ["worker", "--once"]
                     entrypoint: /bin/worker
+                    restart: on-failure:3
                     environment: [WORKER_MODE=background, HOST_PASS]
                     labels: [example.worker=yes, example.empty]
                     extra_hosts:
@@ -626,10 +632,17 @@ class ComposeFileLoaderTest {
         assertEquals("1024", app.sysctls().get("net.core.somaxconn"));
         assertEquals("visible", app.annotations().get("example.note"));
         assertEquals(List.of("/run"), app.tmpfs());
+        assertEquals(64L * 1024 * 1024, app.shmSize());
+        assertEquals(1024L * 1024 * 1024, app.memory());
+        assertEquals(-1L, app.memorySwap());
+        assertEquals(256L * 1024 * 1024, app.memoryReservation());
+        assertEquals(Boolean.FALSE, app.oomKillDisable());
 
         var worker = services.get("worker");
         assertEquals(List.of("worker", "--once"), worker.command());
         assertEquals(List.of("/bin/worker"), worker.entrypoint());
+        assertEquals("on-failure:3", worker.restart());
+        assertEquals(3, worker.restartMaxRetries());
         assertEquals(List.of("database"), worker.dependsOn());
         assertEquals(List.of("back"), worker.networks());
         assertEquals("background", worker.environment().get("WORKER_MODE"));

@@ -4,6 +4,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.math.BigDecimal;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** One Compose service. The raw normalized mapping preserves fields the engine does not apply. */
 public record ServiceDefinition(String name, Map<String, Object> configuration) {
@@ -95,8 +99,26 @@ public record ServiceDefinition(String name, Map<String, Object> configuration) 
     public String cpuQuota() { return string("cpu_quota"); }
     /** Returns the configured CPU set value. */
     public String cpuset() { return string("cpuset"); }
+    /** Returns configured shared-memory size in bytes. */
+    public Long shmSize() { return byteSize("shm_size"); }
+    /** Returns the configured memory limit in bytes. */
+    public Long memory() { return byteSize("mem_limit"); }
+    /** Returns the configured memory-plus-swap limit in bytes. */
+    public Long memorySwap() { return byteSize("memswap_limit"); }
+    /** Returns the configured memory reservation in bytes. */
+    public Long memoryReservation() { return byteSize("mem_reservation"); }
+    /** Returns the optional OOM-kill setting without collapsing explicit false to absence. */
+    public Boolean oomKillDisable() {
+        return configuration.get("oom_kill_disable") instanceof Boolean value ? value : null;
+    }
     /** Returns the configured OOM score adjustment. */
     public String oomScoreAdj() { return string("oom_score_adj"); }
+    /** Returns the optional retry count from an {@code on-failure:N} restart policy. */
+    public Integer restartMaxRetries() {
+        String policy = restart();
+        if (policy == null || !policy.startsWith("on-failure:")) return null;
+        return Integer.valueOf(policy.substring("on-failure:".length()));
+    }
     /** Returns the service restart policy. */
     public String restart() { return string("restart"); }
     /** Returns the configured network mode. */
@@ -209,6 +231,29 @@ public record ServiceDefinition(String name, Map<String, Object> configuration) 
     private String string(String key) {
         Object value = configuration.get(key);
         return value == null ? null : String.valueOf(value);
+    }
+
+    private Long byteSize(String key) {
+        Object value = configuration.get(key);
+        if (value == null) return null;
+        String source = String.valueOf(value).trim();
+        Matcher matcher = Pattern.compile("(?i)^([+-]?\\d+(?:\\.\\d+)?)\\s*(b|k|kb|kib|m|mb|mib|g|gb|gib|t|tb|tib|p|pb|pib)?$")
+                .matcher(source);
+        if (!matcher.matches()) throw new IllegalArgumentException("Invalid byte size for " + key + ": " + source);
+        long multiplier = switch (matcher.group(2) == null ? "b" : matcher.group(2).toLowerCase(Locale.ROOT)) {
+            case "b" -> 1L;
+            case "k", "kb", "kib" -> 1024L;
+            case "m", "mb", "mib" -> 1024L * 1024;
+            case "g", "gb", "gib" -> 1024L * 1024 * 1024;
+            case "t", "tb", "tib" -> 1024L * 1024 * 1024 * 1024;
+            case "p", "pb", "pib" -> 1024L * 1024 * 1024 * 1024 * 1024;
+            default -> throw new IllegalArgumentException("Invalid byte size for " + key + ": " + source);
+        };
+        try {
+            return new BigDecimal(matcher.group(1)).multiply(BigDecimal.valueOf(multiplier)).toBigInteger().longValueExact();
+        } catch (ArithmeticException exception) {
+            throw new IllegalArgumentException("Byte size is outside the supported range for " + key + ": " + source, exception);
+        }
     }
 
     private static String text(Object value) { return value == null ? null : String.valueOf(value); }
