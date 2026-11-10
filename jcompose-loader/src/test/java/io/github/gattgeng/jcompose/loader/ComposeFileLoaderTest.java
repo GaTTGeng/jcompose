@@ -580,6 +580,34 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void validatesStorageOptionsAsComposeMappings() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    storage_opt:
+                      size: 1G
+                """);
+
+        var project = new ComposeFileLoader().load(directory, null);
+
+        assertTrue(project.diagnostics().isEmpty());
+        assertEquals(Map.of("size", "1G"), project.services().get("app").configuration().get("storage_opt"));
+
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    storage_opt: [size=1G]
+                """);
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, null));
+
+        assertEquals("services.app.storage_opt", exception.propertyPath());
+    }
+
+    @Test
     void invalidPidsLimitReportsItsComposePropertyPath() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:
