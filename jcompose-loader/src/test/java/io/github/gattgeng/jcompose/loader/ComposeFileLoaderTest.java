@@ -543,6 +543,48 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void serviceDefinitionExposesTypedCoreListsForComposeScalarAndMappingForms() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                networks:
+                  front: {}
+                  back: {}
+                services:
+                  database:
+                    image: postgres
+                  app:
+                    image: example/app
+                    command: echo serving
+                    entrypoint: ["/bin/sh", "-c"]
+                    depends_on:
+                      database:
+                        condition: service_healthy
+                    networks:
+                      front: {aliases: [api]}
+                      back: null
+                  worker:
+                    image: example/worker
+                    command: ["worker", "--once"]
+                    entrypoint: /bin/worker
+                    depends_on: [database]
+                    networks: [back]
+                """);
+
+        var services = new ComposeFileLoader().load(directory, "compose.yaml").services();
+        var app = services.get("app");
+
+        assertEquals(List.of("echo serving"), app.command());
+        assertEquals(List.of("/bin/sh", "-c"), app.entrypoint());
+        assertEquals(List.of("database"), app.dependsOn());
+        assertEquals(List.of("front", "back"), app.networks());
+
+        var worker = services.get("worker");
+        assertEquals(List.of("worker", "--once"), worker.command());
+        assertEquals(List.of("/bin/worker"), worker.entrypoint());
+        assertEquals(List.of("database"), worker.dependsOn());
+        assertEquals(List.of("back"), worker.networks());
+    }
+
+    @Test
     void mergedResourceDiagnosticAttributesAnUnsupportedOverlayOptionToTheOverlay() throws Exception {
         Path base = directory.resolve("compose.yaml");
         Path overlay = directory.resolve("compose.override.yaml");

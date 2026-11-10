@@ -13,6 +13,22 @@ public record ServiceDefinition(String name, Map<String, Object> configuration) 
     }
     public String image() { return string("image"); }
     public Object build() { return configuration.get("build"); }
+    /** Returns a scalar Compose command as one item, without shell-splitting it. */
+    public List<String> command() { return stringList(configuration.get("command")); }
+    /** Returns a scalar Compose entrypoint as one item, without shell-splitting it. */
+    public List<String> entrypoint() { return stringList(configuration.get("entrypoint")); }
+    /** Returns dependency service names in declaration order, for either Compose syntax. */
+    public List<String> dependsOn() {
+        Object value = configuration.get("depends_on");
+        if (value instanceof Map<?, ?> dependencies) return dependencies.keySet().stream().map(String::valueOf).toList();
+        return stringList(value);
+    }
+    /** Returns attached network names in declaration order, for either Compose syntax. */
+    public List<String> networks() {
+        Object value = configuration.get("networks");
+        if (value instanceof Map<?, ?> networks) return networks.keySet().stream().map(String::valueOf).toList();
+        return stringList(value);
+    }
     /** Returns the service's port mappings in Docker Compose short or long syntax. */
     public List<ComposeServicePort> ports() {
         Object value = configuration.get("ports");
@@ -20,9 +36,11 @@ public record ServiceDefinition(String name, Map<String, Object> configuration) 
         return list.stream().map(ServiceDefinition::port).toList();
     }
     public List<String> profiles() {
-        Object value = configuration.get("profiles");
+        return stringList(configuration.get("profiles"));
+    }
+    private static List<String> stringList(Object value) {
         if (value instanceof List<?> list) return list.stream().map(String::valueOf).toList();
-        return List.of();
+        return value == null ? List.of() : List.of(String.valueOf(value));
     }
     private String string(String key) {
         Object value = configuration.get(key);

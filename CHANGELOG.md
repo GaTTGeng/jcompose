@@ -8,6 +8,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 
 ### Added
 - Synced ComposeSharp diagnostic refinements through `c01006f` and added Docker-backed coverage for services using the implicit project default network alongside declared project networks.
+- Added typed `ServiceDefinition` accessors for command, entrypoint, dependency names, and network names while retaining the normalized configuration mapping.
 
 ### Changed
 - Documented the Java asynchronous service operations with parameter and result contracts aligned to the ComposeSharp API surface.
