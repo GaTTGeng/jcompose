@@ -9,6 +9,9 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 ### Added
 - Synced ComposeSharp diagnostic refinements through `c01006f` and added Docker-backed coverage for services using the implicit project default network alongside declared project networks.
 
+### Changed
+- Documented the Java asynchronous service operations with parameter and result contracts aligned to the ComposeSharp API surface.
+
 ### Fixed
 - Interpolate variables in every YAML scalar style, including single-quoted and block scalars, matching Docker Compose.
 - Reject named Buildx builder selection before project loading because the direct Docker Engine build API cannot honor `ComposeBuildOptions.builderName`.
