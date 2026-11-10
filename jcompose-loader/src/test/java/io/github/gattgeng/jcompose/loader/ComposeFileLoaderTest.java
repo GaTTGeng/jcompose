@@ -386,6 +386,37 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void acceptsMemSwappinessWithinComposeRangeWithoutUnknownFieldDiagnostic() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    mem_swappiness: 100
+                """);
+
+        var project = new ComposeFileLoader().load(directory, null);
+
+        assertTrue(project.diagnostics().stream().noneMatch(diagnostic ->
+                diagnostic.propertyPath().equals("services.app.mem_swappiness")));
+        assertEquals(100, project.services().get("app").configuration().get("mem_swappiness"));
+    }
+
+    @Test
+    void rejectsMemSwappinessOutsideComposeRange() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    mem_swappiness: 101
+                """);
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, null));
+
+        assertEquals("services.app.mem_swappiness", exception.propertyPath());
+    }
+
+    @Test
     void diagnosesInvalidDevicePermissionSuffixesButAcceptsComposeModes() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:

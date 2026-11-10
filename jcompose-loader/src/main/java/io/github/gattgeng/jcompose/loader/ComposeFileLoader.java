@@ -65,7 +65,7 @@ public final class ComposeFileLoader {
             "pull_policy", "pull_refresh_after", "dns", "dns_search", "pid", "mac_address", "cgroup_parent", "extends", "develop", "links",
             "label_file",
             "cpu_count", "cpu_percent", "cpu_period", "cpus", "cpu_shares", "cpu_quota", "cpuset", "mem_limit",
-            "memswap_limit", "mem_reservation", "oom_kill_disable",
+            "memswap_limit", "mem_reservation", "mem_swappiness", "oom_kill_disable",
             "oom_score_adj", "pids_limit", "group_add", "annotations", "attach", "pre_start", "post_start", "pre_stop", "post_stop",
             "scale", "volumes_from", "external_links", "device_cgroup_rules", "blkio_config", "ulimits", "storage_opt",
             "isolation", "runtime", "credential_spec", "use_api_socket", "provider", "models", "dns_opt", "expose",
@@ -1163,6 +1163,8 @@ public final class ComposeFileLoader {
             validateLongInteger(file, service, configuration.get(key), path + "." + key, 0, Long.MAX_VALUE,
                     "a non-negative integer");
         validateLongInteger(file, service, configuration.get("cpu_percent"), path + ".cpu_percent", 0, 100,
+                "an integer from 0 to 100");
+        validateLongInteger(file, service, configuration.get("mem_swappiness"), path + ".mem_swappiness", 0, 100,
                 "an integer from 0 to 100");
         validateNumeric(file, service, configuration, "cpus", path + ".cpus");
         validateStringList(file, service, configuration.get("dns_opt"), path + ".dns_opt");

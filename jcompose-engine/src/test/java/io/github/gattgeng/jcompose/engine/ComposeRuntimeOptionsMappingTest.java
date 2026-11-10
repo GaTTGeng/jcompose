@@ -43,4 +43,13 @@ class ComposeRuntimeOptionsMappingTest {
         ComposeService.applyResourceConfig(unlimited, Map.of("pids_limit", -1));
         assertEquals(-1L, unlimited.getPidsLimit());
     }
+
+    @Test
+    void mapsMemorySwappinessToDockerHostConfig() {
+        HostConfig host = HostConfig.newHostConfig();
+
+        ComposeService.applyResourceConfig(host, Map.of("mem_swappiness", 42));
+
+        assertEquals(42L, host.getMemorySwappiness());
+    }
 }
