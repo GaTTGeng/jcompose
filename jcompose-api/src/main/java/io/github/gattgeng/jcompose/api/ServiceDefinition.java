@@ -1,10 +1,11 @@
 package io.github.gattgeng.jcompose.api;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Collections;
 import java.util.LinkedHashMap;
-import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -41,10 +42,29 @@ public record ServiceDefinition(String name, Map<String, Object> configuration) 
     public Map<String, String> labels() { return stringMap(configuration.get("labels")); }
     /** Returns the normalized healthcheck mapping, or an empty map when absent. */
     public Map<String, Object> healthcheck() { return objectMap(configuration.get("healthcheck")); }
+    /** Returns the service healthcheck as a typed projection, or null when absent. */
+    public ComposeHealthcheck healthcheckConfig() {
+        Map<String, Object> healthcheck = objectMap(configuration.get("healthcheck"));
+        if (healthcheck.isEmpty()) return null;
+        Object configuredTest = healthcheck.get("test");
+        List<String> test = configuredTest instanceof String command
+                ? List.of("CMD-SHELL", command) : nullableStringList(configuredTest);
+        return new ComposeHealthcheck(Boolean.TRUE.equals(booleanValue(healthcheck.get("disable"))), test,
+                durationValue(healthcheck.get("interval")), durationValue(healthcheck.get("timeout")),
+                integerValue(healthcheck.get("retries")), durationValue(healthcheck.get("start_period")),
+                durationValue(healthcheck.get("start_interval")));
+    }
     /** Returns the normalized deployment mapping, or an empty map when absent. */
     public Map<String, Object> deploy() { return objectMap(configuration.get("deploy")); }
+    /** Returns the service deployment block as a typed projection, or null when absent. */
+    public DeployConfig deployConfig() { return deployConfig(configuration.get("deploy")); }
     /** Returns the normalized logging mapping, or an empty map when absent. */
     public Map<String, Object> logging() { return objectMap(configuration.get("logging")); }
+    /** Returns the service logging block as a typed projection, or null when absent. */
+    public LoggingConfig loggingConfig() {
+        if (!(configuration.get("logging") instanceof Map<?, ?> logging)) return null;
+        return new LoggingConfig(text(logging.get("driver")), nullableStringMap(logging.get("options")));
+    }
     /** Returns the normalized development mapping, or an empty map when absent. */
     public Map<String, Object> develop() { return objectMap(configuration.get("develop")); }
     /** Returns a scalar Compose command as one item, without shell-splitting it. */
@@ -278,6 +298,92 @@ public record ServiceDefinition(String name, Map<String, Object> configuration) 
             return Boolean.valueOf(text);
         return null;
     }
+    private static Integer integerValue(Object value) {
+        if (value == null) return null;
+        try { return new BigDecimal(String.valueOf(value)).intValueExact(); }
+        catch (ArithmeticException | NumberFormatException exception) { return null; }
+    }
+    private static Long longValue(Object value) {
+        if (value == null) return null;
+        try { return new BigDecimal(String.valueOf(value)).longValueExact(); }
+        catch (ArithmeticException | NumberFormatException exception) { return null; }
+    }
+    private static Double doubleValue(Object value) {
+        if (value == null) return null;
+        try { return Double.valueOf(String.valueOf(value)); }
+        catch (NumberFormatException exception) { return null; }
+    }
+    private static Duration durationValue(Object value) {
+        if (value == null) return null;
+        String source = String.valueOf(value);
+        if ("0".equals(source)) return Duration.ZERO;
+        Matcher matcher = Pattern.compile("([0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(ns|us|µs|μs|ms|s|m|h)")
+                .matcher(source);
+        int offset = 0;
+        BigDecimal nanos = BigDecimal.ZERO;
+        while (matcher.find()) {
+            if (matcher.start() != offset) return null;
+            BigDecimal multiplier = switch (matcher.group(2)) {
+                case "ns" -> BigDecimal.ONE;
+                case "us", "µs", "μs" -> BigDecimal.valueOf(1_000);
+                case "ms" -> BigDecimal.valueOf(1_000_000);
+                case "s" -> BigDecimal.valueOf(1_000_000_000L);
+                case "m" -> BigDecimal.valueOf(60_000_000_000L);
+                case "h" -> BigDecimal.valueOf(3_600_000_000_000L);
+                default -> BigDecimal.ZERO;
+            };
+            nanos = nanos.add(new BigDecimal(matcher.group(1)).multiply(multiplier));
+            offset = matcher.end();
+        }
+        if (offset == 0 || offset != source.length()) return null;
+        try { return Duration.ofNanos(nanos.toBigIntegerExact().longValueExact()); }
+        catch (ArithmeticException exception) { return null; }
+    }
+    private static DeployConfig deployConfig(Object value) {
+        if (!(value instanceof Map<?, ?> deploy)) return null;
+        return new DeployConfig(integerValue(deploy.get("replicas")), deployResources(deploy.get("resources")),
+                deployRestartPolicy(deploy.get("restart_policy")), deployPlacement(deploy.get("placement")),
+                deployUpdate(deploy.get("update_config")), deployRollback(deploy.get("rollback_config")),
+                nullableStringMap(deploy.get("labels")), text(deploy.get("mode")),
+                deployEndpointMode(deploy.get("endpoint_mode")));
+    }
+    private static DeployConfig.Resources deployResources(Object value) {
+        if (!(value instanceof Map<?, ?> resources)) return null;
+        DeployConfig.Limits limits = null;
+        if (resources.get("limits") instanceof Map<?, ?> mapping)
+            limits = new DeployConfig.Limits(byteSizeValue(mapping.get("memory"), "deploy.resources.limits.memory"),
+                    text(mapping.get("nano_cpus")), longValue(mapping.get("cpus")));
+        DeployConfig.Reservations reservations = null;
+        if (resources.get("reservations") instanceof Map<?, ?> mapping)
+            reservations = new DeployConfig.Reservations(byteSizeValue(mapping.get("memory"), "deploy.resources.reservations.memory"),
+                    text(mapping.get("nano_cpus")));
+        return new DeployConfig.Resources(limits, reservations);
+    }
+    private static DeployConfig.RestartPolicy deployRestartPolicy(Object value) {
+        if (!(value instanceof Map<?, ?> policy)) return null;
+        return new DeployConfig.RestartPolicy(text(policy.get("condition")), integerValue(policy.get("max_retries")),
+                durationValue(policy.get("delay")), durationValue(policy.get("window")), durationValue(policy.get("period")));
+    }
+    private static DeployConfig.Placement deployPlacement(Object value) {
+        if (!(value instanceof Map<?, ?> placement)) return null;
+        return new DeployConfig.Placement(nullableStringList(placement.get("constraints")));
+    }
+    private static DeployConfig.UpdateConfig deployUpdate(Object value) {
+        if (!(value instanceof Map<?, ?> config)) return null;
+        return new DeployConfig.UpdateConfig(text(config.get("parallelism")), durationValue(config.get("delay")),
+                text(config.get("order")), durationValue(config.get("monitor")), text(config.get("failure_action")),
+                doubleValue(config.get("max_failure_ratio")));
+    }
+    private static DeployConfig.RollbackConfig deployRollback(Object value) {
+        if (!(value instanceof Map<?, ?> config)) return null;
+        return new DeployConfig.RollbackConfig(text(config.get("parallelism")), durationValue(config.get("delay")),
+                text(config.get("order")), durationValue(config.get("monitor")), text(config.get("failure_action")),
+                doubleValue(config.get("max_failure_ratio")));
+    }
+    private static DeployConfig.EndpointMode deployEndpointMode(Object value) {
+        if (!(value instanceof Map<?, ?> endpointMode)) return null;
+        return new DeployConfig.EndpointMode(text(endpointMode.get("mode")));
+    }
     private static List<String> keyValueList(Object value, String separator) {
         if (value instanceof Map<?, ?> mapping) {
             return mapping.entrySet().stream()
@@ -292,7 +398,10 @@ public record ServiceDefinition(String name, Map<String, Object> configuration) 
     }
 
     private Long byteSize(String key) {
-        Object value = configuration.get(key);
+        return byteSizeValue(configuration.get(key), key);
+    }
+
+    private static Long byteSizeValue(Object value, String key) {
         if (value == null) return null;
         String source = String.valueOf(value).trim();
         Matcher matcher = Pattern.compile("(?i)^([+-]?\\d+(?:\\.\\d+)?)\\s*(b|k|kb|kib|m|mb|mib|g|gb|gib|t|tb|tib|p|pb|pib)?$")

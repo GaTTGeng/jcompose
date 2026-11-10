@@ -6,6 +6,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -119,6 +120,84 @@ class ComposeFileLoaderTest {
         assertEquals("./worker", services.get("worker").buildConfig().context());
         assertEquals("3", services.get("legacy").buildConfig().args().get("VERSION"));
         assertNull(services.get("legacy").buildConfig().args().get("BUILD_ID"));
+    }
+
+    @Test
+    void exposesTypedHealthcheckDeployAndLoggingConfigurations() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: example/app
+                    healthcheck:
+                      test: curl -f http://localhost/health
+                      interval: 1.5s
+                      timeout: 500ms
+                      retries: 4
+                      start_period: 2s
+                      start_interval: 250ms
+                    deploy:
+                      replicas: 2
+                      resources:
+                        limits:
+                          memory: 512m
+                          cpus: 2
+                          nano_cpus: 1.5
+                        reservations:
+                          memory: 128m
+                          nano_cpus: 0.5
+                      restart_policy:
+                        condition: on-failure
+                        max_retries: 3
+                        delay: 2s
+                        window: 10s
+                        period: 30s
+                      placement:
+                        constraints: [node.role==worker]
+                      update_config:
+                        parallelism: 2
+                        delay: 1s
+                        order: start-first
+                        monitor: 5s
+                        failure_action: rollback
+                        max_failure_ratio: 0.2
+                      rollback_config:
+                        parallelism: 1
+                      labels: {org.example.tier: backend}
+                      mode: replicated
+                      endpoint_mode: {mode: vip}
+                    logging:
+                      driver: json-file
+                      options: {max-size: 10m}
+                """);
+
+        var app = new ComposeFileLoader().load(directory, null).services().get("app");
+        var healthcheck = app.healthcheckConfig();
+        var deploy = app.deployConfig();
+        var logging = app.loggingConfig();
+
+        assertEquals(List.of("CMD-SHELL", "curl -f http://localhost/health"), healthcheck.test());
+        assertEquals(Duration.ofMillis(1500), healthcheck.interval());
+        assertEquals(Duration.ofMillis(500), healthcheck.timeout());
+        assertEquals(4, healthcheck.retries());
+        assertEquals(Duration.ofSeconds(2), healthcheck.startPeriod());
+        assertEquals(Duration.ofMillis(250), healthcheck.startInterval());
+        assertEquals(2, deploy.replicas());
+        assertEquals(512L * 1024 * 1024, deploy.resources().limits().memory());
+        assertEquals("1.5", deploy.resources().limits().nanoCpus());
+        assertEquals(2L, deploy.resources().limits().cpuCount());
+        assertEquals(128L * 1024 * 1024, deploy.resources().reservations().memory());
+        assertEquals(3, deploy.restartPolicy().maxRetries());
+        assertEquals(Duration.ofSeconds(2), deploy.restartPolicy().delay());
+        assertEquals(List.of("node.role==worker"), deploy.placement().constraints());
+        assertEquals("2", deploy.updateConfig().parallelism());
+        assertEquals(Duration.ofSeconds(1), deploy.updateConfig().delay());
+        assertEquals(0.2, deploy.updateConfig().maxFailureRatio());
+        assertEquals("1", deploy.rollbackConfig().parallelism());
+        assertEquals("backend", deploy.labels().get("org.example.tier"));
+        assertEquals("replicated", deploy.mode());
+        assertEquals("vip", deploy.endpointMode().mode());
+        assertEquals("json-file", logging.driver());
+        assertEquals("10m", logging.options().get("max-size"));
     }
 
     @Test
