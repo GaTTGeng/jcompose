@@ -357,6 +357,7 @@ class ComposeServiceDockerIntegrationTest {
                     .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
             assertEquals(contents, Files.readString(copiedFile));
 
+            Files.createDirectory(copiedLinkDirectory);
             var followedLink = service.copyAsync(context, ComposeCopyOptions.builder()
                     .source("app:/tmp/fixture-link").destination(copiedLinkDirectory.toString()).followLink(true).build())
                     .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
