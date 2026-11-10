@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Match Docker Compose's terminal-sensitive `run` TTY default while keeping standard input open by default.
 - Clear image entrypoints for empty service and `run` entrypoint values, matching Docker Compose.
 - Make `run.remove(true)` enable Docker Engine auto-removal, including anonymous volumes and detached runs, matching Docker Compose `run --rm`.
 - Preserve Unix permission modes when creating and extracting container-copy archives, matching the ComposeSharp `a9ff810` copy behavior.

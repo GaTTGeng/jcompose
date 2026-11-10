@@ -1037,6 +1037,36 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void runAutoDetectsTtyAndKeepsStdinOpenByDefault() throws Exception {
+        String projectName = "jcompose-run-tty-default-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: ["sleep", "300"]
+                """);
+
+        IComposeService service = new ComposeService();
+        String containerId = null;
+        try {
+            containerId = service.runAsync(context, "app", ComposeRunOptions.builder()
+                            .noDeps(true).detach(true).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            try (var client = DockerClientFactory.create(context)) {
+                var config = client.inspectContainerCmd(containerId).exec().getConfig();
+                assertEquals(System.console() != null, config.getTty());
+                assertTrue(config.getStdinOpen());
+            }
+        } finally {
+            if (containerId != null) try (var client = DockerClientFactory.create(context)) {
+                client.removeContainerCmd(containerId).withForce(true).withRemoveVolumes(false).exec();
+            }
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
     void runWithNullOptionsRetainsTheExitedOneOffContainer() throws Exception {
         String projectName = "jcompose-run-default-retention-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);

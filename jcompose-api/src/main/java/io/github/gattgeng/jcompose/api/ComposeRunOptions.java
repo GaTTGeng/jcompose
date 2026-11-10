@@ -14,7 +14,7 @@ import java.util.Objects;
  * @param remove Remove the container and its anonymous volumes automatically when it exits; disabled by default.
  * @param detach Run detached and return the container ID immediately.
  * @param noDeps Do not start the service's dependency services first.
- * @param tty Allocate a TTY for the container.
+ * @param tty Allocate a TTY for the container; the builder defaults to whether the JVM detects a console.
  * @param interactive Keep standard input open and forward process standard input in attached mode; the builder defaults to true.
  * @param workdir Working directory inside the container.
  * @param user User (name or UID) the container process runs as.
@@ -113,7 +113,7 @@ public record ComposeRunOptions(
         private boolean remove;
         private boolean detach;
         private boolean noDeps;
-        private boolean tty = true;
+        private boolean tty = System.console() != null;
         private boolean interactive = true;
         private String workdir;
         private String user;
