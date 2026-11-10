@@ -764,10 +764,16 @@ class ComposeLoaderConformanceTest {
                       context: .
                       args: [APP_MODE=base, LOG_LEVEL=info]
                       labels: {com.example.build: base, com.example.owner: team}
+                      additional_contexts: [shared=./shared, base=./base]
                     environment: [APP_MODE=base, KEEP=1]
                     labels: {com.example.mode: base, com.example.owner: team}
                     annotations: [com.example.mode=base, com.example.owner=team]
                     sysctls: {net.ipv4.ip_forward: "0", kernel.shm_rmid_forced: "0"}
+                  worker:
+                    image: example/worker
+                    build:
+                      context: .
+                      additional_contexts: {shared: ./shared, base: ./base}
                 """);
         Files.writeString(directory.resolve("compose.override.yaml"), """
                 services:
@@ -775,19 +781,28 @@ class ComposeLoaderConformanceTest {
                     build:
                       args: {APP_MODE: release, DEBUG: "0"}
                       labels: [com.example.build=release, com.example.version=1]
+                      additional_contexts:
+                        shared: ./replacement
+                        docs: https://example.invalid/docs.git
                     environment: {APP_MODE: release, DEBUG: "0"}
                     labels: [com.example.mode=release, com.example.version=1]
                     annotations: {com.example.mode: release, com.example.version: "1"}
                     sysctls: [net.ipv4.ip_forward=1, kernel.threads-max=4096]
+                  worker:
+                    build:
+                      additional_contexts: [shared=./replacement, docs=https://example.invalid/docs.git]
                 """);
 
-        ServiceDefinition app = new ComposeFileLoader().loadMerged(directory,
-                List.of("compose.yaml", "compose.override.yaml")).services().get("app");
+        ComposeProject project = new ComposeFileLoader().loadMerged(directory,
+                List.of("compose.yaml", "compose.override.yaml"));
+        ServiceDefinition app = project.services().get("app");
         Map<?, ?> build = (Map<?, ?>) app.configuration().get("build");
 
         assertEquals(Map.of("APP_MODE", "release", "LOG_LEVEL", "info", "DEBUG", "0"), build.get("args"));
         assertEquals(Map.of("com.example.build", "release", "com.example.owner", "team",
                 "com.example.version", "1"), build.get("labels"));
+        assertEquals(Map.of("shared", "./replacement", "base", "./base",
+                "docs", "https://example.invalid/docs.git"), build.get("additional_contexts"));
         assertEquals(Map.of("APP_MODE", "release", "KEEP", "1", "DEBUG", "0"),
                 app.configuration().get("environment"));
         assertEquals(Map.of("com.example.mode", "release", "com.example.owner", "team",
@@ -796,6 +811,9 @@ class ComposeLoaderConformanceTest {
                 "com.example.version", "1"), app.configuration().get("annotations"));
         assertEquals(Map.of("net.ipv4.ip_forward", "1", "kernel.shm_rmid_forced", "0",
                 "kernel.threads-max", "4096"), app.configuration().get("sysctls"));
+        Map<?, ?> workerBuild = (Map<?, ?>) project.services().get("worker").configuration().get("build");
+        assertEquals(Map.of("shared", "./replacement", "base", "./base",
+                "docs", "https://example.invalid/docs.git"), workerBuild.get("additional_contexts"));
     }
 
     @Test

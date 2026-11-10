@@ -42,7 +42,8 @@ public final class ComposeFileLoader {
             "docker-compose.yaml", "docker-compose.override.yaml",
             "docker-compose.yml", "docker-compose.override.yml");
     private static final Set<String> REPLACE_FIELDS = Set.of("command", "entrypoint", "test");
-    private static final Set<String> KEYED_LIST_FIELDS = Set.of("annotations", "args", "environment", "labels", "sysctls");
+    private static final Set<String> KEYED_LIST_FIELDS = Set.of("additional_contexts", "annotations", "args",
+            "environment", "labels", "sysctls");
     private static final Set<String> TARGETED_LIST_FIELDS = Set.of("volumes", "secrets", "configs");
     private static final Set<String> DEDUPLICATED_LIST_FIELDS = Set.of("cap_add", "cap_drop",
             "constraints", "devices", "device_cgroup_rules", "dns", "dns_opt", "dns_search", "env_file",
@@ -1959,7 +1960,7 @@ public final class ComposeFileLoader {
 
     private static boolean isListMappingMergeField(String path, String key) {
         if (!path.startsWith("services.")) return false;
-        if (path.endsWith(".build")) return "args".equals(key) || "labels".equals(key);
+        if (path.endsWith(".build")) return Set.of("additional_contexts", "args", "labels").contains(key);
         return Set.of("depends_on", "networks", "annotations", "environment", "labels", "sysctls")
                 .contains(key);
     }

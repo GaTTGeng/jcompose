@@ -22,6 +22,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 ### Fixed
 - Merge service `depends_on` and `networks` declarations across list and mapping syntax instead of dropping entries when overlays change forms, matching Docker Compose's normalization-before-merge behavior.
 - Merge mapping and list forms of service `environment`, `labels`, `annotations`, and `sysctls`, plus `build.args` and `build.labels`, while preserving per-key overlay precedence.
+- Merge mapping and list forms of `build.additional_contexts` by context name, preserving inherited contexts while applying overlay replacements.
 - Merge service and build `extra_hosts` mapping/list forms as Compose host entries, retaining different values for the same host and removing exact duplicate entries.
 - Recognize `label_file` as a supported Docker Compose service field so loaded file labels do not produce an unknown-field diagnostic.
 - Recognize Docker-mapped CPU, DNS, expose, GPU, and namespace service fields in the loader, with property-scoped validation for their supported values (Docker Compose compatibility; independent of ComposeSharp `a9ff810`).
