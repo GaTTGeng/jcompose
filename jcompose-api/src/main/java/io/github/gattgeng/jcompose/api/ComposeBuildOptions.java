@@ -16,7 +16,7 @@ import java.util.Objects;
  * @param progress Progress output format requested from the builder.
  * @param target Multi-stage build target to stop at.
  * @param memory Memory limit for the build, as a size string understood by the builder.
- * @param builderName Named builder instance to use instead of the default.
+ * @param builderName Named Docker Buildx builder; nonblank values are rejected because the Docker Engine build API cannot select Buildx builders.
  * @param logConsumer Receives build progress lines and completion status; null discards progress output.
  */
 public record ComposeBuildOptions(

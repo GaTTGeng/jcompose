@@ -3781,6 +3781,10 @@ public final class ComposeService implements IComposeService {
     public CompletableFuture<Void> buildAsync(ComposeProjectContext context, ComposeBuildOptions options) {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
+            String builderName = options == null ? null : options.builderName();
+            if (builderName != null && !builderName.isBlank())
+                throw new UnsupportedOperationException(
+                        "Named Buildx builder selection is not supported by the Docker Engine build API.");
             ComposeProject project = loadComposeProject(context);
             List<ServiceDefinition> selected = selectConfigurationServices(project, context.profiles(),
                     options == null ? null : options.services());

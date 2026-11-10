@@ -10,6 +10,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Synced ComposeSharp diagnostic refinements through `c01006f` and added Docker-backed coverage for services using the implicit project default network alongside declared project networks.
 
 ### Fixed
+- Reject named Buildx builder selection before project loading because the direct Docker Engine build API cannot honor `ComposeBuildOptions.builderName`.
 - Correct the multi-file loader contract and merge guide to state that every file uses the first Compose file's project `.env`, matching Docker Compose.
 - Reviewed ComposeSharp `b26daa0a7151c139020d72253bc72cd5cbefd3f9` resource-diagnostic provenance refinement and added regression coverage confirming unsupported resource options retain the contributing file source across overlay defaults and extensions.
 - Remove duplicate service `env_file` entries across Compose overlays while preserving the resolved environment.

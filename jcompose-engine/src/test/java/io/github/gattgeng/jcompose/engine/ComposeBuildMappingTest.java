@@ -1,11 +1,15 @@
 package io.github.gattgeng.jcompose.engine;
 
+import io.github.gattgeng.jcompose.api.ComposeBuildOptions;
+import io.github.gattgeng.jcompose.api.ComposeProjectContext;
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -74,5 +78,17 @@ class ComposeBuildMappingTest {
         assertFalse(ComposeService.isQuietBuildProgress("JSON"));
         assertTrue(ComposeService.isQuietBuildProgress(" quiet "));
         assertThrows(IllegalArgumentException.class, () -> ComposeService.isQuietBuildProgress("compact"));
+    }
+
+    @Test
+    void rejectsNamedBuildxBuilderBeforeLoadingProjectOrConnectingToDocker() {
+        var context = new ComposeProjectContext("demo", Path.of("missing-compose-project"));
+
+        CompletionException exception = assertThrows(CompletionException.class,
+                () -> new ComposeService().buildAsync(context,
+                        ComposeBuildOptions.builder().builderName("desktop-linux").build()).join());
+
+        assertTrue(exception.getCause() instanceof UnsupportedOperationException);
+        assertTrue(exception.getCause().getMessage().contains("Buildx builder selection"));
     }
 }
