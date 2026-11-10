@@ -252,6 +252,8 @@ public final class ComposeService implements IComposeService {
             boolean hookFailed = false;
             try {
                 var create = client.createContainerCmd(image).withName(name).withLabels(labels).withHostConfig(host);
+                String servicePlatform = stringValue(service.configuration().get("platform"), null);
+                if (servicePlatform != null && !servicePlatform.isBlank()) create.withPlatform(servicePlatform);
                 if (hook.get("command") instanceof String command) create.withCmd("/bin/sh", "-c", command);
                 else if (hook.get("command") instanceof List<?> command) create.withCmd(command.stream().map(String::valueOf).toList());
                 if (!environment.isEmpty()) create.withEnv(environment.entrySet().stream()
@@ -931,13 +933,14 @@ public final class ComposeService implements IComposeService {
                     String image = service.image();
                     if (image == null || image.isBlank()) continue;
                     if (!shouldPullForExplicitPull(client, image, service)) continue;
-                    if (pulledImages.contains(image)) continue;
+                    String platform = options == null ? null : options.platform();
+                    if (platform == null || platform.isBlank())
+                        platform = stringValue(service.configuration().get("platform"), null);
+                    String pullKey = image + "\u0000" + (platform == null ? "" : platform);
+                    if (pulledImages.contains(pullKey)) continue;
                     try {
-                        String platform = options == null ? null : options.platform();
-                        if (platform == null || platform.isBlank())
-                            platform = stringValue(service.configuration().get("platform"), null);
                         pullImage(client, context.registryAuth(), image, platform);
-                        pulledImages.add(image);
+                        pulledImages.add(pullKey);
                     } catch (RuntimeException failure) {
                         if (!shouldIgnorePullFailure(options, failure)) throw failure;
                     }
@@ -1744,6 +1747,8 @@ public final class ComposeService implements IComposeService {
                     anonymousVolumes.getOrDefault(index, Map.of()));
             var command = client.createContainerCmd(image).withName(containerName(context.projectName(), service, replicas, index, context.compatibility()))
                     .withLabels(labels).withHostConfig(host);
+            String servicePlatform = stringValue(service.configuration().get("platform"), null);
+            if (servicePlatform != null && !servicePlatform.isBlank()) command.withPlatform(servicePlatform);
             com.github.dockerjava.api.model.HealthCheck healthcheck = serviceHealthcheck(service);
             if (healthcheck != null) command.withHealthcheck(healthcheck);
             List<String> environment = stringMap(service.configuration().get("environment")).entrySet().stream()
@@ -4171,6 +4176,8 @@ public final class ComposeService implements IComposeService {
 
                 var command = client.createContainerCmd(image).withName(name).withLabels(labels).withHostConfig(host)
                         .withTty(effective.tty()).withStdinOpen(effective.interactive());
+                String servicePlatform = stringValue(service.configuration().get("platform"), null);
+                if (servicePlatform != null && !servicePlatform.isBlank()) command.withPlatform(servicePlatform);
                 List<String> entrypoint = effective.entrypoint() == null || effective.entrypoint().isBlank()
                         ? asStringList(service.configuration().get("entrypoint")) : List.of(effective.entrypoint());
                 if (!entrypoint.isEmpty()) command.withEntrypoint(entrypoint);

@@ -88,3 +88,5 @@ The Java API declares the operation surface being synchronized from ComposeSharp
 These operations are SDK operations, not full `docker compose` equivalents, and their behavior has not yet been established as Docker Compose-conformant. In particular, do not infer support for every option declared by any operation options record. Cancelling a returned future with `cancel(true)` interrupts its worker and closes owned Docker clients; immediate interruption of an in-flight HTTP request depends on docker-java's configured transport.
 
 Before changing a row to Implemented, add loader and/or engine tests that compare observable behavior with Docker Compose, document the supported subset and limitations, and update this matrix. Use the official [Compose file reference](https://docs.docker.com/reference/compose-file/) as the field catalog.
+
+Service-level `platform` is passed to Docker Engine for image pulls, builds when no build-specific platform is set, service container creation, one-off `run`, and pre-start hook containers. An explicit pull-operation platform overrides the service value; the `platform` field is no longer reported as unapplied.

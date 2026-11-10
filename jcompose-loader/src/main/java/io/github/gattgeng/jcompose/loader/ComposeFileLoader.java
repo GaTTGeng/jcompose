@@ -483,11 +483,6 @@ public final class ComposeFileLoader {
                         addDiagnostic(result, file, provenance, servicePath + ".credential_spec.config", serviceName,
                                 "unsupported-field", "The Swarm config credential spec form is not applied by the local container backend.");
                     }
-                    if ("platform".equals(field.getKey()) && meaningful(field.getValue())
-                            && servicePlatformUnapplied(service)) {
-                        addDiagnostic(result, file, provenance, servicePath + ".platform", serviceName,
-                                "unsupported-field", "The service platform is not applied to image pulls or container creation.");
-                    }
                 }
                 Object rawBuild = service.get("build");
                 if (rawBuild instanceof Map<?, ?> buildMap) {
@@ -657,12 +652,6 @@ public final class ComposeFileLoader {
         } catch (NumberFormatException ignored) {
             return false;
         }
-    }
-
-    private static boolean servicePlatformUnapplied(Map<String, Object> service) {
-        Object build = service.get("build");
-        if (!meaningful(build)) return true;
-        return build instanceof Map<?, ?> map && meaningful(map.get("platforms"));
     }
 
     private static boolean dependencyConditionApplied(Object dependencyValue, String dependencyName,
