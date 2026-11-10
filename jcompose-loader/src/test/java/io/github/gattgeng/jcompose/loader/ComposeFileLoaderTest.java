@@ -216,6 +216,63 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void exposesTypedTopLevelResourceDefinitions() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                volumes:
+                  data:
+                    driver: local
+                    labels: {owner: app}
+                    driver_opts: {type: nfs}
+                  existing-data:
+                    external: true
+                networks:
+                  internal:
+                    driver: bridge
+                    internal: true
+                    attachable: false
+                    enable_ipv6: true
+                    scope: local
+                    ipam:
+                      driver: default
+                      config:
+                        - subnet: 10.20.0.0/16
+                          gateway: 10.20.0.1
+                          ip_range: 10.20.10.0/24
+                secrets:
+                  database-password:
+                    file: ./database-password.txt
+                    labels: {owner: app}
+                configs:
+                  settings:
+                    environment: APP_SETTINGS
+                """);
+
+        var project = new ComposeFileLoader().load(directory, null);
+
+        var volume = project.volumeConfigurations().getFirst();
+        assertEquals("data", volume.name());
+        assertFalse(volume.external());
+        assertEquals("local", volume.driver());
+        assertEquals("nfs", volume.driverOpts().get("type"));
+        assertTrue(project.volumeConfigurations().get(1).external());
+
+        var network = project.networkConfigurations().getFirst();
+        assertEquals("internal", network.name());
+        assertTrue(network.internal());
+        assertEquals(Boolean.FALSE, network.attachable());
+        assertTrue(network.enableIpv6());
+        assertEquals("10.20.0.0/16", network.ipam().config().getFirst().subnet());
+        assertEquals("10.20.0.1", network.ipam().config().getFirst().gateway());
+        assertEquals("10.20.10.0/24", network.ipam().config().getFirst().ipRange());
+
+        var secret = project.secretConfigurations().getFirst();
+        assertEquals("./database-password.txt", secret.file());
+        assertEquals("app", secret.labels().get("owner"));
+        var config = project.configConfigurations().getFirst();
+        assertEquals("APP_SETTINGS", config.environment());
+    }
+
+    @Test
     void acceptsMatchingServiceScaleAndDeployReplicas() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:

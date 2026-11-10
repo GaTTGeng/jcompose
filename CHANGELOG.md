@@ -7,6 +7,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 ## [Unreleased]
 
 ### Added
+- Added immutable typed projections for top-level Compose volume, network/IPAM, secret, and config definitions while retaining their normalized mappings.
 - Added an immutable typed `BuildConfig` projection for service build options, synchronized from ComposeSharp `3.0.0-32-g648a430` while retaining the normalized source mapping.
 - Added typed service healthcheck, deploy, and logging projections based on ComposeSharp `3.0.0-32-g648a430`, retaining the normalized mappings and jcompose's additional `start_interval` support.
 - Added a `Duration` projection for `stop_grace_period`, matching ComposeSharp `a9ff810` while retaining the normalized Compose value.
