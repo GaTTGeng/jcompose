@@ -527,11 +527,12 @@ public final class ComposeFileLoader {
                 if (deploy instanceof Map<?, ?> deployMap) {
                     for (var field : deployMap.entrySet()) {
                         String name = String.valueOf(field.getKey());
-                        if (!"replicas".equals(name) && !"restart_policy".equals(name)
+                        if (!"replicas".equals(name) && !"restart_policy".equals(name) && !"resources".equals(name)
                                 && !name.startsWith("x-") && meaningful(field.getValue()))
                             addDiagnostic(result, file, provenance, servicePath + ".deploy." + name, serviceName,
                                     "partially-supported-field", "Only deploy.replicas affects service operations.");
                     }
+                    diagnoseDeployResources(result, file, provenance, servicePath, serviceName, deployMap);
                     if (deployMap.get("restart_policy") instanceof Map<?, ?> restartPolicy) {
                         for (var option : restartPolicy.entrySet()) {
                             String name = String.valueOf(option.getKey());
@@ -578,6 +579,33 @@ public final class ComposeFileLoader {
         addResourceDiagnostics(result, file, provenance, root, "secrets");
         addResourceDiagnostics(result, file, provenance, root, "configs");
         return List.copyOf(result);
+    }
+
+    private static void diagnoseDeployResources(List<ComposeDiagnostic> result, Path file,
+                                                Map<String, Path> provenance, String servicePath,
+                                                String serviceName, Map<?, ?> deploy) {
+        if (!(deploy.get("resources") instanceof Map<?, ?> resources)) return;
+        for (var section : resources.entrySet()) {
+            String sectionName = String.valueOf(section.getKey());
+            if (!(section.getValue() instanceof Map<?, ?> values)) {
+                if (meaningful(section.getValue()))
+                    addDiagnostic(result, file, provenance, servicePath + ".deploy.resources." + sectionName,
+                            serviceName, "partially-supported-field",
+                            "This deploy resource section is not applied to local containers.");
+                continue;
+            }
+            for (var option : values.entrySet()) {
+                String optionName = String.valueOf(option.getKey());
+                boolean applied = "limits".equals(sectionName)
+                        ? Set.of("memory", "cpus", "pids").contains(optionName)
+                        : "reservations".equals(sectionName) && Set.of("memory", "devices").contains(optionName);
+                if (!applied && meaningful(option.getValue()))
+                    addDiagnostic(result, file, provenance,
+                            servicePath + ".deploy.resources." + sectionName + "." + optionName,
+                            serviceName, "partially-supported-field",
+                            "This deploy resource option is retained but not applied to local containers.");
+            }
+        }
     }
 
     private static void addResourceDiagnostics(List<ComposeDiagnostic> result, Path file, Map<String, Path> provenance,

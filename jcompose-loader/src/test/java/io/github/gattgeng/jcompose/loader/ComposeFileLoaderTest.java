@@ -534,6 +534,26 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void deployResourceDiagnosticsPointToUnappliedOptions() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    deploy:
+                      resources:
+                        limits:
+                          pids: 64
+                        reservations:
+                          cpus: 0.5
+                """);
+
+        var diagnostics = new ComposeFileLoader().load(directory, null).diagnostics();
+
+        assertEquals(List.of("services.app.deploy.resources.reservations.cpus"),
+                diagnostics.stream().map(diagnostic -> diagnostic.propertyPath()).toList());
+    }
+
+    @Test
     void diagnosesUnsupportedBuildBehaviorWithoutFlaggingSupportedNetworksOrScalarCommands() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 networks:
