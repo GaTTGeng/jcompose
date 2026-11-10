@@ -1898,6 +1898,15 @@ public final class ComposeFileLoader {
             Object effective = merged.get(key);
             if (!base.containsKey(key)) {
                 replaceProvenance(result, overlayProvenance, child, child);
+            } else if (isListMappingMergeField(path, key)
+                    && listMappingValue(before) != null && listMappingValue(after) != null
+                    && effective instanceof Map<?, ?> mergedMap) {
+                Map<String, Path> normalizedBaseProvenance = remapListMappingProvenance(before, child, result);
+                result.clear();
+                result.putAll(normalizedBaseProvenance);
+                Map<String, Path> normalizedOverlayProvenance = remapListMappingProvenance(after, child, overlayProvenance);
+                applyOverlayProvenance(listMappingValue(before), listMappingValue(after),
+                        stringKeyMapUnchecked(mergedMap), child, result, normalizedOverlayProvenance);
             } else if (before instanceof Map<?, ?> baseMap && after instanceof Map<?, ?> overlayMap
                     && effective instanceof Map<?, ?> mergedMap) {
                 applyOverlayProvenance(stringKeyMapUnchecked(baseMap), stringKeyMapUnchecked(overlayMap),
@@ -1932,6 +1941,34 @@ public final class ComposeFileLoader {
 
     private static boolean isPathAtOrBelow(String path, String prefix) {
         return path.equals(prefix) || path.startsWith(prefix + ".") || path.startsWith(prefix + "[");
+    }
+
+    private static boolean isListMappingMergeField(String path, String key) {
+        return path.startsWith("services.") && ("depends_on".equals(key) || "networks".equals(key));
+    }
+
+    private static Map<String, Object> listMappingValue(Object value) {
+        if (value instanceof Map<?, ?> mapping) return stringKeyMapUnchecked(mapping);
+        if (!(value instanceof List<?> list) || list.stream().anyMatch(entry -> !(entry instanceof String))) return null;
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (Object entry : list) result.putIfAbsent((String) entry, Map.of());
+        return result;
+    }
+
+    private static Map<String, Path> remapListMappingProvenance(Object value, String path,
+                                                                 Map<String, Path> provenance) {
+        Map<String, Path> result = new LinkedHashMap<>(provenance);
+        if (!(value instanceof List<?> list)) return result;
+        result.keySet().removeIf(candidate -> candidate.startsWith(path + "["));
+        for (int index = 0; index < list.size(); index++) {
+            String sourcePath = path + "[" + index + "]";
+            String targetPath = appendPathSegment(path, String.valueOf(list.get(index)));
+            for (var entry : provenance.entrySet()) {
+                if (isPathAtOrBelow(entry.getKey(), sourcePath))
+                    result.put(targetPath + entry.getKey().substring(sourcePath.length()), entry.getValue());
+            }
+        }
+        return result;
     }
 
     private static int mergedListIndex(String field, List<?> base, List<?> overlay, List<?> merged, int overlayIndex) {
@@ -2400,6 +2437,14 @@ public final class ComposeFileLoader {
             if (after instanceof MergeTagValue tagged) {
                 result.put(key, tagged.tag().equals("!reset") ? resetValue(before, tagged.value()) : tagged.value());
                 continue;
+            }
+            if (isListMappingMergeField(path, key)) {
+                Map<String, Object> normalizedBase = listMappingValue(before);
+                Map<String, Object> normalizedOverlay = listMappingValue(after);
+                if (normalizedBase != null && normalizedOverlay != null) {
+                    result.put(key, merge(normalizedBase, normalizedOverlay, childPath));
+                    continue;
+                }
             }
             if (before instanceof Map<?, ?> a && after instanceof Map<?, ?> b && !REPLACE_FIELDS.contains(key)) {
                 result.put(key, merge(stringKeyMapUnchecked(a), stringKeyMapUnchecked(b), childPath));

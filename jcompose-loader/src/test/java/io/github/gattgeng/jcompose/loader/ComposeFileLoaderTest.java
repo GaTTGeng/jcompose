@@ -2267,6 +2267,45 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void overlaysMergeDependsOnAndNetworksAcrossListAndMappingSyntax() throws Exception {
+        Files.writeString(directory.resolve("base.yaml"), """
+                services:
+                  app:
+                    image: example/app
+                    depends_on: [db]
+                    networks:
+                      backend:
+                        aliases: [base-alias]
+                  db:
+                    image: postgres
+                networks:
+                  backend: {}
+                  frontend: {}
+                """);
+        Files.writeString(directory.resolve("override.yaml"), """
+                services:
+                  app:
+                    depends_on:
+                      db:
+                        restart: true
+                      cache:
+                        condition: service_started
+                    networks: [backend, frontend]
+                  cache:
+                    image: redis
+                """);
+
+        var project = new ComposeFileLoader().loadMerged(directory, List.of("base.yaml", "override.yaml"));
+        Map<?, ?> app = project.services().get("app").configuration();
+
+        assertEquals(Map.of("db", Map.of("restart", true), "cache", Map.of("condition", "service_started")),
+                app.get("depends_on"));
+        assertEquals(Map.of("backend", Map.of("aliases", List.of("base-alias")), "frontend", Map.of()),
+                app.get("networks"));
+        assertTrue(project.diagnostics().isEmpty());
+    }
+
+    @Test
     void portRangesMergeAcrossShortAndLongSyntaxByComposeUniqueKey() throws Exception {
         Files.writeString(directory.resolve("base.yaml"), """
                 services:

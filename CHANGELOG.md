@@ -20,6 +20,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Documented the Java asynchronous service operations with parameter and result contracts aligned to the ComposeSharp API surface.
 
 ### Fixed
+- Merge service `depends_on` and `networks` declarations across list and mapping syntax instead of dropping entries when overlays change forms, matching Docker Compose's normalization-before-merge behavior.
 - Recognize `label_file` as a supported Docker Compose service field so loaded file labels do not produce an unknown-field diagnostic.
 - Recognize Docker-mapped CPU, DNS, expose, GPU, and namespace service fields in the loader, with property-scoped validation for their supported values (Docker Compose compatibility; independent of ComposeSharp `a9ff810`).
 - Recognize and validate service `pids_limit` and `deploy.resources.limits.pids`; report only unapplied `deploy.resources` options instead of warning on supported resource values. This matches Docker Compose (independent of ComposeSharp `a9ff810`).
