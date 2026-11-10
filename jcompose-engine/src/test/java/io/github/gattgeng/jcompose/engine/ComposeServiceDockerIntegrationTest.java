@@ -344,10 +344,10 @@ class ComposeServiceDockerIntegrationTest {
                     environment:
                       BASE: inherited
                     post_start:
-                      - command: [sh, -c, 'echo post:$HOOK:$BASE > /hooks/events']
+                      - command: [sh, -c, 'echo post:$$HOOK:$$BASE > /hooks/events']
                         environment: [HOOK=started, BASE]
                     pre_stop:
-                      - command: [sh, -c, 'echo pre:$HOOK >> /hooks/events']
+                      - command: [sh, -c, 'echo pre:$$HOOK >> /hooks/events']
                         environment:
                           HOOK: stopped
                 """);
