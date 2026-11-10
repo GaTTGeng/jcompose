@@ -3053,9 +3053,13 @@ public final class ComposeService implements IComposeService {
     }
 
     static String rebaseArchiveRoot(String entryName, String archiveRoot, String destinationRoot) {
-        if (entryName == null || archiveRoot == null || destinationRoot == null || archiveRoot.isBlank() || destinationRoot.isBlank()) return entryName;
-        if (entryName.equals(archiveRoot)) return destinationRoot;
-        if (entryName.startsWith(archiveRoot + "/")) return destinationRoot + entryName.substring(archiveRoot.length());
+        if (entryName == null || archiveRoot == null || destinationRoot == null || archiveRoot.isBlank()) return entryName;
+        if (entryName.equals(archiveRoot)) return destinationRoot.isBlank() ? "." : destinationRoot;
+        if (entryName.startsWith(archiveRoot + "/")) {
+            String suffix = entryName.substring(archiveRoot.length() + 1);
+            if (destinationRoot.isBlank()) return suffix.isBlank() ? "." : suffix;
+            return destinationRoot + "/" + suffix;
+        }
         return entryName;
     }
 
@@ -3084,12 +3088,21 @@ public final class ComposeService implements IComposeService {
     }
 
     static ContainerCopyTarget containerCopyTarget(Path destination, String requestedDestination, boolean sourceDirectory,
-                                                     String archiveRoot, String sourceRoot) throws java.io.IOException {
+                                                     boolean sourceContentsOnly, String archiveRoot, String sourceRoot) throws java.io.IOException {
         Path target = destination.toAbsolutePath().normalize();
         boolean exists = Files.exists(target, java.nio.file.LinkOption.NOFOLLOW_LINKS);
         boolean targetDirectory = Files.isDirectory(target);
+        if (sourceContentsOnly) {
+            if (!sourceDirectory) throw new java.io.IOException("A directory-contents source must resolve to a directory: " + target);
+            if (exists && !targetDirectory)
+                throw new java.io.IOException("Cannot copy a directory to a non-directory destination: " + target);
+            Path parent = target.getParent();
+            if (!targetDirectory && (parent == null || !Files.isDirectory(parent)))
+                throw new java.nio.file.NoSuchFileException(parent == null ? target.toString() : parent.toString());
+            return new ContainerCopyTarget(target, archiveRoot, "", !targetDirectory);
+        }
         if (targetDirectory)
-            return new ContainerCopyTarget(target, archiveRoot, sourceRoot);
+            return new ContainerCopyTarget(target, archiveRoot, sourceRoot, false);
         if (sourceDirectory && exists)
             throw new java.io.IOException("Cannot copy a directory to a non-directory destination: " + target);
         boolean directoryAsserted = requestedDestination.replace('\\', '/').endsWith("/")
@@ -3102,10 +3115,10 @@ public final class ComposeService implements IComposeService {
         Path name = target.getFileName();
         if (name == null || name.toString().isBlank())
             throw new java.io.IOException("The copy destination must name a file or directory: " + target);
-        return new ContainerCopyTarget(parent, archiveRoot, name.toString());
+        return new ContainerCopyTarget(parent, archiveRoot, name.toString(), false);
     }
 
-    record ContainerCopyTarget(Path directory, String archiveRoot, String destinationRoot) { }
+    record ContainerCopyTarget(Path directory, String archiveRoot, String destinationRoot, boolean createDirectory) { }
 
     private static void ensureNoSymlinkPath(Path root, Path target) throws java.io.IOException {
         Path current = root;
@@ -4484,6 +4497,7 @@ public final class ComposeService implements IComposeService {
                 if (source.container()) {
                     Container container = archiveContainer(client, context.projectName(), source.service(), options.index(), options.all());
                     String archivePath = source.path();
+                    boolean sourceContentsOnly = source.path().replace('\\', '/').endsWith("/.");
                     DockerClientFactory.ContainerArchivePathStat stat = DockerClientFactory.containerArchivePathStat(
                             client, container.getId(), archivePath);
                     String sourceRoot = stat.name();
@@ -4501,7 +4515,8 @@ public final class ComposeService implements IComposeService {
                         Path requestedDestination = Path.of(destination.path()).toAbsolutePath().normalize();
                         ensureNoSymlinkAncestors(requestedDestination);
                         ContainerCopyTarget target = containerCopyTarget(requestedDestination, destination.path(),
-                                sourceDirectory, stat.name(), sourceRoot);
+                                sourceDirectory, sourceContentsOnly, stat.name(), sourceRoot);
+                        if (target.createDirectory()) Files.createDirectories(target.directory());
                         CopyExtraction extraction = extractTar(archive, target.directory(), target.archiveRoot(), target.destinationRoot());
                         return new CopyResult(null, sourceDirectory, extraction.bytes(), 0);
                     }

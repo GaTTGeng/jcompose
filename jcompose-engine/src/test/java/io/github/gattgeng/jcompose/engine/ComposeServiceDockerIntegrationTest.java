@@ -351,6 +351,19 @@ class ComposeServiceDockerIntegrationTest {
                     .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
             assertEquals(contents, Files.readString(existingCopyDirectory.resolve("data/fixture.txt")));
 
+            Path copiedDirectoryContents = directory.resolve("copied-directory-contents");
+            service.copyAsync(context, ComposeCopyOptions.builder().source("app:/data/.")
+                            .destination(copiedDirectoryContents.toString()).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertEquals(contents, Files.readString(copiedDirectoryContents.resolve("fixture.txt")));
+            assertFalse(Files.exists(copiedDirectoryContents.resolve("data")));
+
+            Path existingContentsDirectory = Files.createDirectory(directory.resolve("existing-contents"));
+            service.copyAsync(context, ComposeCopyOptions.builder().source("app:/data/.")
+                            .destination(existingContentsDirectory.toString()).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertEquals(contents, Files.readString(existingContentsDirectory.resolve("fixture.txt")));
+
             Path copiedFile = directory.resolve("copied-fixture.txt");
             service.copyAsync(context, ComposeCopyOptions.builder().source("app:/data/fixture.txt")
                             .destination(copiedFile.toString()).build())

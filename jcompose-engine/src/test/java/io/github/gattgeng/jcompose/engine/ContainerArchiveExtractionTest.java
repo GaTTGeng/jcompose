@@ -13,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -31,6 +32,17 @@ class ContainerArchiveExtractionTest {
         assertTrue(result.directory());
         assertEquals("compose123", Files.readString(destination.resolve("root/source")));
         assertEquals("compose123", Files.readString(destination.resolve("root/linked")));
+    }
+
+    @Test
+    void extractsDirectoryContentsArchiveAtDestinationRoot() throws IOException {
+        Path destination = Files.createDirectory(tempDirectory.resolve("contents"));
+
+        ComposeService.extractTar(new ByteArrayInputStream(archiveWithCurrentDirectoryRoot()), destination, ".", "");
+
+        assertEquals("compose123", Files.readString(destination.resolve("fixture.txt")));
+        assertTrue(Files.isDirectory(destination.resolve("nested")));
+        assertEquals("nested", Files.readString(destination.resolve("nested/child.txt")));
     }
 
     @Test
@@ -61,37 +73,53 @@ class ContainerArchiveExtractionTest {
                 ComposeService.rebaseArchiveRoot("fixture.txt/child.txt", "fixture.txt", "fixture-link"));
         assertEquals("elsewhere/child.txt",
                 ComposeService.rebaseArchiveRoot("elsewhere/child.txt", "fixture.txt", "fixture-link"));
+        assertEquals(".", ComposeService.rebaseArchiveRoot("./", ".", ""));
+        assertEquals("child.txt", ComposeService.rebaseArchiveRoot("./child.txt", ".", ""));
     }
 
     @Test
     void plansContainerCopyTargetsUsingFileAndDirectorySemantics() throws IOException {
         Path missingFile = tempDirectory.resolve("copied.txt");
         ComposeService.ContainerCopyTarget newFile = ComposeService.containerCopyTarget(
-                missingFile, missingFile.toString(), false, "source.txt", "source.txt");
+                missingFile, missingFile.toString(), false, false, "source.txt", "source.txt");
         assertEquals(tempDirectory, newFile.directory());
         assertEquals("copied.txt", newFile.destinationRoot());
 
         Path missingDirectory = tempDirectory.resolve("copied");
         ComposeService.ContainerCopyTarget newDirectory = ComposeService.containerCopyTarget(
-                missingDirectory, missingDirectory.toString(), true, "source", "source");
+                missingDirectory, missingDirectory.toString(), true, false, "source", "source");
         assertEquals(tempDirectory, newDirectory.directory());
         assertEquals("copied", newDirectory.destinationRoot());
 
         Path existingDirectory = Files.createDirectory(tempDirectory.resolve("existing"));
         ComposeService.ContainerCopyTarget intoDirectory = ComposeService.containerCopyTarget(
-                existingDirectory, existingDirectory.toString(), true, "source", "source");
+                existingDirectory, existingDirectory.toString(), true, false, "source", "source");
         assertEquals(existingDirectory, intoDirectory.directory());
         assertEquals("source", intoDirectory.destinationRoot());
 
+        Path contentsOnlyDirectory = tempDirectory.resolve("contents-only");
+        ComposeService.ContainerCopyTarget contentsOnly = ComposeService.containerCopyTarget(
+                contentsOnlyDirectory, contentsOnlyDirectory.toString(), true, true, ".", ".");
+        assertEquals(contentsOnlyDirectory, contentsOnly.directory());
+        assertEquals("", contentsOnly.destinationRoot());
+        assertTrue(contentsOnly.createDirectory());
+
+        ComposeService.ContainerCopyTarget contentsIntoDirectory = ComposeService.containerCopyTarget(
+                existingDirectory, existingDirectory.toString(), true, true, ".", ".");
+        assertEquals(existingDirectory, contentsIntoDirectory.directory());
+        assertFalse(contentsIntoDirectory.createDirectory());
+
         assertThrows(IOException.class, () -> ComposeService.containerCopyTarget(
                 tempDirectory.resolve("absent-parent/file"), tempDirectory.resolve("absent-parent/file").toString(),
-                false, "source.txt", "source.txt"));
+                false, false, "source.txt", "source.txt"));
         Path existingFile = Files.writeString(tempDirectory.resolve("existing-file"), "old");
         assertThrows(IOException.class, () -> ComposeService.containerCopyTarget(
-                existingFile, existingFile.toString(), true, "source", "source"));
+                existingFile, existingFile.toString(), true, false, "source", "source"));
+        assertThrows(IOException.class, () -> ComposeService.containerCopyTarget(
+                existingFile, existingFile.toString(), true, true, ".", "."));
         String assertedDirectory = tempDirectory.resolve("asserted") + "/";
         assertThrows(IOException.class, () -> ComposeService.containerCopyTarget(
-                Path.of(assertedDirectory), assertedDirectory, false, "source.txt", "source.txt"));
+                Path.of(assertedDirectory), assertedDirectory, false, false, "source.txt", "source.txt"));
     }
 
     @Test
@@ -221,6 +249,30 @@ class ContainerArchiveExtractionTest {
             tar.putArchiveEntry(child);
             tar.closeArchiveEntry();
             tar.finish();
+        }
+        return bytes.toByteArray();
+    }
+
+    private static byte[] archiveWithCurrentDirectoryRoot() throws IOException {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (TarArchiveOutputStream tar = new TarArchiveOutputStream(bytes)) {
+            TarArchiveEntry directory = new TarArchiveEntry("./", TarArchiveEntry.LF_DIR);
+            tar.putArchiveEntry(directory);
+            tar.closeArchiveEntry();
+
+            byte[] contents = "compose123".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            TarArchiveEntry file = new TarArchiveEntry("./fixture.txt");
+            file.setSize(contents.length);
+            tar.putArchiveEntry(file);
+            tar.write(contents);
+            tar.closeArchiveEntry();
+
+            byte[] nestedContents = "nested".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            TarArchiveEntry nested = new TarArchiveEntry("./nested/child.txt");
+            nested.setSize(nestedContents.length);
+            tar.putArchiveEntry(nested);
+            tar.write(nestedContents);
+            tar.closeArchiveEntry();
         }
         return bytes.toByteArray();
     }
