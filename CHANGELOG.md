@@ -42,9 +42,10 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Reject named Buildx builder selection before project loading because the direct Docker Engine build API cannot honor `ComposeBuildOptions.builderName`.
 - Correct the multi-file loader contract and merge guide to state that every file uses the first Compose file's project `.env`, matching Docker Compose.
 - Reviewed ComposeSharp `b26daa0a7151c139020d72253bc72cd5cbefd3f9` resource-diagnostic provenance refinement and added regression coverage confirming unsupported resource options retain the contributing file source across overlay defaults and extensions.
-- Remove duplicate service `env_file` entries across Compose overlays while preserving the resolved environment.
+- Remove duplicate service `env_file`, `dns_opt`, `group_add`, and `volumes_from` entries across Compose overlays while preserving the resolved environment values.
 - Merge list-form build `args`, service `annotations`, and `sysctls` by key so later Compose files replace values for matching keys.
 - Remove duplicate `dns`, `dns_search`, and `tmpfs` entries across Compose overlays, matching ComposeSharp list merging and Docker Compose's normalized configuration.
+- Remove exact duplicate `devices`, `extra_hosts`, `gpus`, `links`, `profiles`, and `build.tags` entries across Compose overlays, matching `docker compose config`.
 - Synced ComposeSharp `987503e`: diagnose unsupported Windows drive-letter volume sources and treat scalar `healthcheck.test: NONE` as a shell check, distinct from list-form `[NONE]`.
 - Honor `publishAsync`'s explicit OCI version and retry OCI 1.1 registry rejections using the OCI 1.0 Compose config media type; authentication failures are never retried as compatibility fallbacks.
 

@@ -588,10 +588,21 @@ class ComposeLoaderConformanceTest {
                 services:
                   app:
                     image: example/app
+                    build:
+                      context: .
+                      tags: [example/app:dev]
                     cap_add: [SYS_ADMIN, CHOWN]
+                    devices: [/dev/null:/dev/x:rwm]
                     dns_opt: [ndots:5, timeout:1]
                     expose: [80, 443]
+                    extra_hosts: [cache.local:127.0.0.1]
+                    gpus:
+                      - driver: nvidia
+                        count: 1
+                        capabilities: [gpu]
                     group_add: ["1000", "1001"]
+                    links: [cache:cache]
+                    profiles: [debug]
                     security_opt: [label=role:ROLE]
                     volumes_from: [cache]
                   cache:
@@ -600,21 +611,39 @@ class ComposeLoaderConformanceTest {
         Files.writeString(directory.resolve("compose.override.yaml"), """
                 services:
                   app:
+                    build:
+                      tags: [example/app:dev]
                     cap_add: [CHOWN, NET_ADMIN]
+                    devices: [/dev/null:/dev/x:rwm]
                     dns_opt: [timeout:1, attempts:2]
                     expose: [443, 8080]
+                    extra_hosts: [cache.local:127.0.0.1]
+                    gpus:
+                      - driver: nvidia
+                        count: 1
+                        capabilities: [gpu]
                     group_add: ["1001", "1002"]
+                    links: [cache:cache]
+                    profiles: [debug]
                     security_opt: [label=role:ROLE, no-new-privileges:true]
                     volumes_from: [cache]
                 """);
 
         ServiceDefinition app = new ComposeFileLoader().loadMerged(directory,
                 List.of("compose.yaml", "compose.override.yaml")).services().get("app");
+        Map<?, ?> build = (Map<?, ?>) app.configuration().get("build");
 
+        assertEquals(List.of("example/app:dev"), build.get("tags"));
         assertEquals(List.of("SYS_ADMIN", "CHOWN", "NET_ADMIN"), app.configuration().get("cap_add"));
+        assertEquals(List.of("/dev/null:/dev/x:rwm"), app.configuration().get("devices"));
         assertEquals(List.of("ndots:5", "timeout:1", "attempts:2"), app.configuration().get("dns_opt"));
         assertEquals(List.of(80, 443, 8080), app.configuration().get("expose"));
+        assertEquals(List.of("cache.local:127.0.0.1"), app.configuration().get("extra_hosts"));
+        assertEquals(List.of(Map.of("driver", "nvidia", "count", 1, "capabilities", List.of("gpu"))),
+                app.configuration().get("gpus"));
         assertEquals(List.of("1000", "1001", "1002"), app.configuration().get("group_add"));
+        assertEquals(List.of("cache:cache"), app.configuration().get("links"));
+        assertEquals(List.of("debug"), app.configuration().get("profiles"));
         assertEquals(List.of("label=role:ROLE", "no-new-privileges:true"),
                 app.configuration().get("security_opt"));
         assertEquals(List.of("cache"), app.configuration().get("volumes_from"));
