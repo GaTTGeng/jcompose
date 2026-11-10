@@ -717,6 +717,42 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
+    void mergesServiceAndBuildExtraHostsAcrossMappingAndListForms() throws IOException {
+        Path directory = temporaryDirectory.resolve("overlay-extra-hosts-mixed-forms");
+        Files.createDirectories(directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: example/app
+                    extra_hosts:
+                      cache.local: 192.0.2.1
+                      db.local: 192.0.2.2
+                    build:
+                      context: .
+                      extra_hosts: ["cache.local=192.0.2.1", "db.local=192.0.2.2"]
+                """);
+        Files.writeString(directory.resolve("compose.override.yaml"), """
+                services:
+                  app:
+                    extra_hosts: ["cache.local=192.0.2.9", "api.local=192.0.2.3", "db.local=192.0.2.2"]
+                    build:
+                      extra_hosts:
+                        cache.local: 192.0.2.9
+                        api.local: 192.0.2.3
+                        db.local: 192.0.2.2
+                """);
+
+        ServiceDefinition app = new ComposeFileLoader().loadMerged(directory,
+                List.of("compose.yaml", "compose.override.yaml")).services().get("app");
+        Map<?, ?> build = (Map<?, ?>) app.configuration().get("build");
+
+        assertEquals(List.of("cache.local=192.0.2.1", "db.local=192.0.2.2", "cache.local=192.0.2.9",
+                "api.local=192.0.2.3"), app.configuration().get("extra_hosts"));
+        assertEquals(List.of("cache.local=192.0.2.1", "db.local=192.0.2.2", "cache.local=192.0.2.9",
+                "api.local=192.0.2.3"), build.get("extra_hosts"));
+    }
+
+    @Test
     void mergesMappingAndListFormsOfComposeKeyedFields() throws IOException {
         Path directory = temporaryDirectory.resolve("overlay-keyed-mixed-forms");
         Files.createDirectories(directory);

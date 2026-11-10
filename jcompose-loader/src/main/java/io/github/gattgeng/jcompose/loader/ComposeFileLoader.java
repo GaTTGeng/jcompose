@@ -1897,7 +1897,20 @@ public final class ComposeFileLoader {
             Object before = base.get(key);
             Object after = entry.getValue();
             Object effective = merged.get(key);
-            if (!base.containsKey(key)) {
+            if (isExtraHostsMergeField(path, key) && effective instanceof List<?> mergedHosts) {
+                List<String> baseHosts = base.containsKey(key) ? extraHostsValues(before) : List.of();
+                List<String> overlayHosts = extraHostsValues(after);
+                if (baseHosts != null && overlayHosts != null) {
+                    for (int index = 0; index < baseHosts.size(); index++) {
+                        remapExtraHostsProvenance(result, before, child, index, index, result);
+                    }
+                    for (int index = 0; index < overlayHosts.size(); index++) {
+                        int mergedIndex = mergedHosts.indexOf(overlayHosts.get(index));
+                        if (mergedIndex >= baseHosts.size())
+                            remapExtraHostsProvenance(result, after, child, index, mergedIndex, overlayProvenance);
+                    }
+                }
+            } else if (!base.containsKey(key)) {
                 replaceProvenance(result, overlayProvenance, child, child);
             } else if (isListMappingMergeField(path, key)
                     && listMappingValue(key, before) != null && listMappingValue(key, after) != null
@@ -1949,6 +1962,39 @@ public final class ComposeFileLoader {
         if (path.endsWith(".build")) return "args".equals(key) || "labels".equals(key);
         return Set.of("depends_on", "networks", "annotations", "environment", "labels", "sysctls")
                 .contains(key);
+    }
+
+    private static boolean isExtraHostsMergeField(String path, String key) {
+        return path.startsWith("services.") && "extra_hosts".equals(key);
+    }
+
+    private static List<String> extraHostsValues(Object value) {
+        if (value instanceof List<?> list) {
+            if (list.stream().anyMatch(entry -> !(entry instanceof String))) return null;
+            return list.stream().map(String.class::cast).toList();
+        }
+        if (value instanceof Map<?, ?> mapping) {
+            List<String> result = new ArrayList<>();
+            for (var entry : mapping.entrySet()) {
+                if (!(entry.getKey() instanceof String host) || !(entry.getValue() instanceof String address)) return null;
+                result.add(host + "=" + address);
+            }
+            return result;
+        }
+        return null;
+    }
+
+    private static void remapExtraHostsProvenance(Map<String, Path> target, Object sourceValue, String path,
+                                                   int sourceIndex, int targetIndex, Map<String, Path> source) {
+        String sourcePath;
+        if (sourceValue instanceof Map<?, ?> mapping) {
+            Object host = new ArrayList<>(mapping.keySet()).get(sourceIndex);
+            sourcePath = appendPathSegment(path, String.valueOf(host));
+        } else {
+            sourcePath = path + "[" + sourceIndex + "]";
+        }
+        String targetPath = path + "[" + targetIndex + "]";
+        if (!sourcePath.equals(targetPath)) replaceProvenance(target, source, sourcePath, targetPath);
     }
 
     private static Map<String, Object> listMappingValue(String field, Object value) {
@@ -2470,6 +2516,14 @@ public final class ComposeFileLoader {
             if (after instanceof MergeTagValue tagged) {
                 result.put(key, tagged.tag().equals("!reset") ? resetValue(before, tagged.value()) : tagged.value());
                 continue;
+            }
+            if (isExtraHostsMergeField(path, key)) {
+                List<String> baseHosts = base.containsKey(key) ? extraHostsValues(before) : List.of();
+                List<String> overlayHosts = extraHostsValues(after);
+                if (baseHosts != null && overlayHosts != null) {
+                    result.put(key, mergeUniqueList(baseHosts, overlayHosts));
+                    continue;
+                }
             }
             if (isListMappingMergeField(path, key)) {
                 Map<String, Object> normalizedBase = listMappingValue(key, before);
