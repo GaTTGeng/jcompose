@@ -3083,6 +3083,30 @@ public final class ComposeService implements IComposeService {
         return name;
     }
 
+    static ContainerCopyTarget containerCopyTarget(Path destination, String requestedDestination, boolean sourceDirectory,
+                                                     String archiveRoot, String sourceRoot) throws java.io.IOException {
+        Path target = destination.toAbsolutePath().normalize();
+        boolean exists = Files.exists(target, java.nio.file.LinkOption.NOFOLLOW_LINKS);
+        boolean targetDirectory = Files.isDirectory(target);
+        if (targetDirectory)
+            return new ContainerCopyTarget(target, archiveRoot, sourceRoot);
+        if (sourceDirectory && exists)
+            throw new java.io.IOException("Cannot copy a directory to a non-directory destination: " + target);
+        boolean directoryAsserted = requestedDestination.replace('\\', '/').endsWith("/")
+                || requestedDestination.replace('\\', '/').endsWith("/.");
+        if (directoryAsserted && !sourceDirectory)
+            throw new java.io.IOException("A file cannot be copied to a destination asserted as a directory: " + target);
+        Path parent = target.getParent();
+        if (parent == null || !Files.isDirectory(parent))
+            throw new java.nio.file.NoSuchFileException(parent == null ? target.toString() : parent.toString());
+        Path name = target.getFileName();
+        if (name == null || name.toString().isBlank())
+            throw new java.io.IOException("The copy destination must name a file or directory: " + target);
+        return new ContainerCopyTarget(parent, archiveRoot, name.toString());
+    }
+
+    record ContainerCopyTarget(Path directory, String archiveRoot, String destinationRoot) { }
+
     private static void ensureNoSymlinkPath(Path root, Path target) throws java.io.IOException {
         Path current = root;
         if (Files.exists(current, java.nio.file.LinkOption.NOFOLLOW_LINKS) && Files.isSymbolicLink(current))
@@ -4460,24 +4484,26 @@ public final class ComposeService implements IComposeService {
                 if (source.container()) {
                     Container container = archiveContainer(client, context.projectName(), source.service(), options.index(), options.all());
                     String archivePath = source.path();
-                    String archiveRoot = null;
-                    String destinationRoot = null;
-                    if (options.followLink()) {
-                        DockerClientFactory.ContainerArchivePathStat stat = DockerClientFactory.containerArchivePathStat(
-                                client, container.getId(), archivePath);
-                        if (stat.symbolicLink()) {
-                            String linkTarget = resolveContainerLinkTarget(archivePath, stat.linkTarget());
-                            archiveRoot = containerPathName(linkTarget);
-                            destinationRoot = containerPathName(archivePath);
-                            archivePath = linkTarget;
-                        }
+                    DockerClientFactory.ContainerArchivePathStat stat = DockerClientFactory.containerArchivePathStat(
+                            client, container.getId(), archivePath);
+                    String sourceRoot = stat.name();
+                    boolean sourceDirectory = stat.directory();
+                    if (options.followLink() && stat.symbolicLink()) {
+                        String linkTarget = resolveContainerLinkTarget(archivePath, stat.linkTarget());
+                        DockerClientFactory.ContainerArchivePathStat targetStat = DockerClientFactory.containerArchivePathStat(
+                                client, container.getId(), linkTarget);
+                        archivePath = linkTarget;
+                        sourceRoot = containerPathName(source.path());
+                        stat = targetStat;
+                        sourceDirectory = targetStat.directory();
                     }
                     try (InputStream archive = client.copyArchiveFromContainerCmd(container.getId(), archivePath).exec()) {
-                        Path target = Path.of(destination.path()).toAbsolutePath().normalize();
-                        ensureNoSymlinkAncestors(target);
-                        Files.createDirectories(target);
-                        CopyExtraction extraction = extractTar(archive, target, archiveRoot, destinationRoot);
-                        return new CopyResult(null, extraction.directory(), extraction.bytes(), 0);
+                        Path requestedDestination = Path.of(destination.path()).toAbsolutePath().normalize();
+                        ensureNoSymlinkAncestors(requestedDestination);
+                        ContainerCopyTarget target = containerCopyTarget(requestedDestination, destination.path(),
+                                sourceDirectory, stat.name(), sourceRoot);
+                        CopyExtraction extraction = extractTar(archive, target.directory(), target.archiveRoot(), target.destinationRoot());
+                        return new CopyResult(null, sourceDirectory, extraction.bytes(), 0);
                     }
                 }
 

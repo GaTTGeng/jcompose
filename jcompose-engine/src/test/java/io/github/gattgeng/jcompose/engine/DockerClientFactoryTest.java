@@ -27,7 +27,18 @@ class DockerClientFactoryTest {
         String json = "{\"name\":\"fixture.txt\",\"mode\":420,\"linkTarget\":\"\"}";
         String header = Base64.getEncoder().encodeToString(json.getBytes(StandardCharsets.UTF_8));
 
-        assertFalse(DockerClientFactory.parseContainerArchivePathStat(header).symbolicLink());
+        var stat = DockerClientFactory.parseContainerArchivePathStat(header);
+        assertFalse(stat.symbolicLink());
+        assertFalse(stat.directory());
+        assertEquals("fixture.txt", stat.name());
+    }
+
+    @Test
+    void identifiesDirectoryArchivePathStat() {
+        String json = "{\"name\":\"data\",\"mode\":2147483648,\"linkTarget\":\"\"}";
+        String header = Base64.getEncoder().encodeToString(json.getBytes(StandardCharsets.UTF_8));
+
+        assertTrue(DockerClientFactory.parseContainerArchivePathStat(header).directory());
     }
 
     @Test

@@ -343,7 +343,19 @@ class ComposeServiceDockerIntegrationTest {
                     .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
             assertTrue(outOfContainer.directory());
             assertEquals(contents.length(), outOfContainer.bytesCopied());
-            assertEquals(contents, Files.readString(copiedDirectory.resolve("data/fixture.txt")));
+            assertEquals(contents, Files.readString(copiedDirectory.resolve("fixture.txt")));
+
+            Path existingCopyDirectory = Files.createDirectory(directory.resolve("existing-copy"));
+            service.copyAsync(context, ComposeCopyOptions.builder().source("app:/data")
+                            .destination(existingCopyDirectory.toString()).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertEquals(contents, Files.readString(existingCopyDirectory.resolve("data/fixture.txt")));
+
+            Path copiedFile = directory.resolve("copied-fixture.txt");
+            service.copyAsync(context, ComposeCopyOptions.builder().source("app:/data/fixture.txt")
+                            .destination(copiedFile.toString()).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertEquals(contents, Files.readString(copiedFile));
 
             var followedLink = service.copyAsync(context, ComposeCopyOptions.builder()
                     .source("app:/tmp/fixture-link").destination(copiedLinkDirectory.toString()).followLink(true).build())
@@ -355,7 +367,7 @@ class ComposeServiceDockerIntegrationTest {
             service.copyAsync(context, ComposeCopyOptions.builder().source("app:/data")
                             .destination(secondReplicaDirectory.toString()).index(2).build())
                     .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
-            assertEquals(contents, Files.readString(secondReplicaDirectory.resolve("data/fixture.txt")));
+            assertEquals(contents, Files.readString(secondReplicaDirectory.resolve("fixture.txt")));
 
             service.exportAsync(context, ComposeExportOptions.builder().service("app")
                             .outputPath(exportPath.toString()).build())
@@ -372,7 +384,7 @@ class ComposeServiceDockerIntegrationTest {
             service.copyAsync(context, ComposeCopyOptions.builder().source("app:/data")
                             .destination(stoppedCopy.toString()).build())
                     .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
-            assertEquals(contents, Files.readString(stoppedCopy.resolve("data/fixture.txt")));
+            assertEquals(contents, Files.readString(stoppedCopy.resolve("fixture.txt")));
 
             service.exportAsync(context, ComposeExportOptions.builder().service("app")
                             .outputPath(stoppedExportPath.toString()).build())

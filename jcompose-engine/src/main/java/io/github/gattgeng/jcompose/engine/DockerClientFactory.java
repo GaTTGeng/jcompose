@@ -87,18 +87,21 @@ public final class DockerClientFactory {
         try {
             byte[] json = Base64.getDecoder().decode(encodedStat);
             JsonNode node = DockerClientConfig.getDefaultObjectMapper().readTree(json);
-            if (node == null || !node.isObject() || !node.path("mode").isIntegralNumber()
+            if (node == null || !node.isObject() || !node.path("name").isTextual()
+                    || !node.path("mode").isIntegralNumber()
                     || !node.path("linkTarget").isTextual())
                 throw new IllegalArgumentException("Docker returned incomplete container path metadata.");
-            return new ContainerArchivePathStat(node.path("mode").asLong(), node.path("linkTarget").asText());
+            return new ContainerArchivePathStat(node.path("name").asText(), node.path("mode").asLong(), node.path("linkTarget").asText());
         } catch (IOException | IllegalArgumentException exception) {
             throw new IllegalArgumentException("Docker returned invalid container path metadata.", exception);
         }
     }
 
-    record ContainerArchivePathStat(long mode, String linkTarget) {
+    record ContainerArchivePathStat(String name, long mode, String linkTarget) {
         private static final long MODE_SYMLINK = 1L << 27; // Docker serializes Go os.FileMode, not POSIX mode bits.
+        private static final long MODE_DIRECTORY = 1L << 31;
         boolean symbolicLink() { return (mode & MODE_SYMLINK) != 0; }
+        boolean directory() { return (mode & MODE_DIRECTORY) != 0; }
     }
 
     static String appendCommitChanges(String path, List<String> changes) {

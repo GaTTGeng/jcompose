@@ -64,6 +64,37 @@ class ContainerArchiveExtractionTest {
     }
 
     @Test
+    void plansContainerCopyTargetsUsingFileAndDirectorySemantics() throws IOException {
+        Path missingFile = tempDirectory.resolve("copied.txt");
+        ComposeService.ContainerCopyTarget newFile = ComposeService.containerCopyTarget(
+                missingFile, missingFile.toString(), false, "source.txt", "source.txt");
+        assertEquals(tempDirectory, newFile.directory());
+        assertEquals("copied.txt", newFile.destinationRoot());
+
+        Path missingDirectory = tempDirectory.resolve("copied");
+        ComposeService.ContainerCopyTarget newDirectory = ComposeService.containerCopyTarget(
+                missingDirectory, missingDirectory.toString(), true, "source", "source");
+        assertEquals(tempDirectory, newDirectory.directory());
+        assertEquals("copied", newDirectory.destinationRoot());
+
+        Path existingDirectory = Files.createDirectory(tempDirectory.resolve("existing"));
+        ComposeService.ContainerCopyTarget intoDirectory = ComposeService.containerCopyTarget(
+                existingDirectory, existingDirectory.toString(), true, "source", "source");
+        assertEquals(existingDirectory, intoDirectory.directory());
+        assertEquals("source", intoDirectory.destinationRoot());
+
+        assertThrows(IOException.class, () -> ComposeService.containerCopyTarget(
+                tempDirectory.resolve("absent-parent/file"), tempDirectory.resolve("absent-parent/file").toString(),
+                false, "source.txt", "source.txt"));
+        Path existingFile = Files.writeString(tempDirectory.resolve("existing-file"), "old");
+        assertThrows(IOException.class, () -> ComposeService.containerCopyTarget(
+                existingFile, existingFile.toString(), true, "source", "source"));
+        String assertedDirectory = tempDirectory.resolve("asserted") + "/";
+        assertThrows(IOException.class, () -> ComposeService.containerCopyTarget(
+                Path.of(assertedDirectory), assertedDirectory, false, "source.txt", "source.txt"));
+    }
+
+    @Test
     void resolvesRelativeContainerLinkTargetsAgainstSourceParent() {
         assertEquals("/data/fixture.txt", ComposeService.resolveContainerLinkTarget("/tmp/fixture-link", "../data/fixture.txt"));
         assertEquals("/data/fixture.txt", ComposeService.resolveContainerLinkTarget("/tmp/fixture-link", "/data/fixture.txt"));
