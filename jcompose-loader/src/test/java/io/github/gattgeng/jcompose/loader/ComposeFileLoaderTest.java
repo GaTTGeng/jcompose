@@ -2166,7 +2166,7 @@ class ComposeFileLoaderTest {
         Map<?, ?> app = project.services().get("app").configuration();
         assertEquals(List.of("override"), app.get("command"));
         assertEquals(List.of("8080:80", "9000:90", "9443:443"), app.get("ports"));
-        assertEquals(List.of("MODE=override", "KEEP=yes", "NEW=yes"), app.get("environment"));
+        assertEquals(Map.of("MODE", "override", "KEEP", "yes", "NEW", "yes"), app.get("environment"));
         assertEquals(List.of("./new:/data", "./logs:/logs"), app.get("volumes"));
     }
 
