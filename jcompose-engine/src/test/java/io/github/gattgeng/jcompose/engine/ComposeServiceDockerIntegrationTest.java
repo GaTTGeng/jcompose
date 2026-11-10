@@ -316,6 +316,7 @@ class ComposeServiceDockerIntegrationTest {
         String contents = "archive-data";
         Path sourcePath = directory.resolve("fixture.txt");
         Path copiedDirectory = directory.resolve("copied");
+        Path copiedLinkDirectory = directory.resolve("copied-follow-link");
         Path exportPath = directory.resolve("filesystem.tar");
         Path stoppedExportPath = directory.resolve("stopped-filesystem.tar");
         Files.writeString(sourcePath, contents);
@@ -323,7 +324,7 @@ class ComposeServiceDockerIntegrationTest {
                 services:
                   app:
                     image: busybox:1.36
-                    command: ["sh", "-c", "mkdir -p /data && sleep 300"]
+                    command: ["sh", "-c", "mkdir -p /data && ln -s /data/fixture.txt /tmp/fixture-link && sleep 300"]
                     deploy:
                       replicas: 2
                 """);
@@ -343,6 +344,12 @@ class ComposeServiceDockerIntegrationTest {
             assertTrue(outOfContainer.directory());
             assertEquals(contents.length(), outOfContainer.bytesCopied());
             assertEquals(contents, Files.readString(copiedDirectory.resolve("data/fixture.txt")));
+
+            var followedLink = service.copyAsync(context, ComposeCopyOptions.builder()
+                    .source("app:/tmp/fixture-link").destination(copiedLinkDirectory.toString()).followLink(true).build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertFalse(followedLink.directory());
+            assertEquals(contents, Files.readString(copiedLinkDirectory.resolve("fixture-link")));
 
             Path secondReplicaDirectory = directory.resolve("copied-replica-two");
             service.copyAsync(context, ComposeCopyOptions.builder().source("app:/data")

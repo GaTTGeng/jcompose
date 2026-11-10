@@ -14,6 +14,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.io.IOException;
 import java.util.List;
+import java.util.Base64;
 import java.time.Duration;
 import java.time.Instant;
 
@@ -64,6 +65,40 @@ public final class DockerClientFactory {
         } catch (java.io.IOException exception) {
             throw new java.io.UncheckedIOException("Could not read Docker image metadata.", exception);
         }
+    }
+
+    static ContainerArchivePathStat containerArchivePathStat(DockerClient client, String containerId, String path) {
+        if (!(client instanceof DockerClientImpl dockerClient))
+            throw new IllegalArgumentException("Docker client does not expose Docker Engine archive metadata.");
+        String encodedPath = URLEncoder.encode(path, StandardCharsets.UTF_8).replace("+", "%20");
+        var request = DockerHttpClient.Request.builder().method("HEAD")
+                .path("/v1.44/containers/" + containerId + "/archive?path=" + encodedPath).build();
+        try (var response = dockerClient.getHttpClient().execute(request)) {
+            if (response.getStatusCode() < 200 || response.getStatusCode() >= 300)
+                throw new IllegalStateException("Could not read Docker container path metadata (HTTP " + response.getStatusCode() + ").");
+            String stat = response.getHeader("X-Docker-Container-Path-Stat");
+            if (stat == null || stat.isBlank())
+                throw new IllegalStateException("Docker Engine did not return container path metadata.");
+            return parseContainerArchivePathStat(stat);
+        }
+    }
+
+    static ContainerArchivePathStat parseContainerArchivePathStat(String encodedStat) {
+        try {
+            byte[] json = Base64.getDecoder().decode(encodedStat);
+            JsonNode node = DockerClientConfig.getDefaultObjectMapper().readTree(json);
+            if (node == null || !node.isObject() || !node.path("mode").isIntegralNumber()
+                    || !node.path("linkTarget").isTextual())
+                throw new IllegalArgumentException("Docker returned incomplete container path metadata.");
+            return new ContainerArchivePathStat(node.path("mode").asLong(), node.path("linkTarget").asText());
+        } catch (IOException | IllegalArgumentException exception) {
+            throw new IllegalArgumentException("Docker returned invalid container path metadata.", exception);
+        }
+    }
+
+    record ContainerArchivePathStat(long mode, String linkTarget) {
+        private static final long MODE_SYMLINK = 1L << 27; // Docker serializes Go os.FileMode, not POSIX mode bits.
+        boolean symbolicLink() { return (mode & MODE_SYMLINK) != 0; }
     }
 
     static String appendCommitChanges(String path, List<String> changes) {

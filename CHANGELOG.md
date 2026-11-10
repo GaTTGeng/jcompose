@@ -25,6 +25,8 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Select interpolation files with `COMPOSE_ENV_FILES`, honor `COMPOSE_DISABLE_ENV_FILE` for the default `.env`, and apply later-file and process-environment precedence. (Docker Compose compatibility; independent of the ComposeSharp `a9ff810` sync.)
 - Treat the `*` active-profile selector as enabling every profile declared by the loaded project. (Docker Compose compatibility; independent of the ComposeSharp `a9ff810` sync.)
 - Preserve host and container source symbolic links during copy, matching Docker Compose, while rejecting archive entries that traverse an extracted link.
+- Follow container source symbolic links for `copy` when `followLink` is enabled, retaining the source link name in the host destination.
+- Parse Compose service paths before local filesystem paths so `copy` works with `service:/path` references on Windows.
 - Treat `memswap_limit: 0` as unset, matching Docker Compose.
 - Map `memswap_limit: -1` to Docker Engine's unlimited-swap setting, matching Docker Compose. (Docker Compose compatibility; independent of the ComposeSharp `a9ff810` sync.)
 - Interpolate variables in every YAML scalar style, including single-quoted and block scalars, matching Docker Compose.

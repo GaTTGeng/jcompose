@@ -34,6 +34,17 @@ class ContainerArchiveExtractionTest {
     }
 
     @Test
+    void rebasesResolvedContainerLinkArchiveEntriesAndHardLinkTargets() throws IOException {
+        Path destination = Files.createDirectory(tempDirectory.resolve("rebased"));
+
+        ComposeService.extractTar(new ByteArrayInputStream(archiveWithHardLink()), destination, "root", "alias");
+
+        assertEquals("compose123", Files.readString(destination.resolve("alias/source")));
+        assertEquals("compose123", Files.readString(destination.resolve("alias/linked")));
+        assertTrue(Files.notExists(destination.resolve("root")));
+    }
+
+    @Test
     void rejectsHardLinksOutsideTheDestination() throws IOException {
         Path destination = tempDirectory.resolve("destination");
         Files.createDirectory(destination);
@@ -41,6 +52,27 @@ class ContainerArchiveExtractionTest {
 
         assertThrows(IOException.class,
                 () -> ComposeService.extractTar(new ByteArrayInputStream(archive), destination));
+    }
+
+    @Test
+    void rebasesResolvedContainerLinkArchiveBackToRequestedSourceName() {
+        assertEquals("fixture-link", ComposeService.rebaseArchiveRoot("fixture.txt", "fixture.txt", "fixture-link"));
+        assertEquals("fixture-link/child.txt",
+                ComposeService.rebaseArchiveRoot("fixture.txt/child.txt", "fixture.txt", "fixture-link"));
+        assertEquals("elsewhere/child.txt",
+                ComposeService.rebaseArchiveRoot("elsewhere/child.txt", "fixture.txt", "fixture-link"));
+    }
+
+    @Test
+    void resolvesRelativeContainerLinkTargetsAgainstSourceParent() {
+        assertEquals("/data/fixture.txt", ComposeService.resolveContainerLinkTarget("/tmp/fixture-link", "../data/fixture.txt"));
+        assertEquals("/data/fixture.txt", ComposeService.resolveContainerLinkTarget("/tmp/fixture-link", "/data/fixture.txt"));
+    }
+
+    @Test
+    void rejectsContainerLinkMetadataWithoutTarget() {
+        assertThrows(IllegalArgumentException.class,
+                () -> ComposeService.resolveContainerLinkTarget("/tmp/fixture-link", " "));
     }
 
     @Test

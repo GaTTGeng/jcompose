@@ -3001,6 +3001,10 @@ public final class ComposeService implements IComposeService {
     }
 
     static CopyExtraction extractTar(InputStream archive, Path destination) throws java.io.IOException {
+        return extractTar(archive, destination, null, null);
+    }
+
+    static CopyExtraction extractTar(InputStream archive, Path destination, String archiveRoot, String destinationRoot) throws java.io.IOException {
         Path root = destination.toAbsolutePath().normalize();
         long bytes = 0;
         boolean directory = false;
@@ -3009,7 +3013,8 @@ public final class ComposeService implements IComposeService {
             TarArchiveEntry entry;
             while ((entry = tar.getNextTarEntry()) != null) {
                 if (first) { directory = entry.isDirectory(); first = false; }
-                Path target = root.resolve(entry.getName()).normalize();
+                String entryName = rebaseArchiveRoot(entry.getName(), archiveRoot, destinationRoot);
+                Path target = root.resolve(entryName).normalize();
                 if (!target.startsWith(root)) throw new java.io.IOException("Docker archive contains a path outside destination: " + entry.getName());
                 if (!(entry.isDirectory() || entry.isFile() || entry.isLink() || entry.isSymbolicLink()))
                     throw new java.io.IOException("Docker archive contains unsupported entry type: " + entry.getName());
@@ -3023,7 +3028,7 @@ public final class ComposeService implements IComposeService {
                     if (parent != null) Files.createDirectories(parent);
                     Files.createSymbolicLink(target, Path.of(linkName));
                 } else if (entry.isLink()) {
-                    String linkName = entry.getLinkName();
+                    String linkName = rebaseArchiveRoot(entry.getLinkName(), archiveRoot, destinationRoot);
                     if (linkName == null || linkName.isBlank())
                         throw new java.io.IOException("Docker archive contains a hard link without a target: " + entry.getName());
                     Path linkTarget = root.resolve(linkName).normalize();
@@ -3045,6 +3050,37 @@ public final class ComposeService implements IComposeService {
             }
         }
         return new CopyExtraction(bytes, directory);
+    }
+
+    static String rebaseArchiveRoot(String entryName, String archiveRoot, String destinationRoot) {
+        if (entryName == null || archiveRoot == null || destinationRoot == null || archiveRoot.isBlank() || destinationRoot.isBlank()) return entryName;
+        if (entryName.equals(archiveRoot)) return destinationRoot;
+        if (entryName.startsWith(archiveRoot + "/")) return destinationRoot + entryName.substring(archiveRoot.length());
+        return entryName;
+    }
+
+    static String resolveContainerLinkTarget(String sourcePath, String linkTarget) {
+        if (linkTarget == null || linkTarget.isBlank())
+            throw new IllegalArgumentException("Docker container path metadata has no symbolic link target.");
+        String source = sourcePath.replace('\\', '/');
+        String target = linkTarget.replace('\\', '/');
+        String resolved;
+        if (target.startsWith("/") || target.matches("^[A-Za-z]:/.*")) {
+            resolved = target;
+        } else {
+            int separator = source.lastIndexOf('/');
+            String parent = separator < 0 ? "" : source.substring(0, separator + 1);
+            resolved = parent + target;
+        }
+        return Path.of(resolved).normalize().toString().replace('\\', '/');
+    }
+
+    private static String containerPathName(String path) {
+        String normalized = path.replace('\\', '/').replaceFirst("/+$", "");
+        int separator = normalized.lastIndexOf('/');
+        String name = separator < 0 ? normalized : normalized.substring(separator + 1);
+        if (name.isBlank()) throw new IllegalArgumentException("The container copy source must not be a filesystem root.");
+        return name;
     }
 
     private static void ensureNoSymlinkPath(Path root, Path target) throws java.io.IOException {
@@ -3069,11 +3105,11 @@ public final class ComposeService implements IComposeService {
     }
 
     record CopyExtraction(long bytes, boolean directory) { }
-    private record CopyPath(boolean container, String service, String path) {
+    record CopyPath(boolean container, String service, String path) {
         private static final Pattern SERVICE_PATH = Pattern.compile("^([A-Za-z0-9][A-Za-z0-9_.-]*):(/.*)$");
         static CopyPath parse(String value) {
             if (value == null || value.isBlank()) throw new IllegalArgumentException("Copy paths must not be empty.");
-            if (Path.of(value).isAbsolute()) return new CopyPath(false, null, value);
+            if (value.matches("^[A-Za-z]:[\\\\/].*")) return new CopyPath(false, null, value);
             var matcher = SERVICE_PATH.matcher(value);
             return matcher.matches() ? new CopyPath(true, matcher.group(1), matcher.group(2)) : new CopyPath(false, null, value);
         }
@@ -4424,11 +4460,23 @@ public final class ComposeService implements IComposeService {
                 if (source.container()) {
                     Container container = archiveContainer(client, context.projectName(), source.service(), options.index(), options.all());
                     String archivePath = source.path();
+                    String archiveRoot = null;
+                    String destinationRoot = null;
+                    if (options.followLink()) {
+                        DockerClientFactory.ContainerArchivePathStat stat = DockerClientFactory.containerArchivePathStat(
+                                client, container.getId(), archivePath);
+                        if (stat.symbolicLink()) {
+                            String linkTarget = resolveContainerLinkTarget(archivePath, stat.linkTarget());
+                            archiveRoot = containerPathName(linkTarget);
+                            destinationRoot = containerPathName(archivePath);
+                            archivePath = linkTarget;
+                        }
+                    }
                     try (InputStream archive = client.copyArchiveFromContainerCmd(container.getId(), archivePath).exec()) {
                         Path target = Path.of(destination.path()).toAbsolutePath().normalize();
                         ensureNoSymlinkAncestors(target);
                         Files.createDirectories(target);
-                        CopyExtraction extraction = extractTar(archive, target);
+                        CopyExtraction extraction = extractTar(archive, target, archiveRoot, destinationRoot);
                         return new CopyResult(null, extraction.directory(), extraction.bytes(), 0);
                     }
                 }
