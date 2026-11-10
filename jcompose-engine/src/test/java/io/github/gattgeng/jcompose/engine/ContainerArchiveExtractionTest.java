@@ -42,7 +42,7 @@ class ContainerArchiveExtractionTest {
 
         ComposeService.extractTar(new ByteArrayInputStream(archive), destination);
 
-        assertEquals(0750, unixMode(destination.resolve("root")));
+        assertEquals(0710, unixMode(destination.resolve("root")));
         assertEquals(0751, unixMode(destination.resolve("root/source")));
         assertEquals(0751, unixMode(destination.resolve("root/linked")));
     }
