@@ -1970,7 +1970,8 @@ class ComposeServiceDockerIntegrationTest {
                                 "com.docker.compose.project", projectName,
                                 "com.docker.compose.service", "app"))
                         .exec().stream().findFirst().orElseThrow();
-                assertEquals("linux/amd64", client.inspectContainerCmd(container.getId()).exec().getPlatform());
+                // Docker Engine's container inspect Platform field reports the OS, not the architecture.
+                assertEquals("linux", client.inspectContainerCmd(container.getId()).exec().getPlatform());
             }
         } finally {
             service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
