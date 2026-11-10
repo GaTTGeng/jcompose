@@ -60,7 +60,7 @@ public final class ComposeFileLoader {
             "network_mode", "ipc", "shm_size", "profiles", "deploy", "secrets", "configs", "labels", "logging",
             "hostname", "domainname", "user", "working_dir", "tty", "stdin_open", "stop_signal", "stop_grace_period",
             "read_only", "tmpfs", "cap_add", "cap_drop", "devices", "sysctls", "security_opt", "init", "platform",
-            "pull_policy", "dns", "dns_search", "pid", "mac_address", "cgroup_parent", "extends", "develop", "links",
+            "pull_policy", "pull_refresh_after", "dns", "dns_search", "pid", "mac_address", "cgroup_parent", "extends", "develop", "links",
             "cpu_shares", "cpu_quota", "cpuset", "mem_limit", "memswap_limit", "mem_reservation", "oom_kill_disable",
             "oom_score_adj", "group_add", "annotations", "attach", "pre_start", "post_start", "pre_stop", "post_stop",
             "scale", "volumes_from", "external_links", "device_cgroup_rules", "blkio_config", "ulimits", "storage_opt",
@@ -71,8 +71,10 @@ public final class ComposeFileLoader {
             "context_directory", "dockerfile_inline", "secrets", "ssh", "additional_contexts");
     private static final Set<String> UNSUPPORTED_SERVICE_FIELDS = Set.of(
             "secrets", "configs", "logging", "stop_signal", "stop_grace_period", "sysctls",
-            "pull_policy", "dns", "dns_search", "links", "cpu_quota", "oom_kill_disable", "oom_score_adj",
+            "dns", "dns_search", "links", "cpu_quota", "oom_kill_disable", "oom_score_adj",
             "annotations", "extends", "develop");
+    private static final Set<String> SUPPORTED_PULL_POLICIES = Set.of(
+            "always", "missing", "if_not_present", "never", "build", "daily", "weekly", "refresh");
 
     /** Loads one Compose file. Conventional default names are discovered from the working directory upward. */
     public ComposeProject load(Path workingDirectory, String composeFileName) {
@@ -1112,6 +1114,15 @@ public final class ComposeFileLoader {
         validateVolumeMounts(file, service, configuration.get("volumes"), path + ".volumes");
         validatePorts(file, service, configuration.get("ports"), path + ".ports");
         validateRestart(file, service, configuration.get("restart"), path + ".restart");
+        Object pullPolicy = configuration.get("pull_policy");
+        if (pullPolicy != null && !(pullPolicy instanceof String))
+            throw shapeFailure(file, service, path + ".pull_policy", "a string", pullPolicy);
+        if (pullPolicy instanceof String policy) {
+            String normalizedPolicy = policy.toLowerCase(Locale.ROOT);
+            if (!SUPPORTED_PULL_POLICIES.contains(normalizedPolicy)
+                    && !normalizedPolicy.matches("every_(?:[0-9]+[wdhms])+"))
+                throw conversionFailure(file, service, path + ".pull_policy", pullPolicy, "a supported pull policy");
+        }
         Object stopSignal = configuration.get("stop_signal");
         if (stopSignal != null && !(stopSignal instanceof String))
             throw shapeFailure(file, service, path + ".stop_signal", "a string", stopSignal);
@@ -1164,7 +1175,7 @@ public final class ComposeFileLoader {
                     "interval", "timeout", "start_period", "start_interval");
         }
 
-        validateDurations(file, service, configuration, path, "stop_grace_period");
+        validateDurations(file, service, configuration, path, "stop_grace_period", "pull_refresh_after");
         for (String key : List.of("shm_size", "mem_limit", "memswap_limit", "mem_reservation"))
             validateBytes(file, service, configuration, key, path + "." + key);
         for (String key : List.of("privileged", "tty", "stdin_open", "read_only", "init", "oom_kill_disable"))

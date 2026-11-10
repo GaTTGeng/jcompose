@@ -579,6 +579,74 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void supportedPullPoliciesAndRefreshOverrideAreNotDiagnosed() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  always:
+                    image: alpine
+                    pull_policy: always
+                  missing:
+                    image: alpine
+                    pull_policy: missing
+                  alias:
+                    image: alpine
+                    pull_policy: if_not_present
+                  never:
+                    image: alpine
+                    pull_policy: never
+                  build:
+                    image: alpine
+                    pull_policy: build
+                  interval:
+                    image: alpine
+                    pull_policy: every_12h
+                  daily:
+                    image: alpine
+                    pull_policy: daily
+                  weekly:
+                    image: alpine
+                    pull_policy: weekly
+                  refresh:
+                    image: alpine
+                    pull_policy: refresh
+                    pull_refresh_after: 30m
+                """);
+
+        assertTrue(new ComposeFileLoader().load(directory, null).diagnostics().isEmpty());
+    }
+
+    @Test
+    void pullRefreshAfterRequiresAComposeDuration() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    pull_policy: refresh
+                    pull_refresh_after: later
+                """);
+
+        var exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, null));
+
+        assertEquals("services.app.pull_refresh_after", exception.propertyPath());
+    }
+
+    @Test
+    void unsupportedPullPolicyFailsWithComposePath() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    pull_policy: sometimes
+                """);
+
+        var exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, null));
+
+        assertEquals("services.app.pull_policy", exception.propertyPath());
+    }
+
+    @Test
     void supportsLongFormBindAndVolumeMountOptionsWithoutWarnings() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 volumes:
