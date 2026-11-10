@@ -8,6 +8,8 @@ import java.util.Objects;
 
 /** Filters a Docker detach-key sequence from forwarded standard input. */
 final class DetachKeyInputStream extends InputStream {
+    private static final String DEFAULT_DETACH_KEYS = "ctrl-p,ctrl-q";
+
     private final InputStream source;
     private final byte[] detachKeys;
     private final Runnable onDetach;
@@ -21,6 +23,10 @@ final class DetachKeyInputStream extends InputStream {
         this.detachKeys = parse(detachKeys);
         this.onDetach = Objects.requireNonNull(onDetach, "onDetach");
         this.pending = new byte[this.detachKeys.length];
+    }
+
+    static String withDefault(String detachKeys) {
+        return detachKeys == null ? DEFAULT_DETACH_KEYS : detachKeys;
     }
 
     @Override

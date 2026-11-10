@@ -4277,7 +4277,7 @@ public final class ComposeService implements IComposeService {
                 ExecOutput callback = new ExecOutput();
                 java.util.concurrent.atomic.AtomicBoolean detached = new java.util.concurrent.atomic.AtomicBoolean();
                 if (options.interactive()) {
-                    String detachKeys = options.detachKeys() == null ? "ctrl-p,ctrl-q" : options.detachKeys();
+                    String detachKeys = DetachKeyInputStream.withDefault(options.detachKeys());
                     start.withStdIn(new DetachKeyInputStream(System.in, detachKeys, () -> {
                         detached.set(true);
                         try {
@@ -4329,8 +4329,8 @@ public final class ComposeService implements IComposeService {
                     }
                 };
                 if (effective.stdin()) {
-                    if (effective.detachKeys() == null) command.withStdIn(System.in);
-                    else command.withStdIn(new DetachKeyInputStream(System.in, effective.detachKeys(), () -> {
+                    String detachKeys = DetachKeyInputStream.withDefault(effective.detachKeys());
+                    command.withStdIn(new DetachKeyInputStream(System.in, detachKeys, () -> {
                         try {
                             callback.close();
                         } catch (java.io.IOException exception) {

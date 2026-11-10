@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -17,6 +18,20 @@ class DetachKeyInputStreamTest {
     void parsesDockerControlKeySequences() {
         assertArrayEquals(new byte[]{16, 17}, DetachKeyInputStream.parse("ctrl-p,ctrl-q"));
         assertArrayEquals(new byte[]{'x'}, DetachKeyInputStream.parse("x"));
+    }
+
+    @Test
+    void filtersDockerDefaultDetachKeysWhenNoSequenceIsConfigured() throws IOException {
+        assertEquals("ctrl-p,ctrl-q", DetachKeyInputStream.withDefault(null));
+        assertEquals("x", DetachKeyInputStream.withDefault("x"));
+
+        AtomicBoolean detached = new AtomicBoolean();
+        byte[] input = new byte[]{'h', 'i', 16, 17, 'x'};
+        try (var stream = new DetachKeyInputStream(new ByteArrayInputStream(input),
+                DetachKeyInputStream.withDefault(null), () -> detached.set(true))) {
+            assertArrayEquals("hi".getBytes(StandardCharsets.UTF_8), stream.readAllBytes());
+        }
+        assertTrue(detached.get());
     }
 
     @Test
