@@ -20,7 +20,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Documented the Java asynchronous service operations with parameter and result contracts aligned to the ComposeSharp API surface.
 
 ### Fixed
-- Tokenize scalar service, one-off, lifecycle-hook, and watch `sync+exec` commands using Compose shell-word rules without invoking a shell, and preserve explicit empty service command overrides.
+- Tokenize scalar service, one-off, lifecycle-hook, and watch `sync+exec` commands using Compose shell-word rules without invoking a shell, preserve explicit empty service command overrides, and reject malformed quoting during project loading.
 - Treat `memswap_limit: 0` as unset, matching Docker Compose.
 - Map `memswap_limit: -1` to Docker Engine's unlimited-swap setting, matching Docker Compose. (Docker Compose compatibility; independent of the ComposeSharp `a9ff810` sync.)
 - Interpolate variables in every YAML scalar style, including single-quoted and block scalars, matching Docker Compose.

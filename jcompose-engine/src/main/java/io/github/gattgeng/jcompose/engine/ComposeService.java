@@ -25,6 +25,7 @@ import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import io.github.gattgeng.jcompose.api.*;
 import io.github.gattgeng.jcompose.loader.ComposeFileLoader;
+import io.github.gattgeng.jcompose.loader.ComposeCommandParser;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -3187,42 +3188,8 @@ public final class ComposeService implements IComposeService {
     }
 
     static List<String> composeCommand(Object value) {
-        if (!(value instanceof String command)) return asStringList(value);
-        List<String> arguments = new ArrayList<>();
-        StringBuilder argument = new StringBuilder();
-        char quote = 0;
-        boolean escaped = false;
-        boolean started = false;
-        for (int index = 0; index < command.length(); index++) {
-            char current = command.charAt(index);
-            if (escaped) {
-                argument.append(current);
-                escaped = false;
-                started = true;
-            } else if (current == '\\' && quote != '\'') {
-                escaped = true;
-                started = true;
-            } else if (quote != 0) {
-                if (current == quote) quote = 0;
-                else argument.append(current);
-            } else if (current == '\'' || current == '"') {
-                quote = current;
-                started = true;
-            } else if (Character.isWhitespace(current)) {
-                if (started) {
-                    arguments.add(argument.toString());
-                    argument.setLength(0);
-                    started = false;
-                }
-            } else {
-                argument.append(current);
-                started = true;
-            }
-        }
-        if (escaped || quote != 0)
-            throw new IllegalArgumentException("Invalid Compose command string: unmatched escape or quote.");
-        if (started) arguments.add(argument.toString());
-        return List.copyOf(arguments);
+        if (value instanceof String command) return ComposeCommandParser.parse(command);
+        return asStringList(value);
     }
 
     private static String containerName(String projectName, ServiceDefinition service, int replicas, int index, boolean compatibility) {

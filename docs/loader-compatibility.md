@@ -29,7 +29,7 @@ The loader module exposes `VariableInterpolator.expand(text, dotenv)` and `Varia
 
 Process environment values take precedence over values in the project `.env` file. Defaults and replacement expressions, including nested forms such as `${MISSING:-${FALLBACK:-value}}`, are recursively interpolated, with a guard against excessive nesting. This is the current implementation contract; verify edge cases against Docker Compose before expanding compatibility claims.
 
-Malformed or unclosed braced expressions fail loading with the Compose property path and source location when they occur in a YAML value. A bare unset variable still becomes empty without Docker Compose's warning.
+Malformed or unclosed braced expressions fail loading with the Compose property path and source location when they occur in a YAML value. Scalar `command` and `entrypoint` values are validated and tokenized during loading; unmatched quotes or escapes fail with their service property path, and shell expressions are not evaluated. A bare unset variable still becomes empty without Docker Compose's warning.
 
 `ComposeFileLoader.load`, `loadProject`, and `loadMerged` accept per-call environment overrides. For that call, the precedence is explicit overrides, then the process environment, then the project `.env`. For a multi-file load, the project directory defaults to the directory of the first Compose file, so the same `.env` supplies interpolation values to every merged file. Overrides are never written to the process environment, so separate or concurrent loads remain isolated. On Windows, override names are matched without regard to case; on other platforms they are case-sensitive.
 

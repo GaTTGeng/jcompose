@@ -1095,6 +1095,17 @@ public final class ComposeFileLoader {
                 || !name.matches("[a-zA-Z0-9][a-zA-Z0-9_.-]+")))
             throw new ComposeValidationException(file, path + ".container_name", service,
                     "container_name must match [a-zA-Z0-9][a-zA-Z0-9_.-]+.", null, null, null);
+        for (String field : List.of("command", "entrypoint")) {
+            Object value = configuration.get(field);
+            String commandPath = path + "." + field;
+            validateStringOrStringList(file, service, value, commandPath);
+            if (value instanceof String command) try {
+                ComposeCommandParser.parse(command);
+            } catch (IllegalArgumentException exception) {
+                throw new ComposeValidationException(file, commandPath, service,
+                        exception.getMessage(), null, null, exception);
+            }
+        }
         validateScalarOrMap(file, service, configuration, "build", path + ".build");
         validateListOrMap(file, service, configuration, "environment", path + ".environment");
         validateLabelFiles(file, service, configuration.get("label_file"), path + ".label_file");
