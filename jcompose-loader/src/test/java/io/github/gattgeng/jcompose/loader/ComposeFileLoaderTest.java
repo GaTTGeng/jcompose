@@ -553,8 +553,16 @@ class ComposeFileLoaderTest {
                     image: postgres
                   app:
                     image: example/app
+                    container_name: api-container
                     command: echo serving
                     entrypoint: ["/bin/sh", "-c"]
+                    tty: true
+                    stdin_open: true
+                    privileged: false
+                    read_only: true
+                    init: false
+                    restart: unless-stopped
+                    working_dir: /srv/app
                     depends_on:
                       database:
                         condition: service_healthy
@@ -576,6 +584,14 @@ class ComposeFileLoaderTest {
         assertEquals(List.of("/bin/sh", "-c"), app.entrypoint());
         assertEquals(List.of("database"), app.dependsOn());
         assertEquals(List.of("front", "back"), app.networks());
+        assertEquals("api-container", app.containerName());
+        assertTrue(app.tty());
+        assertTrue(app.stdinOpen());
+        assertFalse(app.privileged());
+        assertTrue(app.readOnly());
+        assertEquals(Boolean.FALSE, app.init());
+        assertEquals("unless-stopped", app.restart());
+        assertEquals("/srv/app", app.workingDir());
 
         var worker = services.get("worker");
         assertEquals(List.of("worker", "--once"), worker.command());

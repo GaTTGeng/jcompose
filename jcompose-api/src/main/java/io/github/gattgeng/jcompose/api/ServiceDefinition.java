@@ -12,6 +12,7 @@ public record ServiceDefinition(String name, Map<String, Object> configuration) 
         configuration = Collections.unmodifiableMap(new LinkedHashMap<>(configuration));
     }
     public String image() { return string("image"); }
+    public String containerName() { return string("container_name"); }
     public Object build() { return configuration.get("build"); }
     /** Returns a scalar Compose command as one item, without shell-splitting it. */
     public List<String> command() { return stringList(configuration.get("command")); }
@@ -38,6 +39,31 @@ public record ServiceDefinition(String name, Map<String, Object> configuration) 
     public List<String> profiles() {
         return stringList(configuration.get("profiles"));
     }
+    public String restart() { return string("restart"); }
+    public String networkMode() { return string("network_mode"); }
+    public String ipc() { return string("ipc"); }
+    public String pid() { return string("pid"); }
+    public String hostname() { return string("hostname"); }
+    public String domainname() { return string("domainname"); }
+    public String user() { return string("user"); }
+    public String workingDir() { return string("working_dir"); }
+    public boolean tty() { return Boolean.TRUE.equals(configuration.get("tty")); }
+    public boolean stdinOpen() { return Boolean.TRUE.equals(configuration.get("stdin_open")); }
+    public boolean privileged() { return Boolean.TRUE.equals(configuration.get("privileged")); }
+    public boolean readOnly() { return Boolean.TRUE.equals(configuration.get("read_only")); }
+    public Boolean init() { return configuration.get("init") instanceof Boolean value ? value : null; }
+    public String stopSignal() { return string("stop_signal"); }
+    public String stopGracePeriod() { return string("stop_grace_period"); }
+    public String platform() { return string("platform"); }
+    public String pullPolicy() { return string("pull_policy"); }
+    public String macAddress() { return string("mac_address"); }
+    public String cgroupParent() { return string("cgroup_parent"); }
+    public String extendsService() {
+        return configuration.get("extends") instanceof Map<?, ?> value ? text(value.get("service")) : null;
+    }
+    public String extendsFile() {
+        return configuration.get("extends") instanceof Map<?, ?> value ? text(value.get("file")) : null;
+    }
     private static List<String> stringList(Object value) {
         if (value instanceof List<?> list) return list.stream().map(String::valueOf).toList();
         return value == null ? List.of() : List.of(String.valueOf(value));
@@ -46,6 +72,8 @@ public record ServiceDefinition(String name, Map<String, Object> configuration) 
         Object value = configuration.get(key);
         return value == null ? null : String.valueOf(value);
     }
+
+    private static String text(Object value) { return value == null ? null : String.valueOf(value); }
 
     private static ComposeServicePort port(Object value) {
         if (value instanceof Map<?, ?> mapping) {
@@ -75,7 +103,6 @@ public record ServiceDefinition(String name, Map<String, Object> configuration) 
         return new ComposeServicePort(target, published, hostIp, protocol, null, null, null);
     }
 
-    private static String text(Object value) { return value == null ? null : String.valueOf(value); }
     private static String defaultText(Object value, String fallback) {
         String text = text(value);
         return text == null ? fallback : text;
