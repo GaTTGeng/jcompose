@@ -6,7 +6,7 @@ import java.util.Objects;
 /**
  * Options for running a one-off container for a service.
  * @param command Command overriding the service image's default command.
- * @param entrypoint Entrypoint overriding the service image's default entrypoint.
+ * @param entrypoint Entrypoint overriding the service entrypoint; an empty string clears it, and null keeps the service value.
  * @param name Explicit container name; defaults to a generated project-service-index name.
  * @param env Extra environment variables for the container, in <code>NAME=value</code> form.
  * @param labels Extra labels applied to the one-off container, in <code>key=value</code> form.
@@ -135,8 +135,8 @@ public record ComposeRunOptions(
         public Builder command(List<String> value) { this.command = value; return this; }
 
         /**
-         * Entrypoint overriding the service image's default entrypoint.
-         * @param value Entrypoint overriding the service image's default entrypoint.
+         * Entrypoint overriding the service entrypoint; an empty string clears it.
+         * @param value Entrypoint overriding the service entrypoint; an empty string clears it, and null keeps the service value.
          * @return this builder
          */
         public Builder entrypoint(String value) { this.entrypoint = value; return this; }

@@ -90,3 +90,5 @@ These operations are SDK operations, not full `docker compose` equivalents, and 
 Before changing a row to Implemented, add loader and/or engine tests that compare observable behavior with Docker Compose, document the supported subset and limitations, and update this matrix. Use the official [Compose file reference](https://docs.docker.com/reference/compose-file/) as the field catalog.
 
 Service-level `platform` is passed to Docker Engine for image pulls, builds when no build-specific platform is set, service container creation, one-off `run`, and pre-start hook containers. An explicit pull-operation platform overrides the service value; the `platform` field is no longer reported as unapplied.
+
+For one-off `run`, a null `ComposeRunOptions.entrypoint` keeps the service entrypoint, while an explicit empty string clears it. This follows Docker Compose's documented empty-entrypoint behavior (see the [service reference](https://docs.docker.com/reference/compose-file/services/#entrypoint) and [run command reference](https://docs.docker.com/reference/cli/docker/compose/run/)).

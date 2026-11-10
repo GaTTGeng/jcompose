@@ -4378,7 +4378,7 @@ public final class ComposeService implements IComposeService {
                         .withTty(effective.tty()).withStdinOpen(effective.interactive());
                 String servicePlatform = stringValue(service.configuration().get("platform"), null);
                 if (servicePlatform != null && !servicePlatform.isBlank()) command.withPlatform(servicePlatform);
-                Object configuredEntrypoint = effective.entrypoint() == null || effective.entrypoint().isBlank()
+                Object configuredEntrypoint = effective.entrypoint() == null
                         ? service.configuration().get("entrypoint") : List.of(effective.entrypoint());
                 if (configuredEntrypoint != null) command.withEntrypoint(composeCommand(configuredEntrypoint));
                 Object configuredCommand = effective.command() == null

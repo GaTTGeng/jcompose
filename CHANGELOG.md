@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Honor an explicit empty `run.entrypoint` override by clearing the service entrypoint, matching Docker Compose.
 - Make `run.remove(true)` enable Docker Engine auto-removal, including anonymous volumes and detached runs, matching Docker Compose `run --rm`.
 - Preserve Unix permission modes when creating and extracting container-copy archives, matching the ComposeSharp `a9ff810` copy behavior.
 - Stop and remove selected project containers in reverse service dependency order, including `depends_on`, links, `volumes_from`, and service namespace references.

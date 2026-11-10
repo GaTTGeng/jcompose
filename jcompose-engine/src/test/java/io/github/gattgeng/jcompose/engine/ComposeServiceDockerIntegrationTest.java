@@ -1066,6 +1066,35 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void runWithEmptyEntrypointClearsTheServiceEntrypoint() throws Exception {
+        String projectName = "jcompose-run-empty-entrypoint-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    entrypoint: ["sh", "-c", "exit 42"]
+                """);
+
+        IComposeService service = new ComposeService();
+        String containerId = null;
+        try {
+            containerId = service.runAsync(context, "app", ComposeRunOptions.builder()
+                            .noDeps(true).entrypoint("").command(List.of("true"))
+                            .interactive(false).tty(false).build())
+                    .get(Duration.ofSeconds(45).toMillis(), TimeUnit.MILLISECONDS);
+            try (var client = DockerClientFactory.create(context)) {
+                assertEquals(0, client.inspectContainerCmd(containerId).exec().getState().getExitCodeLong());
+            }
+        } finally {
+            if (containerId != null) try (var client = DockerClientFactory.create(context)) {
+                client.removeContainerCmd(containerId).withForce(true).withRemoveVolumes(false).exec();
+            }
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
     void runRemoveAutomaticallyRemovesContainerAndAnonymousVolumes() throws Exception {
         String projectName = "jcompose-run-rm-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
