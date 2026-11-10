@@ -1948,7 +1948,19 @@ public final class ComposeFileLoader {
     }
 
     private static Map<String, Object> listMappingValue(String field, Object value) {
-        if (value instanceof Map<?, ?> mapping) return stringKeyMapUnchecked(mapping);
+        if (value instanceof Map<?, ?> mapping) {
+            Map<String, Object> result = stringKeyMapUnchecked(mapping);
+            if ("depends_on".equals(field)) {
+                result.replaceAll((name, options) -> {
+                    if (!(options instanceof Map<?, ?> optionMap)) return options;
+                    Map<String, Object> normalized = stringKeyMapUnchecked(optionMap);
+                    normalized.putIfAbsent("condition", "service_started");
+                    normalized.putIfAbsent("required", true);
+                    return normalized;
+                });
+            }
+            return result;
+        }
         if (!(value instanceof List<?> list) || list.stream().anyMatch(entry -> !(entry instanceof String))) return null;
         Map<String, Object> result = new LinkedHashMap<>();
         for (Object entry : list) {
