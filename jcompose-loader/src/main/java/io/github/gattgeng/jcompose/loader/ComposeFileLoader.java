@@ -510,10 +510,6 @@ public final class ComposeFileLoader {
                         }
                     }
                 }
-                for (String field : List.of("command", "entrypoint"))
-                    if (service.get(field) instanceof String command && !command.isEmpty())
-                        addDiagnostic(result, file, provenance, servicePath + "." + field, serviceName,
-                                "partially-supported-field", "Scalar commands are passed as one argument instead of shell-split arguments.");
                 Object dependencies = service.get("depends_on");
                 if (dependencies instanceof Map<?, ?> dependencyMap) {
                     for (var dependency : dependencyMap.entrySet()) {

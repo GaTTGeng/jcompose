@@ -254,8 +254,8 @@ public final class ComposeService implements IComposeService {
                 var create = client.createContainerCmd(image).withName(name).withLabels(labels).withHostConfig(host);
                 String servicePlatform = stringValue(service.configuration().get("platform"), null);
                 if (servicePlatform != null && !servicePlatform.isBlank()) create.withPlatform(servicePlatform);
-                if (hook.get("command") instanceof String command) create.withCmd("/bin/sh", "-c", command);
-                else if (hook.get("command") instanceof List<?> command) create.withCmd(command.stream().map(String::valueOf).toList());
+                Object hookCommand = hook.get("command");
+                if (hookCommand != null) create.withCmd(composeCommand(hookCommand));
                 if (!environment.isEmpty()) create.withEnv(environment.entrySet().stream()
                         .map(entry -> entry.getKey() + "=" + entry.getValue()).toList());
                 Object user = hook.containsKey("user") ? hook.get("user") : service.configuration().get("user");
@@ -310,8 +310,7 @@ public final class ComposeService implements IComposeService {
         for (Object value : hooks) {
             if (!(value instanceof Map<?, ?> hook)) continue;
             Object configuredCommand = hook.get("command");
-            List<String> command = configuredCommand instanceof String shell
-                    ? List.of("/bin/sh", "-c", shell) : asStringList(configuredCommand);
+            List<String> command = composeCommand(configuredCommand);
             Map<String, String> environment = new LinkedHashMap<>(stringMap(service.configuration().get("environment")));
             Object hookEnvironment = hook.get("environment");
             if (hookEnvironment instanceof Map<?, ?>) environment.putAll(stringMap(hookEnvironment));
@@ -1756,10 +1755,10 @@ public final class ComposeService implements IComposeService {
             List<String> environment = stringMap(service.configuration().get("environment")).entrySet().stream()
                     .map(entry -> entry.getKey() + "=" + entry.getValue()).toList();
             if (!environment.isEmpty()) command.withEnv(environment);
-            List<String> cmd = asStringList(service.configuration().get("command"));
-            if (!cmd.isEmpty()) command.withCmd(cmd);
-            List<String> entrypoint = asStringList(service.configuration().get("entrypoint"));
-            if (!entrypoint.isEmpty()) command.withEntrypoint(entrypoint);
+            Object configuredCommand = service.configuration().get("command");
+            if (configuredCommand != null) command.withCmd(composeCommand(configuredCommand));
+            Object configuredEntrypoint = service.configuration().get("entrypoint");
+            if (configuredEntrypoint != null) command.withEntrypoint(composeCommand(configuredEntrypoint));
             if (service.configuration().get("working_dir") != null) command.withWorkingDir(String.valueOf(service.configuration().get("working_dir")));
             if (service.configuration().get("user") != null) command.withUser(String.valueOf(service.configuration().get("user")));
             if (service.configuration().get("hostname") != null) command.withHostName(String.valueOf(service.configuration().get("hostname")));
@@ -3187,6 +3186,45 @@ public final class ComposeService implements IComposeService {
         return List.of(String.valueOf(value));
     }
 
+    static List<String> composeCommand(Object value) {
+        if (!(value instanceof String command)) return asStringList(value);
+        List<String> arguments = new ArrayList<>();
+        StringBuilder argument = new StringBuilder();
+        char quote = 0;
+        boolean escaped = false;
+        boolean started = false;
+        for (int index = 0; index < command.length(); index++) {
+            char current = command.charAt(index);
+            if (escaped) {
+                argument.append(current);
+                escaped = false;
+                started = true;
+            } else if (current == '\\' && quote != '\'') {
+                escaped = true;
+                started = true;
+            } else if (quote != 0) {
+                if (current == quote) quote = 0;
+                else argument.append(current);
+            } else if (current == '\'' || current == '"') {
+                quote = current;
+                started = true;
+            } else if (Character.isWhitespace(current)) {
+                if (started) {
+                    arguments.add(argument.toString());
+                    argument.setLength(0);
+                    started = false;
+                }
+            } else {
+                argument.append(current);
+                started = true;
+            }
+        }
+        if (escaped || quote != 0)
+            throw new IllegalArgumentException("Invalid Compose command string: unmatched escape or quote.");
+        if (started) arguments.add(argument.toString());
+        return List.copyOf(arguments);
+    }
+
     private static String containerName(String projectName, ServiceDefinition service, int replicas, int index, boolean compatibility) {
         if (replicas == 1 && service.configuration().get("container_name") != null)
             return String.valueOf(service.configuration().get("container_name"));
@@ -4194,11 +4232,12 @@ public final class ComposeService implements IComposeService {
                         .withTty(effective.tty()).withStdinOpen(effective.interactive());
                 String servicePlatform = stringValue(service.configuration().get("platform"), null);
                 if (servicePlatform != null && !servicePlatform.isBlank()) command.withPlatform(servicePlatform);
-                List<String> entrypoint = effective.entrypoint() == null || effective.entrypoint().isBlank()
-                        ? asStringList(service.configuration().get("entrypoint")) : List.of(effective.entrypoint());
-                if (!entrypoint.isEmpty()) command.withEntrypoint(entrypoint);
-                List<String> cmd = effective.command() == null ? asStringList(service.configuration().get("command")) : effective.command();
-                if (!cmd.isEmpty()) command.withCmd(cmd);
+                Object configuredEntrypoint = effective.entrypoint() == null || effective.entrypoint().isBlank()
+                        ? service.configuration().get("entrypoint") : List.of(effective.entrypoint());
+                if (configuredEntrypoint != null) command.withEntrypoint(composeCommand(configuredEntrypoint));
+                Object configuredCommand = effective.command() == null
+                        ? service.configuration().get("command") : effective.command();
+                if (configuredCommand != null) command.withCmd(composeCommand(configuredCommand));
                 Map<String, String> environment = new LinkedHashMap<>(stringMap(service.configuration().get("environment")));
                 environment.putAll(parseKeyValueOptions(effective.env(), "environment"));
                 if (!environment.isEmpty()) command.withEnv(environment.entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()).toList());

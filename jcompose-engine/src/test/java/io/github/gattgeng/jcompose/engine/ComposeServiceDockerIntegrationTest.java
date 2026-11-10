@@ -2014,6 +2014,35 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void runTokenizesScalarCommandAndEntrypointLikeCompose() throws Exception {
+        String projectName = "jcompose-run-scalar-command-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    entrypoint: /bin/sh -c
+                    command: echo 'hello world'
+                """);
+
+        IComposeService service = new ComposeService();
+        String containerId = null;
+        try {
+            containerId = service.runAsync(context, "app", ComposeRunOptions.builder().detach(true).build())
+                    .get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            try (var client = DockerClientFactory.create(context)) {
+                var config = client.inspectContainerCmd(containerId).exec().getConfig();
+                assertEquals(java.util.List.of("/bin/sh", "-c"), java.util.List.of(config.getEntrypoint()));
+                assertEquals(java.util.List.of("echo", "hello world"), java.util.List.of(config.getCmd()));
+            }
+        } finally {
+            try (var client = DockerClientFactory.create(context)) {
+                if (containerId != null) client.removeContainerCmd(containerId).withForce(true).exec();
+            }
+        }
+    }
+
+    @Test
     void createPassesServicePlatformToDockerEngine() throws Exception {
         String projectName = "jcompose-platform-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);

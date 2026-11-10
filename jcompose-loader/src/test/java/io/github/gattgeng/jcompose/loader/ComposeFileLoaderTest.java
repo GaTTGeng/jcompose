@@ -439,7 +439,7 @@ class ComposeFileLoaderTest {
     }
 
     @Test
-    void diagnosesUnsupportedBuildAndCommandBehaviorWithoutFlaggingSupportedNetworks() throws Exception {
+    void diagnosesUnsupportedBuildBehaviorWithoutFlaggingSupportedNetworksOrScalarCommands() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 networks:
                   front: {}
@@ -466,9 +466,9 @@ class ComposeFileLoaderTest {
 
         var diagnostics = new ComposeFileLoader().load(directory, null).diagnostics();
 
-        assertEquals(List.of("services.list.command", "services.list.entrypoint", "services.built.build.privileged"),
+        assertEquals(List.of("services.built.build.privileged"),
                 diagnostics.stream().map(diagnostic -> diagnostic.propertyPath()).toList());
-        assertEquals("partially-supported-field", diagnostics.getLast().code());
+        assertEquals("partially-supported-field", diagnostics.getFirst().code());
     }
 
     @Test
