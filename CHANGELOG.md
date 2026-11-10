@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Make `run.remove(true)` enable Docker Engine auto-removal, including anonymous volumes and detached runs, matching Docker Compose `run --rm`.
 - Preserve Unix permission modes when creating and extracting container-copy archives, matching the ComposeSharp `a9ff810` copy behavior.
 - Stop and remove selected project containers in reverse service dependency order, including `depends_on`, links, `volumes_from`, and service namespace references.
 - Made `top` process listings tolerate missing Docker response titles, rows, and cells using the same empty-value mapping as ComposeSharp 3.0.0.

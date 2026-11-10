@@ -11,7 +11,7 @@ import java.util.Objects;
  * @param env Extra environment variables for the container, in <code>NAME=value</code> form.
  * @param labels Extra labels applied to the one-off container, in <code>key=value</code> form.
  * @param volumes Extra bind/volume mounts applied to the container, in <code>source:target[:mode]</code> form.
- * @param remove Remove the container automatically when it exits.
+ * @param remove Remove the container and its anonymous volumes automatically when it exits; disabled by default.
  * @param detach Run detached and return the container ID immediately.
  * @param noDeps Do not start the service's dependency services first.
  * @param tty Allocate a TTY for the container.
@@ -170,8 +170,8 @@ public record ComposeRunOptions(
         public Builder volumes(List<String> value) { this.volumes = value; return this; }
 
         /**
-         * Remove the container automatically when it exits.
-         * @param value Remove the container automatically when it exits.
+         * Remove the container and its anonymous volumes automatically when it exits.
+         * @param value Whether to enable Docker Compose <code>run --rm</code> behavior.
          * @return this builder
          */
         public Builder remove(boolean value) { this.remove = value; return this; }

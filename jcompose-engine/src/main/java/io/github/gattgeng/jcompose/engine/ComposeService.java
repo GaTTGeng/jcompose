@@ -4325,6 +4325,7 @@ public final class ComposeService implements IComposeService {
                 labels.putAll(runLabels);
 
                 var host = com.github.dockerjava.api.model.HostConfig.newHostConfig();
+                if (effective.remove()) host.withAutoRemove(true);
                 List<com.github.dockerjava.api.model.Link> externalLinks = externalLinkEntries(service.configuration().get("external_links"));
                 if (!externalLinks.isEmpty()) host.withLinks(externalLinks);
                 String configuredNetworkMode = stringValue(service.configuration().get("network_mode"), "");
@@ -4446,7 +4447,6 @@ public final class ComposeService implements IComposeService {
                                 });
                         await(callback);
                     }
-                    if (effective.remove() && !runDetached.get()) client.removeContainerCmd(containerId).withForce(true).withRemoveVolumes(false).exec();
                 } else {
                     client.startContainerCmd(containerId).exec();
                     runLifecycleHooks(client, containerId, service, "post_start");

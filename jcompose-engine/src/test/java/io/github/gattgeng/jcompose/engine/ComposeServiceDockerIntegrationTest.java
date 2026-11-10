@@ -1066,6 +1066,52 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void runRemoveAutomaticallyRemovesContainerAndAnonymousVolumes() throws Exception {
+        String projectName = "jcompose-run-rm-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: ["sh", "-c", "sleep 300"]
+                    volumes: ["/cache"]
+                """);
+
+        IComposeService service = new ComposeService();
+        String containerId = service.runAsync(context, "app", ComposeRunOptions.builder()
+                        .noDeps(true).detach(true).remove(true).tty(false).build())
+                .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+        String anonymousVolume;
+        try (var client = DockerClientFactory.create(context)) {
+            var container = client.inspectContainerCmd(containerId).exec();
+            assertEquals(Boolean.TRUE, container.getHostConfig().getAutoRemove());
+            anonymousVolume = container.getMounts().stream()
+                    .filter(mount -> "/cache".equals(mount.getDestination()))
+                    .map(com.github.dockerjava.api.model.ContainerMount::getName)
+                    .filter(name -> name != null && !name.isBlank())
+                    .findFirst().orElseThrow();
+            client.stopContainerCmd(containerId).exec();
+
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
+            boolean removed = false;
+            while (System.nanoTime() < deadline) {
+                boolean containerPresent = client.listContainersCmd().withShowAll(true).exec().stream()
+                        .anyMatch(candidate -> containerId.equals(candidate.getId()));
+                boolean volumePresent = client.listVolumesCmd().exec().getVolumes().stream()
+                        .anyMatch(volume -> anonymousVolume.equals(volume.getName()));
+                if (!containerPresent && !volumePresent) {
+                    removed = true;
+                    break;
+                }
+                Thread.sleep(100);
+            }
+            assertTrue(removed, "run --rm should remove its one-off container and anonymous volumes");
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
     void upResolvesNetworkModeServiceReferenceToCreatedContainer() throws Exception {
         String projectName = "jcompose-service-network-mode-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
