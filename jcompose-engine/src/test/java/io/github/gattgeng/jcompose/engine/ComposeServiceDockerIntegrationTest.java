@@ -1080,7 +1080,7 @@ class ComposeServiceDockerIntegrationTest {
         String containerId = null;
         try {
             containerId = service.runAsync(context, "app", ComposeRunOptions.builder()
-                            .noDeps(true).entrypoint("").command(List.of("true"))
+                            .noDeps(true).entrypoint("").command(java.util.List.of("true"))
                             .interactive(false).tty(false).build())
                     .get(Duration.ofSeconds(45).toMillis(), TimeUnit.MILLISECONDS);
             try (var client = DockerClientFactory.create(context)) {
