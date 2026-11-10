@@ -82,6 +82,43 @@ class ContainerArchiveExtractionTest {
         }
     }
 
+    @Test
+    void copiesSymbolicLinksWithoutFollowingThemByDefault() throws IOException {
+        Path target = Files.writeString(tempDirectory.resolve("target.txt"), "compose123");
+        Path link = tempDirectory.resolve("source.txt");
+        try {
+            Files.createSymbolicLink(link, target.getFileName());
+        } catch (UnsupportedOperationException | IOException | SecurityException e) {
+            return;
+        }
+
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (TarArchiveOutputStream tar = new TarArchiveOutputStream(bytes)) {
+            assertEquals(0, ComposeService.appendTarEntry(tar, link, "source.txt"));
+            tar.finish();
+        }
+        try (TarArchiveInputStream tar = new TarArchiveInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+            TarArchiveEntry entry = tar.getNextTarEntry();
+            assertTrue(entry.isSymbolicLink());
+            assertEquals(target.getFileName().toString(), entry.getLinkName());
+        }
+
+        Path destination = Files.createDirectory(tempDirectory.resolve("destination"));
+        ComposeService.extractTar(new ByteArrayInputStream(bytes.toByteArray()), destination);
+        Path copiedLink = destination.resolve("source.txt");
+        assertTrue(Files.isSymbolicLink(copiedLink));
+        assertEquals(target.getFileName(), Files.readSymbolicLink(copiedLink));
+    }
+
+    @Test
+    void rejectsArchiveEntriesThatTraverseAnExtractedSymbolicLink() throws IOException {
+        Path destination = Files.createDirectory(tempDirectory.resolve("destination"));
+        byte[] archive = archiveWithSymbolicLinkTraversal();
+
+        assertThrows(IOException.class,
+                () -> ComposeService.extractTar(new ByteArrayInputStream(archive), destination));
+    }
+
     private static byte[] archiveWithHardLink() throws IOException {
         return archiveWithHardLink("root/source");
     }
@@ -104,6 +141,23 @@ class ContainerArchiveExtractionTest {
             hardLink.setLinkName(target);
             tar.putArchiveEntry(hardLink);
             tar.closeArchiveEntry();
+        }
+        return bytes.toByteArray();
+    }
+
+    private static byte[] archiveWithSymbolicLinkTraversal() throws IOException {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (TarArchiveOutputStream tar = new TarArchiveOutputStream(bytes)) {
+            TarArchiveEntry link = new TarArchiveEntry("root/link", TarArchiveEntry.LF_SYMLINK);
+            link.setLinkName("../outside");
+            tar.putArchiveEntry(link);
+            tar.closeArchiveEntry();
+
+            TarArchiveEntry child = new TarArchiveEntry("root/link/escape.txt");
+            child.setSize(0);
+            tar.putArchiveEntry(child);
+            tar.closeArchiveEntry();
+            tar.finish();
         }
         return bytes.toByteArray();
     }

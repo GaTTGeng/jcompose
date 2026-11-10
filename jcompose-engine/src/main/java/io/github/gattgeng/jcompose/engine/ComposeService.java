@@ -2971,19 +2971,18 @@ public final class ComposeService implements IComposeService {
         return containers.stream().findFirst().orElseThrow(() -> new IllegalStateException("No container found for service '" + service + "'."));
     }
 
-    private static void rejectSymlinkTree(Path source) throws java.io.IOException {
-        if (Files.isSymbolicLink(source)) throw new java.io.IOException("Copying symbolic links is not supported: " + source);
-        if (Files.isDirectory(source)) try (var paths = Files.walk(source)) {
-            Path link = paths.filter(Files::isSymbolicLink).findFirst().orElse(null);
-            if (link != null) throw new java.io.IOException("Copying symbolic links is not supported: " + link);
-        }
-    }
-
     static Path resolveCopySource(Path source, boolean followLink) throws java.io.IOException {
         return followLink && Files.isSymbolicLink(source) ? source.toRealPath() : source;
     }
 
     static long appendTarEntry(TarArchiveOutputStream tar, Path path, String archiveName) throws java.io.IOException {
+        if (Files.isSymbolicLink(path)) {
+            TarArchiveEntry entry = new TarArchiveEntry(archiveName, TarArchiveEntry.LF_SYMLINK);
+            entry.setLinkName(Files.readSymbolicLink(path).toString());
+            tar.putArchiveEntry(entry);
+            tar.closeArchiveEntry();
+            return 0;
+        }
         TarArchiveEntry entry = new TarArchiveEntry(path.toFile(), archiveName + (Files.isDirectory(path) ? "/" : ""));
         tar.putArchiveEntry(entry);
         long bytes = 0;
@@ -3012,11 +3011,18 @@ public final class ComposeService implements IComposeService {
                 if (first) { directory = entry.isDirectory(); first = false; }
                 Path target = root.resolve(entry.getName()).normalize();
                 if (!target.startsWith(root)) throw new java.io.IOException("Docker archive contains a path outside destination: " + entry.getName());
-                if (entry.isSymbolicLink() || !(entry.isDirectory() || entry.isFile() || entry.isLink()))
+                if (!(entry.isDirectory() || entry.isFile() || entry.isLink() || entry.isSymbolicLink()))
                     throw new java.io.IOException("Docker archive contains unsupported entry type: " + entry.getName());
                 ensureNoSymlinkPath(root, target);
                 if (entry.isDirectory()) Files.createDirectories(target);
-                else if (entry.isLink()) {
+                else if (entry.isSymbolicLink()) {
+                    String linkName = entry.getLinkName();
+                    if (linkName == null || linkName.isBlank())
+                        throw new java.io.IOException("Docker archive contains a symbolic link without a target: " + entry.getName());
+                    Path parent = target.getParent();
+                    if (parent != null) Files.createDirectories(parent);
+                    Files.createSymbolicLink(target, Path.of(linkName));
+                } else if (entry.isLink()) {
                     String linkName = entry.getLinkName();
                     if (linkName == null || linkName.isBlank())
                         throw new java.io.IOException("Docker archive contains a hard link without a target: " + entry.getName());
@@ -4431,7 +4437,6 @@ public final class ComposeService implements IComposeService {
                 if (!Files.exists(localSource, java.nio.file.LinkOption.NOFOLLOW_LINKS))
                     throw new java.nio.file.NoSuchFileException(localSource.toString());
                 Path copySource = resolveCopySource(localSource, options.followLink());
-                rejectSymlinkTree(copySource);
                 Path tempArchive = Files.createTempFile("jcompose-copy-", ".tar");
                 long bytes = 0;
                 try {
