@@ -2242,14 +2242,7 @@ public final class ComposeService implements IComposeService {
             throw new IllegalArgumentException("Service 'logging' must be a mapping.");
         }
         String driverName = stringValue(logging.get("driver"), null);
-        com.github.dockerjava.api.model.LogConfig.LoggingType driver = null;
-        if (driverName != null && !driverName.isBlank()) {
-            driver = com.github.dockerjava.api.model.LogConfig.LoggingType.fromValue(driverName);
-            if (driver == null) {
-                throw new IllegalArgumentException("Logging driver '" + driverName
-                        + "' is not supported by the current Docker Java API model.");
-            }
-        }
+        com.github.dockerjava.api.model.LogConfig.LoggingType driver = loggingType(driverName);
         Object optionsValue = logging.get("options");
         Map<String, String> options = Map.of();
         if (optionsValue != null) {
@@ -2262,7 +2255,18 @@ public final class ComposeService implements IComposeService {
             });
             options = parsedOptions;
         }
-        host.withLogConfig(new com.github.dockerjava.api.model.LogConfig(driver, options));
+        host.withLogConfig(driver == null && driverName != null && !driverName.isBlank()
+                ? new CustomDockerLogConfig(driverName, options)
+                : new com.github.dockerjava.api.model.LogConfig(driver, options));
+    }
+
+    private static com.github.dockerjava.api.model.LogConfig.LoggingType loggingType(String driverName) {
+        if (driverName == null || driverName.isBlank()) return null;
+        for (com.github.dockerjava.api.model.LogConfig.LoggingType type
+                : com.github.dockerjava.api.model.LogConfig.LoggingType.values()) {
+            if (driverName.equals(type.getType())) return type;
+        }
+        return null;
     }
 
     private static void applyResourceConfig(com.github.dockerjava.api.model.HostConfig host, Map<String, Object> config) {
