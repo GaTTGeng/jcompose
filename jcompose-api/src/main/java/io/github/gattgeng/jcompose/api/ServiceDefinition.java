@@ -181,8 +181,8 @@ public record ServiceDefinition(String name, Map<String, Object> configuration) 
     public Boolean init() { return configuration.get("init") instanceof Boolean value ? value : null; }
     /** Returns the configured stop signal. */
     public String stopSignal() { return string("stop_signal"); }
-    /** Returns the configured stop grace period in its Compose representation. */
-    public String stopGracePeriod() { return string("stop_grace_period"); }
+    /** Returns the configured stop grace period as a duration, or null when absent. */
+    public Duration stopGracePeriod() { return durationValue(configuration.get("stop_grace_period")); }
     /** Returns the configured platform selector. */
     public String platform() { return string("platform"); }
     /** Returns the configured image pull policy. */

@@ -201,6 +201,21 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void exposesStopGracePeriodAsDurationAndRetainsComposeValue() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: example/app
+                    stop_grace_period: 1m30s
+                """);
+
+        var app = new ComposeFileLoader().load(directory, null).services().get("app");
+
+        assertEquals(Duration.ofSeconds(90), app.stopGracePeriod());
+        assertEquals("1m30s", app.configuration().get("stop_grace_period"));
+    }
+
+    @Test
     void acceptsMatchingServiceScaleAndDeployReplicas() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:
