@@ -1443,6 +1443,67 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void downRemovesDependentContainersBeforeTheirDependencies() throws Exception {
+        String projectName = "jcompose-down-order-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: ["sleep", "60"]
+                    depends_on: [db]
+                  db:
+                    image: busybox:1.36
+                    command: ["sleep", "60"]
+                """);
+
+        IComposeService service = new ComposeService();
+        CompletableFuture<Void> subscribed = new CompletableFuture<>();
+        CompletableFuture<Flow.Subscription> subscription = new CompletableFuture<>();
+        CompletableFuture<java.util.List<String>> removedServices = new CompletableFuture<>();
+        var removed = new CopyOnWriteArrayList<String>();
+        try {
+            service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            service.eventsAsync(context, ComposeEventsOptions.builder()
+                            .onSubscribed(() -> subscribed.complete(null)).build())
+                    .subscribe(new Flow.Subscriber<>() {
+                        @Override public void onSubscribe(Flow.Subscription value) {
+                            subscription.complete(value);
+                            value.request(Long.MAX_VALUE);
+                        }
+
+                        @Override public void onNext(ComposeEvent event) {
+                            if (event.type().equals("container")
+                                    && java.util.Set.of("destroy", "remove").contains(event.action())
+                                    && java.util.Set.of("app", "db").contains(event.service())) {
+                                if (!removed.contains(event.service())) removed.add(event.service());
+                                if (removed.size() == 2) removedServices.complete(java.util.List.copyOf(removed));
+                            }
+                        }
+
+                        @Override public void onError(Throwable failure) {
+                            subscribed.completeExceptionally(failure);
+                            removedServices.completeExceptionally(failure);
+                        }
+                        @Override public void onComplete() {
+                            removedServices.completeExceptionally(
+                                    new AssertionError("Docker event stream ended unexpectedly."));
+                        }
+                    });
+
+            subscription.get(30, TimeUnit.SECONDS);
+            subscribed.get(30, TimeUnit.SECONDS);
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+
+            assertEquals(java.util.List.of("app", "db"), removedServices.get(30, TimeUnit.SECONDS));
+        } finally {
+            Flow.Subscription activeSubscription = subscription.getNow(null);
+            if (activeSubscription != null) activeSubscription.cancel();
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
     void eventsKeepProjectNetworkEventsWithoutAServiceFilter() throws Exception {
         String projectName = "jcompose-project-events-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
