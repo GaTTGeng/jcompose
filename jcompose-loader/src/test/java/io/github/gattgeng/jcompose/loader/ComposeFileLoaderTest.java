@@ -61,6 +61,67 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void exposesBuildDefinitionsAsTypedImmutableValues() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  web:
+                    image: example/web
+                    build:
+                      context: ./web
+                      dockerfile: Dockerfile.dev
+                      args:
+                        NODE_ENV: production
+                        PRIVATE_TOKEN: null
+                      cache_from: [example/web:latest]
+                      cache_to: [type=inline]
+                      target: runtime
+                      tags: [example/web:test]
+                      labels: {org.example.role: frontend}
+                      network: bridge
+                      extra_hosts: [registry.internal=192.0.2.20]
+                      privileged: false
+                      shm_size: 64m
+                      platforms: [linux/amd64]
+                      pull: true
+                      no_cache: false
+                      context_directory: ./shared
+                  worker:
+                    image: example/worker
+                    build: ./worker
+                  legacy:
+                    image: example/legacy
+                    build:
+                      context: ./legacy
+                      args: [VERSION=3, BUILD_ID]
+                """);
+
+        var services = new ComposeFileLoader().load(directory, null).services();
+        var web = services.get("web").buildConfig();
+
+        assertEquals("./web", web.context());
+        assertEquals("Dockerfile.dev", web.dockerfile());
+        assertEquals("production", web.args().get("NODE_ENV"));
+        assertNull(web.args().get("PRIVATE_TOKEN"));
+        assertEquals(List.of("example/web:latest"), web.cacheFrom());
+        assertEquals(List.of("type=inline"), web.cacheTo());
+        assertEquals("runtime", web.target());
+        assertEquals(List.of("example/web:test"), web.tags());
+        assertEquals("frontend", web.labels().get("org.example.role"));
+        assertEquals("bridge", web.network());
+        assertEquals("192.0.2.20", web.extraHosts().get("registry.internal"));
+        assertEquals(Boolean.FALSE, web.privileged());
+        assertEquals("64m", web.shmSize());
+        assertEquals(List.of("linux/amd64"), web.platforms());
+        assertEquals(Boolean.TRUE, web.pull());
+        assertEquals(Boolean.FALSE, web.noCache());
+        assertEquals("./shared", web.contextDirectory());
+        assertThrows(UnsupportedOperationException.class, () -> web.args().put("OTHER", "value"));
+        assertEquals("./worker", services.get("worker").buildConfig().context());
+        assertEquals("3", services.get("legacy").buildConfig().args().get("VERSION"));
+        assertNull(services.get("legacy").buildConfig().args().get("BUILD_ID"));
+    }
+
+    @Test
     void acceptsMatchingServiceScaleAndDeployReplicas() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:

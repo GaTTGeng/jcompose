@@ -21,6 +21,20 @@ public record ServiceDefinition(String name, Map<String, Object> configuration) 
     public String containerName() { return string("container_name"); }
     /** Returns the normalized build definition. */
     public Object build() { return configuration.get("build"); }
+    /** Returns the service build definition as an immutable typed projection, or null when absent. */
+    public BuildConfig buildConfig() {
+        Object value = configuration.get("build");
+        if (value instanceof String context)
+            return new BuildConfig(context, null, null, null, null, null, null, null, null, null,
+                    null, null, null, null, null, null);
+        if (!(value instanceof Map<?, ?> build)) return null;
+        return new BuildConfig(text(build.get("context")), text(build.get("dockerfile")), buildArgs(build.get("args")),
+                nullableStringList(build.get("cache_from")), nullableStringList(build.get("cache_to")),
+                text(build.get("target")), nullableStringList(build.get("tags")), nullableStringMap(build.get("labels")),
+                text(build.get("network")), nullableStringMap(keyValueMap(build.get("extra_hosts"))), booleanValue(build.get("privileged")),
+                text(build.get("shm_size")), nullableStringList(build.get("platforms")), booleanValue(build.get("pull")),
+                booleanValue(build.get("no_cache")), text(build.get("context_directory")));
+    }
     /** Returns environment entries with null values preserved for host passthrough. */
     public Map<String, Object> environment() { return stringObjectMap(configuration.get("environment")); }
     /** Returns service labels as immutable string values. */
@@ -188,6 +202,9 @@ public record ServiceDefinition(String name, Map<String, Object> configuration) 
         if (value instanceof List<?> list) return list.stream().map(String::valueOf).toList();
         return value == null ? List.of() : List.of(String.valueOf(value));
     }
+    private static List<String> nullableStringList(Object value) {
+        return value == null ? null : stringList(value);
+    }
     private static Map<String, Object> stringObjectMap(Object value) {
         Map<String, Object> result = new LinkedHashMap<>();
         if (value instanceof Map<?, ?> mapping) {
@@ -219,6 +236,47 @@ public record ServiceDefinition(String name, Map<String, Object> configuration) 
             return Collections.unmodifiableMap(result);
         }
         return Map.of();
+    }
+    private static Map<String, String> keyValueMap(Object value) {
+        if (value instanceof Map<?, ?> mapping) return stringMap(mapping);
+        if (value instanceof List<?> list) {
+            Map<String, String> result = new LinkedHashMap<>();
+            for (Object item : list) {
+                String entry = String.valueOf(item);
+                int separator = entry.indexOf('=');
+                if (separator < 0) separator = entry.indexOf(':');
+                if (separator >= 0) result.put(entry.substring(0, separator), entry.substring(separator + 1));
+            }
+            return Collections.unmodifiableMap(result);
+        }
+        return null;
+    }
+    private static Map<String, String> nullableStringMap(Object value) {
+        return value == null ? null : stringMap(value);
+    }
+    private static Map<String, String> buildArgs(Object value) {
+        if (value instanceof Map<?, ?> mapping) {
+            Map<String, String> result = new LinkedHashMap<>();
+            mapping.forEach((key, entry) -> result.put(String.valueOf(key), entry == null ? null : String.valueOf(entry)));
+            return Collections.unmodifiableMap(result);
+        }
+        if (value instanceof List<?> list) {
+            Map<String, String> result = new LinkedHashMap<>();
+            for (Object item : list) {
+                String entry = String.valueOf(item);
+                int separator = entry.indexOf('=');
+                result.put(separator < 0 ? entry : entry.substring(0, separator),
+                        separator < 0 ? null : entry.substring(separator + 1));
+            }
+            return Collections.unmodifiableMap(result);
+        }
+        return null;
+    }
+    private static Boolean booleanValue(Object value) {
+        if (value instanceof Boolean flag) return flag;
+        if (value instanceof String text && ("true".equalsIgnoreCase(text) || "false".equalsIgnoreCase(text)))
+            return Boolean.valueOf(text);
+        return null;
     }
     private static List<String> keyValueList(Object value, String separator) {
         if (value instanceof Map<?, ?> mapping) {

@@ -90,7 +90,7 @@ class InventoryCompose {
 
 ## Loader 支持范围
 
-Loader 会读取 Compose YAML、`.env` 和服务的 `env_file` 输入，执行变量插值并生成项目/服务模型。当前实现是增量支持子集，并非完整 Compose Specification 解析器。`ComposeProjectConfig.diagnostics()` 会以不包含字段值的方式报告未知字段及未完整应用的字段。向 `ComposeProjectContext` 构造器传入 `ComposeValidationMode.STRICT`，可在 Docker 操作开始前拒绝包含诊断项的项目。尚无完整强类型 Java 表示的服务字段仍可从原始映射中读取。
+Loader 会读取 Compose YAML、`.env` 和服务的 `env_file` 输入，执行变量插值并生成项目/服务模型。服务构建选项还提供不可变的强类型 `BuildConfig` 投影，同时保留规范化原始映射。当前实现是增量支持子集，并非完整 Compose Specification 解析器。`ComposeProjectConfig.diagnostics()` 会以不包含字段值的方式报告未知字段及未完整应用的字段。向 `ComposeProjectContext` 构造器传入 `ComposeValidationMode.STRICT`，可在 Docker 操作开始前拒绝包含诊断项的项目。其他尚无完整强类型 Java 表示的服务字段仍可从原始映射中读取。
 
 诊断会标出当前后端无法正确应用的 Windows 盘符卷源路径。标量 `healthcheck.test: NONE` 会作为 shell 检查执行；只有列表格式 `[NONE]` 会禁用检查。依赖条件诊断也遵循这一区分。
 
