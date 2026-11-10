@@ -4088,8 +4088,6 @@ public final class ComposeService implements IComposeService {
             List<String> effectiveProfiles = effectiveProfiles(List.of(service), context.profiles());
             validateRunnableService(service);
             validateServiceLabels(service);
-            if (effective.build()) await(buildAsync(context,
-                    ComposeBuildOptions.builder().services(List.of(serviceName)).build()));
             try (DockerClient client = createDockerClient(context)) {
                 ensureProjectResources(client, context.projectName(), project);
                 if (!effective.noDeps()) {
@@ -4111,8 +4109,17 @@ public final class ComposeService implements IComposeService {
                         ? context.projectName() + "-" + service.name() : service.image();
                 String pullPolicy = effectivePullPolicy(service, null);
                 if (!context.offline() && shouldPullImage(client, image, pullPolicy,
-                        service.configuration().get("pull_refresh_after")))
-                    pullImage(client, context.registryAuth(), image, stringValue(service.configuration().get("platform"), null));
+                        service.configuration().get("pull_refresh_after"))) {
+                    try {
+                        pullImage(client, context.registryAuth(), image, stringValue(service.configuration().get("platform"), null));
+                    } catch (java.util.concurrent.CancellationException exception) {
+                        throw exception;
+                    } catch (RuntimeException exception) {
+                        if (!effective.build() || service.build() == null) throw exception;
+                    }
+                }
+                if (effective.build()) await(buildAsync(context,
+                        ComposeBuildOptions.builder().services(List.of(serviceName)).build()));
 
                 int index = effective.index() == null ? 0 : effective.index();
                 String separator = context.compatibility() ? "_" : "-";
