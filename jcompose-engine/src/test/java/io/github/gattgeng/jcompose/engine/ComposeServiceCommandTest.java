@@ -15,6 +15,7 @@ class ComposeServiceCommandTest {
         assertEquals(List.of("echo", "two words", "$HOME"),
                 ComposeService.composeCommand("echo 'two words' $HOME"));
         assertEquals(List.of("echo", "a b"), ComposeService.composeCommand("echo a\\ b"));
+        assertEquals(List.of("app", "reload"), ComposeService.composeCommand("app reload"));
     }
 
     @Test

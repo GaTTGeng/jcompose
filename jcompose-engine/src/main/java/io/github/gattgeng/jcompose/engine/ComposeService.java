@@ -4752,8 +4752,7 @@ public final class ComposeService implements IComposeService {
         } else if ("sync+exec".equals(action)) {
             Map<String, Object> exec = rule.get("exec") instanceof Map<?, ?> raw ? stringKeyMap(raw) : Map.of();
             Object command = exec.get("command");
-            List<String> args = command instanceof List<?> values ? values.stream().map(String::valueOf).toList()
-                    : List.of("/bin/sh", "-c", String.valueOf(command));
+            List<String> args = composeCommand(command);
             List<String> environment = stringMap(exec.get("environment")).entrySet().stream()
                     .map(entry -> entry.getKey() + "=" + entry.getValue()).toList();
             await(execAsync(context, service, ComposeExecOptions.builder().command(args).env(environment)
