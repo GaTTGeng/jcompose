@@ -35,6 +35,27 @@ class ComposeProjectLoadTest {
     }
 
     @Test
+    void wildcardProfileSelectsEveryProfiledService() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                  debug:
+                    image: alpine
+                    profiles: [debug]
+                  tools:
+                    image: alpine
+                    profiles: [tools]
+                """);
+        var context = new ComposeProjectContext("test", directory, "compose.yaml", java.util.List.of("*"),
+                null, null, false, false);
+
+        var project = new ComposeService().loadProject(context);
+
+        assertEquals(java.util.List.of("app", "debug", "tools"), project.services());
+    }
+
+    @Test
     void asynchronousLoadRemainsAvailable() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:

@@ -23,6 +23,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Tokenize scalar service, one-off, lifecycle-hook, and watch `sync+exec` commands using Compose shell-word rules without invoking a shell, preserve explicit empty service command overrides, and reject malformed quoting during project loading.
 - Activate profiles from the project environment's `COMPOSE_PROFILES` value as well as `ComposeProjectContext.profiles`, following Docker Compose's comma-separated profile setting. (Docker Compose compatibility; independent of the ComposeSharp `a9ff810` sync.)
 - Select interpolation files with `COMPOSE_ENV_FILES`, honor `COMPOSE_DISABLE_ENV_FILE` for the default `.env`, and apply later-file and process-environment precedence. (Docker Compose compatibility; independent of the ComposeSharp `a9ff810` sync.)
+- Treat the `*` active-profile selector as enabling every profile declared by the loaded project. (Docker Compose compatibility; independent of the ComposeSharp `a9ff810` sync.)
 - Treat `memswap_limit: 0` as unset, matching Docker Compose.
 - Map `memswap_limit: -1` to Docker Engine's unlimited-swap setting, matching Docker Compose. (Docker Compose compatibility; independent of the ComposeSharp `a9ff810` sync.)
 - Interpolate variables in every YAML scalar style, including single-quoted and block scalars, matching Docker Compose.

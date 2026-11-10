@@ -1198,6 +1198,9 @@ public final class ComposeService implements IComposeService {
                 if (!trimmed.isEmpty()) profiles.add(trimmed);
             }
         }
+        if (project != null && profiles.remove("*")) {
+            project.services().values().forEach(service -> profiles.addAll(service.profiles()));
+        }
         return List.copyOf(profiles);
     }
 
