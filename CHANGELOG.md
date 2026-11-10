@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Made `top` process listings tolerate missing Docker response titles, rows, and cells using the same empty-value mapping as ComposeSharp 3.0.0.
+
 All notable changes to jcompose are documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/). JDK artifacts have not been published; `3.0.0-SNAPSHOT` is a development version and makes no claim of feature parity with ComposeSharp or compatibility with Docker Compose.

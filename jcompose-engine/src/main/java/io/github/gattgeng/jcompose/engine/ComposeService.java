@@ -717,11 +717,8 @@ public final class ComposeService implements IComposeService {
                                 if (isTopListingRace(exception)) return null;
                                 throw exception;
                             }
-                            List<String> titles = response.getTitles() == null
-                                    ? List.of() : List.of(response.getTitles());
-                            List<List<String>> processes = response.getProcesses() == null ? List.of()
-                                    : java.util.Arrays.stream(response.getProcesses())
-                                    .map(row -> List.of(row)).toList();
+                            List<String> titles = mapTopTitles(response.getTitles());
+                            List<List<String>> processes = mapTopProcesses(response.getProcesses());
                             List<String> names = container.getNames() == null ? List.of()
                                     : java.util.Arrays.stream(container.getNames()).map(name -> name.startsWith("/") ? name.substring(1) : name).toList();
                             String service = label(container, ComposeConstants.SERVICE_LABEL);
@@ -737,6 +734,19 @@ public final class ComposeService implements IComposeService {
 
     static boolean isTopListingRace(DockerException exception) {
         return exception.getHttpStatus() == 404 || exception.getHttpStatus() == 409;
+    }
+
+    static List<String> mapTopTitles(String[] titles) {
+        return titles == null ? List.of()
+                : java.util.Arrays.stream(titles).map(title -> title == null ? "" : title).toList();
+    }
+
+    static List<List<String>> mapTopProcesses(String[][] processes) {
+        return processes == null ? List.of()
+                : java.util.Arrays.stream(processes)
+                .map(row -> row == null ? List.<String>of()
+                        : java.util.Arrays.stream(row).map(value -> value == null ? "" : value).toList())
+                .toList();
     }
 
     static boolean isAlreadyStartedResponse(DockerException exception) {
