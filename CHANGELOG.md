@@ -4,6 +4,7 @@
 
 - Made `top` process listings tolerate missing Docker response titles, rows, and cells using the same empty-value mapping as ComposeSharp 3.0.0.
 - Recognized `mem_swappiness` as a supported Compose service field and validated its documented 0–100 range.
+- Validated `oom_score_adj` against Docker Compose's documented -1000–1000 range.
 
 All notable changes to jcompose are documented in this file.
 

@@ -417,6 +417,31 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void validatesOomScoreAdjustmentRange() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    oom_score_adj: -1000
+                """);
+
+        var project = new ComposeFileLoader().load(directory, null);
+
+        assertEquals(-1000, project.services().get("app").configuration().get("oom_score_adj"));
+
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    oom_score_adj: 1001
+                """);
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, null));
+
+        assertEquals("services.app.oom_score_adj", exception.propertyPath());
+    }
+
+    @Test
     void diagnosesInvalidDevicePermissionSuffixesButAcceptsComposeModes() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:

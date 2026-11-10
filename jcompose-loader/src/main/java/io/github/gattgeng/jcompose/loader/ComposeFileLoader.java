@@ -1166,6 +1166,8 @@ public final class ComposeFileLoader {
                 "an integer from 0 to 100");
         validateLongInteger(file, service, configuration.get("mem_swappiness"), path + ".mem_swappiness", 0, 100,
                 "an integer from 0 to 100");
+        validateLongInteger(file, service, configuration.get("oom_score_adj"), path + ".oom_score_adj", -1000, 1000,
+                "an integer from -1000 to 1000");
         validateNumeric(file, service, configuration, "cpus", path + ".cpus");
         validateStringList(file, service, configuration.get("dns_opt"), path + ".dns_opt");
         validateExpose(file, service, configuration.get("expose"), path + ".expose");

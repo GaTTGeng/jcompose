@@ -52,4 +52,13 @@ class ComposeRuntimeOptionsMappingTest {
 
         assertEquals(42L, host.getMemorySwappiness());
     }
+
+    @Test
+    void mapsOomScoreAdjustmentToDockerHostConfig() {
+        HostConfig host = HostConfig.newHostConfig();
+
+        ComposeService.applyResourceConfig(host, Map.of("oom_score_adj", -250));
+
+        assertEquals(-250, host.getOomScoreAdj());
+    }
 }
