@@ -372,7 +372,6 @@ class ComposeFileLoaderTest {
                       - /dev/fuse:/dev/fuse:rwm
                   proxy:
                     image: alpine
-                    networks: [backend]
                   networked:
                     image: alpine
                     networks:
@@ -428,7 +427,6 @@ class ComposeFileLoaderTest {
                 services:
                   app:
                     image: alpine
-                    networks: [backend]
                 """);
 
         var diagnostics = new ComposeFileLoader().load(directory, null).diagnostics();
@@ -505,7 +503,6 @@ class ComposeFileLoaderTest {
                     image: alpine
                     networks: [front]
                   built:
-                    networks: [front]
                     build:
                       context: .
                       privileged: true
@@ -745,7 +742,6 @@ class ComposeFileLoaderTest {
                 services:
                   api:
                     image: app
-                    networks: [front]
                     logging: {}
                 networks:
                   front: {}
@@ -771,13 +767,13 @@ class ComposeFileLoaderTest {
     }
 
     @Test
-    void diagnosesImplicitFallbackToFirstCustomProjectNetwork() throws Exception {
+    void implicitDefaultNetworkRemainsQuietAlongsideDeclaredCustomNetworks() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 networks:
                   front:
                   back:
                 services:
-                  implicit:
+                  api:
                     image: app
                   explicit:
                     image: app
@@ -785,24 +781,6 @@ class ComposeFileLoaderTest {
                   isolated:
                     image: app
                     network_mode: host
-                """);
-
-        var diagnostic = new ComposeFileLoader().load(directory, null).diagnostics().getFirst();
-
-        assertEquals("services.implicit.networks", diagnostic.propertyPath());
-        assertEquals("implicit", diagnostic.serviceName());
-        assertEquals("partially-supported-field", diagnostic.code());
-    }
-
-    @Test
-    void implicitDefaultNetworkIsNotReportedAsCustomFallback() throws Exception {
-        Files.writeString(directory.resolve("compose.yaml"), """
-                networks:
-                  default:
-                  front:
-                services:
-                  api:
-                    image: app
                 """);
 
         assertTrue(new ComposeFileLoader().load(directory, null).diagnostics().isEmpty());
