@@ -11,13 +11,24 @@ public record ServiceDefinition(String name, Map<String, Object> configuration) 
         if (name == null || name.isBlank()) throw new IllegalArgumentException("name is required");
         configuration = Collections.unmodifiableMap(new LinkedHashMap<>(configuration));
     }
+    /** Returns the configured service image reference. */
     public String image() { return string("image"); }
+    /** Returns the configured container name, if set. */
     public String containerName() { return string("container_name"); }
+    /** Returns the normalized build definition. */
     public Object build() { return configuration.get("build"); }
     /** Returns environment entries with null values preserved for host passthrough. */
     public Map<String, Object> environment() { return stringObjectMap(configuration.get("environment")); }
     /** Returns service labels as immutable string values. */
     public Map<String, String> labels() { return stringMap(configuration.get("labels")); }
+    /** Returns the normalized healthcheck mapping, or an empty map when absent. */
+    public Map<String, Object> healthcheck() { return objectMap(configuration.get("healthcheck")); }
+    /** Returns the normalized deployment mapping, or an empty map when absent. */
+    public Map<String, Object> deploy() { return objectMap(configuration.get("deploy")); }
+    /** Returns the normalized logging mapping, or an empty map when absent. */
+    public Map<String, Object> logging() { return objectMap(configuration.get("logging")); }
+    /** Returns the normalized development mapping, or an empty map when absent. */
+    public Map<String, Object> develop() { return objectMap(configuration.get("develop")); }
     /** Returns a scalar Compose command as one item, without shell-splitting it. */
     public List<String> command() { return stringList(configuration.get("command")); }
     /** Returns a scalar Compose entrypoint as one item, without shell-splitting it. */
@@ -42,47 +53,114 @@ public record ServiceDefinition(String name, Map<String, Object> configuration) 
     }
     /** Returns volume declarations while preserving long-form mapping entries. */
     public List<?> volumes() { return objectList(configuration.get("volumes")); }
+    /** Returns configured profile names. */
     public List<String> profiles() {
         return stringList(configuration.get("profiles"));
     }
+    /** Returns extra host entries in Docker's {@code host:address} form. */
     public List<String> extraHosts() { return keyValueList(configuration.get("extra_hosts"), ":"); }
+    /** Returns tmpfs declarations while preserving mapping entries. */
+    public List<?> tmpfs() { return objectList(configuration.get("tmpfs")); }
+    /** Returns env_file declarations while preserving long-form mapping entries. */
+    public List<?> envFile() { return objectList(configuration.get("env_file")); }
+    /** Returns secret grants while preserving long-form mapping entries. */
+    public List<?> secrets() { return objectList(configuration.get("secrets")); }
+    /** Returns config grants while preserving long-form mapping entries. */
+    public List<?> configs() { return objectList(configuration.get("configs")); }
+    /** Returns Linux capabilities to add. */
     public List<String> capAdd() { return stringList(configuration.get("cap_add")); }
+    /** Returns Linux capabilities to drop. */
     public List<String> capDrop() { return stringList(configuration.get("cap_drop")); }
+    /** Returns configured device mappings. */
     public List<String> devices() { return stringList(configuration.get("devices")); }
+    /** Returns configured security options. */
     public List<String> securityOpt() { return stringList(configuration.get("security_opt")); }
+    /** Returns configured DNS servers. */
     public List<String> dns() { return stringList(configuration.get("dns")); }
+    /** Returns configured DNS resolver options. */
     public List<String> dnsOpt() { return stringList(configuration.get("dns_opt")); }
+    /** Returns configured DNS search domains. */
     public List<String> dnsSearch() { return stringList(configuration.get("dns_search")); }
+    /** Returns configured supplementary groups. */
     public List<String> groupAdd() { return stringList(configuration.get("group_add")); }
+    /** Returns links to other Compose services. */
     public List<String> links() { return stringList(configuration.get("links")); }
+    /** Returns kernel parameter values as strings. */
+    public Map<String, String> sysctls() { return stringMap(configuration.get("sysctls")); }
+    /** Returns service annotations as immutable string values. */
+    public Map<String, String> annotations() { return stringMap(configuration.get("annotations")); }
+    /** Returns the configured CPU shares value. */
+    public String cpuShares() { return string("cpu_shares"); }
+    /** Returns the configured CPU quota value. */
+    public String cpuQuota() { return string("cpu_quota"); }
+    /** Returns the configured CPU set value. */
+    public String cpuset() { return string("cpuset"); }
+    /** Returns the configured OOM score adjustment. */
+    public String oomScoreAdj() { return string("oom_score_adj"); }
+    /** Returns the service restart policy. */
     public String restart() { return string("restart"); }
+    /** Returns the configured network mode. */
     public String networkMode() { return string("network_mode"); }
+    /** Returns the configured IPC namespace mode. */
     public String ipc() { return string("ipc"); }
+    /** Returns the configured PID namespace mode. */
     public String pid() { return string("pid"); }
+    /** Returns the configured hostname. */
     public String hostname() { return string("hostname"); }
+    /** Returns the configured domain name. */
     public String domainname() { return string("domainname"); }
+    /** Returns the configured container user. */
     public String user() { return string("user"); }
+    /** Returns the configured working directory. */
     public String workingDir() { return string("working_dir"); }
+    /** Returns whether the service requests a TTY. */
     public boolean tty() { return Boolean.TRUE.equals(configuration.get("tty")); }
+    /** Returns whether the service keeps standard input open. */
     public boolean stdinOpen() { return Boolean.TRUE.equals(configuration.get("stdin_open")); }
+    /** Returns whether the service runs in privileged mode. */
     public boolean privileged() { return Boolean.TRUE.equals(configuration.get("privileged")); }
+    /** Returns whether the container root filesystem is read-only. */
     public boolean readOnly() { return Boolean.TRUE.equals(configuration.get("read_only")); }
+    /** Returns the optional init-process setting. */
     public Boolean init() { return configuration.get("init") instanceof Boolean value ? value : null; }
+    /** Returns the configured stop signal. */
     public String stopSignal() { return string("stop_signal"); }
+    /** Returns the configured stop grace period in its Compose representation. */
     public String stopGracePeriod() { return string("stop_grace_period"); }
+    /** Returns the configured platform selector. */
     public String platform() { return string("platform"); }
+    /** Returns the configured image pull policy. */
     public String pullPolicy() { return string("pull_policy"); }
+    /** Returns the configured MAC address. */
     public String macAddress() { return string("mac_address"); }
+    /** Returns the configured cgroup parent. */
     public String cgroupParent() { return string("cgroup_parent"); }
+    /** Returns the service name referenced by {@code extends}, if present. */
     public String extendsService() {
         return configuration.get("extends") instanceof Map<?, ?> value ? text(value.get("service")) : null;
     }
+    /** Returns the file referenced by {@code extends}, if present. */
     public String extendsFile() {
         return configuration.get("extends") instanceof Map<?, ?> value ? text(value.get("file")) : null;
     }
     private static List<?> objectList(Object value) {
-        if (value instanceof List<?> list) return List.copyOf(list);
-        return value == null ? List.of() : List.of(value);
+        if (value instanceof List<?> list) return list.stream().map(ServiceDefinition::freeze).toList();
+        return value == null ? List.of() : List.of(freeze(value));
+    }
+    private static Map<String, Object> objectMap(Object value) {
+        if (!(value instanceof Map<?, ?> mapping)) return Map.of();
+        Map<String, Object> result = new LinkedHashMap<>();
+        mapping.forEach((key, entry) -> result.put(String.valueOf(key), freeze(entry)));
+        return Collections.unmodifiableMap(result);
+    }
+    private static Object freeze(Object value) {
+        if (value instanceof Map<?, ?> mapping) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            mapping.forEach((key, entry) -> result.put(String.valueOf(key), freeze(entry)));
+            return Collections.unmodifiableMap(result);
+        }
+        if (value instanceof List<?> list) return list.stream().map(ServiceDefinition::freeze).toList();
+        return value;
     }
     private static List<String> stringList(Object value) {
         if (value instanceof List<?> list) return list.stream().map(String::valueOf).toList();

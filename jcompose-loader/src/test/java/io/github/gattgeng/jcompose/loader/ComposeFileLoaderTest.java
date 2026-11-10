@@ -571,6 +571,16 @@ class ComposeFileLoaderTest {
                     cap_add: [NET_ADMIN]
                     extra_hosts: ["internal.example:192.0.2.10"]
                     volumes: ["./data:/data:ro"]
+                    healthcheck:
+                      test: ["CMD", "true"]
+                    deploy:
+                      replicas: 2
+                    logging:
+                      driver: json-file
+                    sysctls:
+                      net.core.somaxconn: "1024"
+                    annotations: [example.note=visible]
+                    tmpfs: [/run]
                     depends_on:
                       database:
                         condition: service_healthy
@@ -610,6 +620,12 @@ class ComposeFileLoaderTest {
         assertEquals(List.of("NET_ADMIN"), app.capAdd());
         assertEquals(List.of("internal.example:192.0.2.10"), app.extraHosts());
         assertEquals(1, app.volumes().size());
+        assertEquals(List.of("CMD", "true"), app.healthcheck().get("test"));
+        assertEquals(2, app.deploy().get("replicas"));
+        assertEquals("json-file", app.logging().get("driver"));
+        assertEquals("1024", app.sysctls().get("net.core.somaxconn"));
+        assertEquals("visible", app.annotations().get("example.note"));
+        assertEquals(List.of("/run"), app.tmpfs());
 
         var worker = services.get("worker");
         assertEquals(List.of("worker", "--once"), worker.command());
