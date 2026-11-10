@@ -1,6 +1,7 @@
 package io.github.gattgeng.jcompose.engine;
 
 import io.github.gattgeng.jcompose.api.ComposeProject;
+import io.github.gattgeng.jcompose.api.ComposeProjectContext;
 import io.github.gattgeng.jcompose.api.ServiceDefinition;
 import io.github.gattgeng.jcompose.loader.ComposeFileLoader;
 import org.junit.jupiter.api.Test;
@@ -96,6 +97,17 @@ class ComposeProfileDependencyTest {
         List<ServiceDefinition> ordered = ComposeService.dependencyOrderedServices(project, List.of(app), profiles);
 
         assertEquals(Set.of("app", "helper"), names(ordered));
+    }
+
+    @Test
+    void combinesContextProfilesWithComposeProfilesEnvironment() throws IOException {
+        Files.writeString(temporaryDirectory.resolve("compose.yaml"), "services: {}\n");
+        ComposeProject project = new ComposeFileLoader().loadProject(temporaryDirectory, "compose.yaml",
+                java.util.Map.of("COMPOSE_PROFILES", "debug, tools,debug"));
+        ComposeProjectContext context = new ComposeProjectContext("test", temporaryDirectory,
+                "compose.yaml", List.of("context"), null, null, false, false);
+
+        assertEquals(List.of("context", "debug", "tools"), ComposeService.activeProfiles(context, project));
     }
 
     @Test
