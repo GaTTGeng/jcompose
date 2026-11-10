@@ -77,7 +77,7 @@ public final class ComposeFileLoader {
     private static final Set<String> UNSUPPORTED_SERVICE_FIELDS = Set.of(
             "secrets", "configs", "logging", "stop_signal", "stop_grace_period", "sysctls",
             "dns", "dns_search", "links", "cpu_quota", "oom_kill_disable", "oom_score_adj",
-            "annotations", "extends", "develop");
+            "annotations", "extends", "develop", "provider", "models", "use_api_socket");
     private static final Set<String> SUPPORTED_PULL_POLICIES = Set.of(
             "always", "missing", "if_not_present", "never", "build", "daily", "weekly", "refresh");
 

@@ -97,7 +97,7 @@ class ComposeProjectLoadTest {
                 services:
                   app:
                     image: alpine
-                    custom_service_option: enabled
+                    use_api_socket: true
                 """);
         var context = new ComposeProjectContext("test", directory, "compose.yaml", null, null, null,
                 false, false, null, ComposeValidationMode.STRICT);
@@ -105,7 +105,7 @@ class ComposeProjectLoadTest {
         ComposeValidationException exception = assertThrows(ComposeValidationException.class,
                 () -> new ComposeService().loadProject(context));
 
-        assertEquals("services.app.custom_service_option", exception.propertyPath());
+        assertEquals("services.app.use_api_socket", exception.propertyPath());
         assertEquals("app", exception.serviceName());
     }
 

@@ -539,6 +539,29 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void diagnosesComposeServiceFeaturesThatAreRetainedButNotApplied() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    models: [local-model]
+                    use_api_socket: true
+                  database:
+                    provider:
+                      type: example-provider
+                models:
+                  local-model:
+                    model: example/model
+                """);
+
+        var diagnostics = new ComposeFileLoader().load(directory, null).diagnostics();
+
+        assertEquals(List.of("models", "services.app.models", "services.app.use_api_socket", "services.database.provider"),
+                diagnostics.stream().map(diagnostic -> diagnostic.propertyPath()).toList());
+        assertTrue(diagnostics.stream().allMatch(diagnostic -> diagnostic.code().equals("unsupported-field")));
+    }
+
+    @Test
     void pidsLimitsAreRecognizedAndAllowUnlimitedValue() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:
