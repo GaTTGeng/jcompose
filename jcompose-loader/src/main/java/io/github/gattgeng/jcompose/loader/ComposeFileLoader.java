@@ -2337,9 +2337,10 @@ public final class ComposeFileLoader {
                 String trimmed = line.trim();
                 if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
                 int equals = line.indexOf('=');
-                if (equals <= 0) continue;
+                if (equals < 0) continue;
                 String key = line.substring(0, equals).trim();
-                if (!key.isEmpty()) result.put(key, line.substring(equals + 1));
+                validateEnvFileKey(key, path, lineIndex + 1);
+                result.put(key, line.substring(equals + 1));
                 continue;
             }
             String trimmed = line.trim();
@@ -2348,9 +2349,10 @@ public final class ComposeFileLoader {
             int equals = trimmed.indexOf('=');
             int colon = trimmed.indexOf(':');
             int separator = equals < 0 ? colon : colon < 0 ? equals : Math.min(equals, colon);
-            if (separator == 0) continue;
+            if (separator == 0) throw invalidEnvFileKey("", path, lineIndex + 1);
             String key = (separator < 0 ? trimmed : trimmed.substring(0, separator)).trim();
             if (key.isEmpty()) continue;
+            validateEnvFileKey(key, path, lineIndex + 1);
             if (separator < 0) {
                 result.put(key, bareKeysAreUnset ? null : "");
                 continue;
@@ -2393,11 +2395,15 @@ public final class ComposeFileLoader {
             int colon = line.indexOf(':');
             int separator = equals < 0 ? colon : colon < 0 ? equals : Math.min(equals, colon);
             if (separator < 0) {
-                if (!line.isEmpty() && process.containsKey(line)) result.put(line, process.get(line));
+                if (!line.isEmpty()) {
+                    validateEnvFileKey(line, path, lineIndex + 1);
+                    if (process.containsKey(line)) result.put(line, process.get(line));
+                }
                 continue;
             }
             String key = line.substring(0, separator).trim();
-            if (key.isEmpty()) continue;
+            if (key.isEmpty()) throw invalidEnvFileKey(key, path, lineIndex + 1);
+            validateEnvFileKey(key, path, lineIndex + 1);
             String value = line.substring(separator + 1).trim();
             if (value.isEmpty()) {
                 result.put(key, "");
@@ -2425,6 +2431,21 @@ public final class ComposeFileLoader {
             result.put(key, interpolate(value, dotenv, process));
         }
         return result;
+    }
+
+    private static void validateEnvFileKey(String key, Path path, int line) throws IOException {
+        if (key.isEmpty()) throw invalidEnvFileKey(key, path, line);
+        for (int offset = 0; offset < key.length();) {
+            int codePoint = key.codePointAt(offset);
+            if (!(Character.isLetterOrDigit(codePoint) || codePoint == '_' || codePoint == '.'
+                    || codePoint == '-' || codePoint == '[' || codePoint == ']'))
+                throw invalidEnvFileKey(key, path, line);
+            offset += Character.charCount(codePoint);
+        }
+    }
+
+    private static IOException invalidEnvFileKey(String key, Path path, int line) {
+        return new IOException("Invalid environment variable name '" + key + "' at line " + line + " in " + path);
     }
 
     private static void resolveLabelFiles(Path base, Map<String, Object> service, Path source, String name,

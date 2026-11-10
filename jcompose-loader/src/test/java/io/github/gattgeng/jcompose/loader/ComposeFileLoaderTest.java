@@ -62,6 +62,33 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void rejectsInvalidVariableNamesInProjectEnvironmentFileWithLineNumber() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), "services:\n  app:\n    image: example/app\n");
+        Files.writeString(directory.resolve(".env"), "# project values\nINVALID KEY=value\n");
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, null));
+
+        assertEquals("$", exception.propertyPath());
+        assertTrue(exception.getMessage().contains("Invalid environment variable name 'INVALID KEY'"));
+        assertTrue(exception.getMessage().contains("line 2"));
+    }
+
+    @Test
+    void rejectsInvalidVariableNamesInServiceEnvironmentFileWithServiceContext() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), "services:\n  app:\n    image: example/app\n    env_file: service.env\n");
+        Files.writeString(directory.resolve("service.env"), "INVALID/KEY=value\n");
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, null));
+
+        assertEquals("services.app.env_file", exception.propertyPath());
+        assertEquals("app", exception.serviceName());
+        assertTrue(exception.getMessage().contains("Invalid environment variable name 'INVALID/KEY'"));
+        assertTrue(exception.getMessage().contains("line 1"));
+    }
+
+    @Test
     void composeDisableEnvFileSkipsTheDefaultProjectEnvironmentFile() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), "services:\n  app:\n    image: \"${JC_TEST_DISABLED_ENV:-fallback}\"\n    env_file: service.env\n");
         Files.writeString(directory.resolve(".env"), "JC_TEST_DISABLED_ENV=from-default\n");

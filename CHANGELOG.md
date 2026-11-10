@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Reject invalid variable names in project and service environment files, with source line information.
 - Match Docker Compose's terminal-sensitive `run` TTY default while keeping standard input open by default.
 - Clear image entrypoints for empty service and `run` entrypoint values, matching Docker Compose.
 - Make `run.remove(true)` enable Docker Engine auto-removal, including anonymous volumes and detached runs, matching Docker Compose `run --rm`.
