@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ComposeGenerateEnvironmentTest {
     @TempDir
@@ -66,5 +67,41 @@ class ComposeGenerateEnvironmentTest {
         assertEquals(java.util.List.of("base.yaml", "local.yaml"), config.configFiles());
         assertEquals(java.util.Set.of("app", "worker"), java.util.Set.copyOf(config.services()));
         org.junit.jupiter.api.Assertions.assertTrue(config.renderedYaml().contains("command: local"));
+    }
+
+    @Test
+    void rendersRetainedTopLevelResourceDefinitions() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                volumes:
+                  data:
+                    driver: local
+                    driver_opts:
+                      type: nfs
+                networks:
+                  backend:
+                    driver: bridge
+                    ipam:
+                      config:
+                        - subnet: 10.30.0.0/16
+                secrets:
+                  database-password:
+                    file: ./database-password.txt
+                configs:
+                  app-settings:
+                    environment: APP_SETTINGS
+                """);
+
+        var config = new ComposeService().generateAsync(new ComposeProjectContext("test", directory), null).join();
+        String yaml = config.renderedYaml();
+
+        assertTrue(yaml.contains("driver: local"));
+        assertTrue(yaml.contains("type: nfs"));
+        assertTrue(yaml.contains("driver: bridge"));
+        assertTrue(yaml.contains("subnet: 10.30.0.0/16"));
+        assertTrue(yaml.contains("file: ./database-password.txt"));
+        assertTrue(yaml.contains("environment: APP_SETTINGS"));
     }
 }
