@@ -147,11 +147,11 @@ public record ServiceDefinition(String name, Map<String, Object> configuration) 
     }
     /** Returns the configured OOM score adjustment. */
     public String oomScoreAdj() { return string("oom_score_adj"); }
-    /** Returns the optional retry count from an {@code on-failure:N} restart policy. */
-    public Integer restartMaxRetries() {
+    /** Returns the original numeric suffix from an {@code on-failure:N} policy, or null otherwise. */
+    public String restartMaxRetries() {
         String policy = restart();
         if (policy == null || !policy.startsWith("on-failure:")) return null;
-        return Integer.valueOf(policy.substring("on-failure:".length()));
+        return policy.substring("on-failure:".length());
     }
     /** Returns the service restart policy. */
     public String restart() { return string("restart"); }

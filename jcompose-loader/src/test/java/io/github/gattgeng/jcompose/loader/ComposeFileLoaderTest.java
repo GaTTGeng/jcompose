@@ -751,7 +751,7 @@ class ComposeFileLoaderTest {
                     image: example/worker
                     command: ["worker", "--once"]
                     entrypoint: /bin/worker
-                    restart: on-failure:3
+                    restart: "on-failure:03"
                     environment: [WORKER_MODE=background, HOST_PASS]
                     labels: [example.worker=yes, example.empty]
                     extra_hosts:
@@ -796,8 +796,8 @@ class ComposeFileLoaderTest {
         var worker = services.get("worker");
         assertEquals(List.of("worker", "--once"), worker.command());
         assertEquals(List.of("/bin/worker"), worker.entrypoint());
-        assertEquals("on-failure:3", worker.restart());
-        assertEquals(3, worker.restartMaxRetries());
+        assertEquals("on-failure:03", worker.restart());
+        assertEquals("03", worker.restartMaxRetries());
         assertEquals(List.of("database"), worker.dependsOn());
         assertEquals(List.of("back"), worker.networks());
         assertEquals("background", worker.environment().get("WORKER_MODE"));

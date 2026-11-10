@@ -15,6 +15,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Synced typed service-model projections from ComposeSharp `a9ff810` for environment, labels, volumes, host entries, nested healthcheck/deploy/logging/develop mappings, resource lists, byte-sized memory settings, OOM controls, and restart retry counts while retaining normalized Compose values.
 
 ### Changed
+- Preserve the `on-failure:N` suffix as a string in `ServiceDefinition.restartMaxRetries()`, matching the ComposeSharp model contract.
 - Documented the Java asynchronous service operations with parameter and result contracts aligned to the ComposeSharp API surface.
 
 ### Fixed
