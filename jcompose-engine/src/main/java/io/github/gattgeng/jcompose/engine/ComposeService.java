@@ -1072,10 +1072,12 @@ public final class ComposeService implements IComposeService {
         }
     }
 
-    private static void awaitRunAttach(DockerClient client, String containerId, ResultCallback.Adapter<?> callback) {
+    private static void awaitRunAttach(DockerClient client, String containerId, ResultCallback.Adapter<?> callback,
+                                       java.util.concurrent.atomic.AtomicBoolean detached) {
         try {
             await(callback);
         } catch (RuntimeException exception) {
+            if (detached.get()) return;
             if (!hasCause(exception, java.io.IOException.class)
                     || Boolean.TRUE.equals(client.inspectContainerCmd(containerId).exec().getState().getRunning()))
                 throw exception;
@@ -4079,6 +4081,7 @@ public final class ComposeService implements IComposeService {
         ComposeRunOptions effective = options == null ? ComposeRunOptions.builder().build() : options;
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
+            if (effective.detachKeys() != null) DetachKeyInputStream.parse(effective.detachKeys());
             ComposeProject project = loadComposeProject(context);
             ServiceDefinition service = selectConfigurationServices(project, context.profiles(), List.of(serviceName))
                     .stream().findFirst().orElseThrow(() -> new IllegalArgumentException("Service '" + serviceName + "' not found."));
@@ -4215,18 +4218,29 @@ public final class ComposeService implements IComposeService {
                 connectAdditionalNetworks(client, context.projectName(), project, service, containerId,
                         effective.useNetworkAliases());
                 runPreStartHooks(client, context, project, service, 1);
+                var runDetached = new java.util.concurrent.atomic.AtomicBoolean();
                 if (!effective.detach()) {
                     if (effective.interactive()) {
-                        var callback = client.attachContainerCmd(containerId).withLogs(false).withFollowStream(true)
-                                .withStdOut(true).withStdErr(true).withStdIn(System.in).exec(new ResultCallback.Adapter<Frame>() {
-                                    @Override public void onNext(Frame frame) {
-                                        if (frame.getStreamType() == StreamType.STDERR) System.err.print(new String(frame.getPayload(), StandardCharsets.UTF_8));
-                                        else System.out.print(new String(frame.getPayload(), StandardCharsets.UTF_8));
+                        var attachCallback = new ResultCallback.Adapter<Frame>() {
+                            @Override public void onNext(Frame frame) {
+                                if (frame.getStreamType() == StreamType.STDERR) System.err.print(new String(frame.getPayload(), StandardCharsets.UTF_8));
+                                else System.out.print(new String(frame.getPayload(), StandardCharsets.UTF_8));
+                            }
+                        };
+                        var input = new DetachKeyInputStream(System.in,
+                                DetachKeyInputStream.withDefault(effective.detachKeys()), () -> {
+                                    runDetached.set(true);
+                                    try {
+                                        attachCallback.close();
+                                    } catch (java.io.IOException exception) {
+                                        throw new java.io.UncheckedIOException(exception);
                                     }
                                 });
+                        client.attachContainerCmd(containerId).withLogs(false).withFollowStream(true)
+                                .withStdOut(true).withStdErr(true).withStdIn(input).exec(attachCallback);
                         client.startContainerCmd(containerId).exec();
                         runLifecycleHooks(client, containerId, service, "post_start");
-                        awaitRunAttach(client, containerId, callback);
+                        awaitRunAttach(client, containerId, attachCallback, runDetached);
                     } else {
                         client.startContainerCmd(containerId).exec();
                         runLifecycleHooks(client, containerId, service, "post_start");
@@ -4239,7 +4253,7 @@ public final class ComposeService implements IComposeService {
                                 });
                         await(callback);
                     }
-                    if (effective.remove()) client.removeContainerCmd(containerId).withForce(true).withRemoveVolumes(false).exec();
+                    if (effective.remove() && !runDetached.get()) client.removeContainerCmd(containerId).withForce(true).withRemoveVolumes(false).exec();
                 } else {
                     client.startContainerCmd(containerId).exec();
                     runLifecycleHooks(client, containerId, service, "post_start");
