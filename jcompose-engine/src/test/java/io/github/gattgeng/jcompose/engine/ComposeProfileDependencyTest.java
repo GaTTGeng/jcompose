@@ -111,6 +111,31 @@ class ComposeProfileDependencyTest {
     }
 
     @Test
+    void tearsDownSelectedServicesInReverseDependencyOrder() throws IOException {
+        ComposeProject project = load("""
+                services:
+                  app:
+                    image: busybox
+                    depends_on: [db]
+                  db:
+                    image: busybox
+                  worker:
+                    image: busybox
+                    network_mode: service:db
+                  linked:
+                    image: busybox
+                    links: [db:database]
+                  sidecar:
+                    image: busybox
+                    volumes_from: [db]
+                """);
+
+        assertEquals(List.of("sidecar", "linked", "worker", "app", "db"),
+                ComposeService.teardownServiceOrder(project, List.of("app", "db", "worker", "linked", "sidecar")));
+        assertEquals(List.of("app"), ComposeService.teardownServiceOrder(project, List.of("app")));
+    }
+
+    @Test
     void rejectsVolumesFromServiceOutsideActiveProfiles() throws IOException {
         ComposeProject project = load("""
                 services:

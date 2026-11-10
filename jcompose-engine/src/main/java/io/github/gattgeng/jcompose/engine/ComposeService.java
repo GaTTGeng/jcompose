@@ -347,7 +347,9 @@ public final class ComposeService implements IComposeService {
         Integer timeout = options == null ? null : options.timeoutSeconds();
         return execute(context, client -> {
             ExistingServiceSelection selection = selectExistingServices(context, options == null ? null : options.services());
-            for (Container container : projectContainers(client, context.projectName(), selection.serviceNames())) {
+            List<Container> containers = teardownContainers(selection.project(), selection.serviceNames(),
+                    projectContainers(client, context.projectName(), selection.serviceNames()));
+            for (Container container : containers) {
                 if (isRunning(container)) runLifecycleHooks(client, container, selection.project(), "pre_stop");
                 try {
                     var stop = client.stopContainerCmd(container.getId());
@@ -455,12 +457,33 @@ public final class ComposeService implements IComposeService {
         return List.copyOf(result);
     }
 
+    static List<String> teardownServiceOrder(ComposeProject project, List<String> selectedServices) {
+        if (project == null || selectedServices == null)
+            return selectedServices == null ? List.of() : List.copyOf(selectedServices);
+        List<String> ordered = new ArrayList<>(restartOrder(project, new java.util.LinkedHashSet<>(selectedServices)));
+        java.util.Collections.reverse(ordered);
+        return List.copyOf(ordered);
+    }
+
+    private static List<Container> teardownContainers(ComposeProject project, List<String> selectedServices,
+                                                       List<Container> containers) {
+        if (project == null) return containers;
+        List<String> serviceOrder = teardownServiceOrder(project, selectedServices);
+        Map<String, Integer> order = new java.util.HashMap<>();
+        for (int index = 0; index < serviceOrder.size(); index++) order.put(serviceOrder.get(index), index);
+        return containers.stream().sorted(java.util.Comparator
+                .comparingInt((Container container) -> order.getOrDefault(
+                        label(container, ComposeConstants.SERVICE_LABEL), Integer.MAX_VALUE))
+                .thenComparing(containerOrder())).toList();
+    }
+
     @Override
     public CompletableFuture<Void> removeAsync(ComposeProjectContext context, ComposeRemoveOptions options) {
         return execute(context, client -> {
             ExistingServiceSelection selection = selectExistingServices(context, options == null ? null : options.services());
             List<String> selectedServices = selection.serviceNames();
-            List<Container> containers = projectContainers(client, context.projectName(), selectedServices);
+            List<Container> containers = teardownContainers(selection.project(), selectedServices,
+                    projectContainers(client, context.projectName(), selectedServices));
             if (options != null && options.stop()) {
                 for (Container container : containers) {
                     boolean stopAccepted = true;
@@ -509,6 +532,7 @@ public final class ComposeService implements IComposeService {
                         containers.add(container);
                 }
             }
+            containers = teardownContainers(project, selection.serviceNames(), containers);
             List<String> imagesToRemove = removeImages == null ? List.of()
                     : downImageReferences(context, selection, removeImages, project, containers, options != null && options.removeOrphans());
             for (Container container : containers) {
@@ -1158,9 +1182,12 @@ public final class ComposeService implements IComposeService {
     }
 
     private static List<String> orderingDependencyNames(ServiceDefinition service) {
-        java.util.LinkedHashSet<String> dependencies = new java.util.LinkedHashSet<>(
-                dependencyNames(service.configuration().get("depends_on")));
-        dependencies.addAll(linkServiceNames(service.configuration().get("links")));
+        java.util.LinkedHashSet<String> dependencies = new java.util.LinkedHashSet<>(serviceDependencyNames(service));
+        for (String key : List.of("network_mode", "ipc", "pid")) {
+            Object value = service.configuration().get(key);
+            if (value instanceof String reference && reference.startsWith("service:"))
+                dependencies.add(reference.substring("service:".length()));
+        }
         return List.copyOf(dependencies);
     }
 
