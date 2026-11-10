@@ -178,6 +178,35 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void appliesUnlimitedMemorySwapToCreatedContainer() throws Exception {
+        String projectName = "jcompose-memory-swap-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    mem_limit: 64m
+                    memswap_limit: -1
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            service.createAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            try (var client = DockerClientFactory.create(context)) {
+                var containers = client.listContainersCmd().withShowAll(true)
+                        .withLabelFilter(java.util.Map.of("com.docker.compose.project", projectName,
+                                "com.docker.compose.service", "app"))
+                        .exec();
+                var hostConfig = client.inspectContainerCmd(containers.getFirst().getId()).exec().getHostConfig();
+                assertEquals(64L * 1024 * 1024, hostConfig.getMemory());
+                assertEquals(-1L, hostConfig.getMemorySwap());
+            }
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
     void createUsesServiceScaleAndPreservesExistingReplicasWhenScalingUp() throws Exception {
         String projectName = "jcompose-service-scale-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);

@@ -2267,7 +2267,10 @@ public final class ComposeService implements IComposeService {
                 value -> parseByteSize(String.valueOf(value)));
         Object memoryLimit = serviceMemoryLimit != null ? serviceMemoryLimit : deployMemoryLimit;
         if (memoryLimit != null) host.withMemory(parseByteSize(String.valueOf(memoryLimit)));
-        if (config.get("memswap_limit") != null) host.withMemorySwap(parseByteSize(String.valueOf(config.get("memswap_limit"))));
+        if (config.get("memswap_limit") != null) {
+            String memorySwap = String.valueOf(config.get("memswap_limit"));
+            host.withMemorySwap("-1".equals(memorySwap) ? -1L : parseByteSize(memorySwap));
+        }
         Object deployMemoryReservation = deployResourceValue(config, "reservations", "memory");
         Object serviceMemoryReservation = config.get("mem_reservation");
         requireConsistentResource(serviceMemoryReservation, deployMemoryReservation, "mem_reservation", "deploy.resources.reservations.memory",
