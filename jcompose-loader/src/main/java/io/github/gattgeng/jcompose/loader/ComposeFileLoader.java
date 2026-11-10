@@ -529,9 +529,23 @@ public final class ComposeFileLoader {
                 if (deploy instanceof Map<?, ?> deployMap) {
                     for (var field : deployMap.entrySet()) {
                         String name = String.valueOf(field.getKey());
-                        if (!"replicas".equals(name) && !name.startsWith("x-") && meaningful(field.getValue()))
+                        if (!"replicas".equals(name) && !"restart_policy".equals(name)
+                                && !name.startsWith("x-") && meaningful(field.getValue()))
                             addDiagnostic(result, file, provenance, servicePath + ".deploy." + name, serviceName,
                                     "partially-supported-field", "Only deploy.replicas affects service operations.");
+                    }
+                    if (deployMap.get("restart_policy") instanceof Map<?, ?> restartPolicy) {
+                        for (var option : restartPolicy.entrySet()) {
+                            String name = String.valueOf(option.getKey());
+                            if (!Set.of("condition", "delay", "max_attempts", "window").contains(name)
+                                    && !name.startsWith("x-") && meaningful(option.getValue()))
+                                addDiagnostic(result, file, provenance,
+                                        appendPathSegment(servicePath + ".deploy.restart_policy", name), serviceName,
+                                        "unsupported-field", "This is not a Docker Compose restart_policy option.");
+                        }
+                        if (meaningful(restartPolicy))
+                            addDiagnostic(result, file, provenance, servicePath + ".deploy.restart_policy", serviceName,
+                                    "partially-supported-field", "The restart condition and max_attempts are mapped for local containers; delay and window are not applied.");
                     }
                 }
                 Object build = service.get("build");
@@ -1123,8 +1137,8 @@ public final class ComposeFileLoader {
                     path + ".deploy.resources.limits.memory");
             validateNestedBytes(file, service, deploy, "resources", "reservations", "memory",
                     path + ".deploy.resources.reservations.memory");
-            validateNestedInteger(file, service, deploy, "restart_policy", "max_retries",
-                    path + ".deploy.restart_policy.max_retries");
+            validateNestedNonNegativeInteger(file, service, deploy, "restart_policy", "max_attempts",
+                    path + ".deploy.restart_policy.max_attempts");
             validateNestedDurations(file, service, deploy, "restart_policy", path + ".deploy.restart_policy",
                     "delay", "window", "period");
             for (String block : List.of("update_config", "rollback_config")) {
@@ -1632,8 +1646,9 @@ public final class ComposeFileLoader {
             validateBytes(file, service, values, field, path);
     }
 
-    private static void validateNestedInteger(Path file, String service, Map<?, ?> parent, String block, String key, String path) {
-        if (parent.get(block) instanceof Map<?, ?> nested) validateInteger(file, service, nested, key, path);
+    private static void validateNestedNonNegativeInteger(Path file, String service, Map<?, ?> parent, String block,
+                                                          String key, String path) {
+        if (parent.get(block) instanceof Map<?, ?> nested) validateNonNegativeInteger(file, service, nested, key, path);
     }
 
     private static void validateNestedNumeric(Path file, String service, Map<?, ?> parent, String block, String key, String path) {

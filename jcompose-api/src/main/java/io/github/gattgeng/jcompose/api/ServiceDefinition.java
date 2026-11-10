@@ -361,7 +361,7 @@ public record ServiceDefinition(String name, Map<String, Object> configuration) 
     }
     private static DeployConfig.RestartPolicy deployRestartPolicy(Object value) {
         if (!(value instanceof Map<?, ?> policy)) return null;
-        return new DeployConfig.RestartPolicy(text(policy.get("condition")), integerValue(policy.get("max_retries")),
+        return new DeployConfig.RestartPolicy(text(policy.get("condition")), integerValue(policy.get("max_attempts")),
                 durationValue(policy.get("delay")), durationValue(policy.get("window")), durationValue(policy.get("period")));
     }
     private static DeployConfig.Placement deployPlacement(Object value) {

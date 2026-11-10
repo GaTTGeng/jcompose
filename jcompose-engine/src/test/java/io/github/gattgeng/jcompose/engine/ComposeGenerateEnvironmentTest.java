@@ -132,7 +132,7 @@ class ComposeGenerateEnvironmentTest {
                     deploy:
                       replicas: 2
                       restart_policy:
-                        max_retries: 4
+                        max_attempts: 4
                       resources:
                         limits:
                           nano_cpus: "250000000"

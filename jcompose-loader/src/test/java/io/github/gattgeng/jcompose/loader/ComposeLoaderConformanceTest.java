@@ -481,6 +481,46 @@ class ComposeLoaderConformanceTest {
     }
 
     @Test
+    void validatesComposeDeployRestartPolicyMaxAttempts() throws IOException {
+        Path file = temporaryDirectory.resolve("compose.yaml");
+        Files.writeString(file, """
+                services:
+                  app:
+                    image: busybox
+                    deploy:
+                      restart_policy:
+                        condition: on-failure
+                        max_attempts: 3
+                """);
+        var project = new ComposeFileLoader().load(temporaryDirectory, "compose.yaml");
+        assertEquals(3, project.services().get("app").deployConfig().restartPolicy().maxRetries());
+
+        Files.writeString(file, """
+                services:
+                  app:
+                    image: busybox
+                    deploy:
+                      restart_policy:
+                        max_attempts: -1
+                """);
+        ComposeValidationException invalidAttempts = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(temporaryDirectory, "compose.yaml"));
+        assertEquals("services.app.deploy.restart_policy.max_attempts", invalidAttempts.propertyPath());
+
+        Files.writeString(file, """
+                services:
+                  app:
+                    image: busybox
+                    deploy:
+                      restart_policy:
+                        max_retries: 3
+                """);
+        assertTrue(new ComposeFileLoader().load(temporaryDirectory, "compose.yaml").diagnostics().stream()
+                .anyMatch(diagnostic -> diagnostic.propertyPath().equals("services.app.deploy.restart_policy.max_retries")
+                        && diagnostic.code().equals("unsupported-field")));
+    }
+
+    @Test
     void mapsProjectResourcesFixture() throws IOException {
         ComposeProject project = loadFixture("service-resources");
         ServiceDefinition app = project.services().get("app");

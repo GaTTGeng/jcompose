@@ -178,6 +178,36 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void appliesComposeDeployRestartMaxAttemptsToCreatedContainer() throws Exception {
+        String projectName = "jcompose-deploy-restart-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    deploy:
+                      restart_policy:
+                        condition: on-failure
+                        max_attempts: 3
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            service.createAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            try (var client = DockerClientFactory.create(context)) {
+                var container = client.listContainersCmd().withShowAll(true)
+                        .withLabelFilter(java.util.Map.of("com.docker.compose.project", projectName,
+                                "com.docker.compose.service", "app"))
+                        .exec().getFirst();
+                assertEquals(3, client.inspectContainerCmd(container.getId()).exec()
+                        .getHostConfig().getRestartPolicy().getMaximumRetryCount());
+            }
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
     void appliesUnlimitedMemorySwapToCreatedContainer() throws Exception {
         String projectName = "jcompose-memory-swap-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);

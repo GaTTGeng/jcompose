@@ -147,7 +147,7 @@ class ComposeFileLoaderTest {
                           nano_cpus: 0.5
                       restart_policy:
                         condition: on-failure
-                        max_retries: 3
+                        max_attempts: 3
                         delay: 2s
                         window: 10s
                         period: 30s
