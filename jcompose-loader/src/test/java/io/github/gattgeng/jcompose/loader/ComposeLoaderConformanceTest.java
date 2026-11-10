@@ -589,24 +589,35 @@ class ComposeLoaderConformanceTest {
                   app:
                     image: example/app
                     cap_add: [SYS_ADMIN, CHOWN]
+                    dns_opt: [ndots:5, timeout:1]
                     expose: [80, 443]
+                    group_add: ["1000", "1001"]
                     security_opt: [label=role:ROLE]
+                    volumes_from: [cache]
+                  cache:
+                    image: example/cache
                 """);
         Files.writeString(directory.resolve("compose.override.yaml"), """
                 services:
                   app:
                     cap_add: [CHOWN, NET_ADMIN]
+                    dns_opt: [timeout:1, attempts:2]
                     expose: [443, 8080]
+                    group_add: ["1001", "1002"]
                     security_opt: [label=role:ROLE, no-new-privileges:true]
+                    volumes_from: [cache]
                 """);
 
         ServiceDefinition app = new ComposeFileLoader().loadMerged(directory,
                 List.of("compose.yaml", "compose.override.yaml")).services().get("app");
 
         assertEquals(List.of("SYS_ADMIN", "CHOWN", "NET_ADMIN"), app.configuration().get("cap_add"));
+        assertEquals(List.of("ndots:5", "timeout:1", "attempts:2"), app.configuration().get("dns_opt"));
         assertEquals(List.of(80, 443, 8080), app.configuration().get("expose"));
+        assertEquals(List.of("1000", "1001", "1002"), app.configuration().get("group_add"));
         assertEquals(List.of("label=role:ROLE", "no-new-privileges:true"),
                 app.configuration().get("security_opt"));
+        assertEquals(List.of("cache"), app.configuration().get("volumes_from"));
     }
 
     @Test
