@@ -458,11 +458,19 @@ public final class ComposeFileLoader {
         }
         Object rawServices = root.get("services");
         if (rawServices instanceof Map<?, ?> services) {
+            List<String> projectNetworks = names(root.get("networks"));
             for (var serviceEntry : services.entrySet()) {
                 String serviceName = String.valueOf(serviceEntry.getKey());
                 if (!(serviceEntry.getValue() instanceof Map<?, ?> rawService)) continue;
                 Map<String, Object> service = stringKeyMap(rawService, file, "services." + serviceName);
                 String servicePath = "services." + serviceName;
+                Object serviceNetworks = service.get("networks");
+                boolean hasExplicitNetworks = serviceNetworks instanceof Map<?, ?> networkMap && !networkMap.isEmpty()
+                        || serviceNetworks instanceof List<?> networkList && !networkList.isEmpty();
+                if (!projectNetworks.isEmpty() && !"default".equalsIgnoreCase(projectNetworks.getFirst())
+                        && !hasExplicitNetworks && !service.containsKey("network_mode"))
+                    addDiagnostic(result, file, provenance, servicePath + ".networks", serviceName,
+                            "partially-supported-field", "Services without an explicit network attach to the first project network instead of the implicit default network.");
                 for (var field : service.entrySet()) {
                     if (!KNOWN_SERVICE_FIELDS.contains(field.getKey()) && !field.getKey().startsWith("x-")
                             && meaningful(field.getValue())) {

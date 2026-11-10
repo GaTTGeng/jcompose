@@ -11,7 +11,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Added an immutable typed `BuildConfig` projection for service build options, synchronized from ComposeSharp `3.0.0-32-g648a430` while retaining the normalized source mapping.
 - Added typed service healthcheck, deploy, and logging projections based on ComposeSharp `3.0.0-32-g648a430`, retaining the normalized mappings and jcompose's additional `start_interval` support.
 - Added a `Duration` projection for `stop_grace_period`, matching ComposeSharp `a9ff810` while retaining the normalized Compose value.
-- Synced ComposeSharp diagnostic refinements through `c01006f` and added Docker-backed coverage for services using the implicit project default network alongside declared project networks.
+- Synced ComposeSharp `3.0.0-46-ga9ff810` custom-network fallback diagnostics; retained jcompose's Docker Compose-compatible environment passthrough resolution instead of copying the sibling's warning for that supported behavior.
 - Added typed `ServiceDefinition` accessors for command, entrypoint, dependency names, and network names while retaining the normalized configuration mapping.
 - Synced typed service-model projections from ComposeSharp `a9ff810` for environment, labels, volumes, host entries, nested healthcheck/deploy/logging/develop mappings, resource lists, byte-sized memory settings, OOM controls, and restart retry counts while retaining normalized Compose values.
 
