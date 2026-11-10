@@ -96,9 +96,9 @@ Diagnostics flag Windows drive-letter volume sources that the current backend ca
 
 ### Variable interpolation and environment files
 
-The loader supports `$NAME`, `${NAME}`, `$$`, and the `:-`, `-`, `:?`, `?`, `:+`, and `+` interpolation operators. The process environment takes precedence over project `.env` values. Engine operations expose the project name from `ComposeProjectContext` as `COMPOSE_PROJECT_NAME` for interpolation, taking precedence over process and `.env` values. Service `env_file` values contribute to that service's container environment; they are not an interpolation source. Inline environment values take precedence over values from those files.
+The loader supports `$NAME`, `${NAME}`, `$$`, and the `:-`, `-`, `:?`, `?`, `:+`, and `+` interpolation operators. `COMPOSE_ENV_FILES` selects comma-separated interpolation files (later files override earlier ones); `COMPOSE_DISABLE_ENV_FILE=true` or `1` disables the default project `.env`. Process environment values take precedence over those files. Engine operations expose the project name from `ComposeProjectContext` as `COMPOSE_PROJECT_NAME` for interpolation, taking precedence over process and selected Compose environment file values. Service `env_file` values contribute to that service's container environment; they are not an interpolation source. Inline environment values take precedence over values from those files.
 
-`ComposeFileMerger.mergeWithEnv` applies explicit environment overrides to that merge only, ahead of process environment and `.env` values. It does not modify process-wide environment variables, so concurrent merges remain isolated.
+`ComposeFileMerger.mergeWithEnv` applies explicit environment overrides to that merge only, ahead of process environment and selected Compose environment file values. It does not modify process-wide environment variables, so concurrent merges remain isolated.
 
 See [loader compatibility](docs/loader-compatibility.md) for precedence, operator behavior, and current limits. For multi-file input, see [merge semantics](docs/merge-semantics.md). These rules are documented as jcompose behavior and must be checked against Docker Compose; they are not inherited as compatible merely because ComposeSharp implements similar logic.
 

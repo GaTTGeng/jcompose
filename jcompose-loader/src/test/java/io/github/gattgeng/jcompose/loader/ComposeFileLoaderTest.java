@@ -43,6 +43,50 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void loadsComposeEnvironmentFilesInOrderAndLetsProcessValuesWin() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), "services:\n  app:\n    image: \"${JC_TEST_ENV_FILE}:${JC_TEST_PROCESS_OVERRIDE}\"\n    env_file: service.env\n");
+        Files.writeString(directory.resolve(".env"), "JC_TEST_ENV_FILE=default\nJC_TEST_DEFAULT_ONLY=yes\n");
+        Files.writeString(directory.resolve("first.env"), "JC_TEST_ENV_FILE=first\nJC_TEST_FIRST_ONLY=yes\n");
+        Files.writeString(directory.resolve("second.env"), "JC_TEST_ENV_FILE=second\nJC_TEST_SECOND_ONLY=yes\n");
+        Files.writeString(directory.resolve("service.env"), "JC_TEST_SERVICE_VALUE=${JC_TEST_ENV_FILE}\n");
+
+        var project = new ComposeFileLoader().load(directory, "compose.yaml", Map.of(
+                "COMPOSE_ENV_FILES", "first.env, second.env", "JC_TEST_PROCESS_OVERRIDE", "process"));
+
+        assertEquals("second:process", project.services().get("app").image());
+        assertEquals("second", project.environment().get("JC_TEST_ENV_FILE"));
+        assertEquals("yes", project.environment().get("JC_TEST_FIRST_ONLY"));
+        assertEquals("yes", project.environment().get("JC_TEST_SECOND_ONLY"));
+        assertNull(project.environment().get("JC_TEST_DEFAULT_ONLY"));
+        assertEquals("second", project.services().get("app").environment().get("JC_TEST_SERVICE_VALUE"));
+    }
+
+    @Test
+    void composeDisableEnvFileSkipsTheDefaultProjectEnvironmentFile() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), "services:\n  app:\n    image: \"${JC_TEST_DISABLED_ENV:-fallback}\"\n    env_file: service.env\n");
+        Files.writeString(directory.resolve(".env"), "JC_TEST_DISABLED_ENV=from-default\n");
+        Files.writeString(directory.resolve("service.env"), "JC_TEST_DISABLED_SERVICE=${JC_TEST_DISABLED_ENV:-fallback}\n");
+
+        var project = new ComposeFileLoader().load(directory, "compose.yaml",
+                Map.of("COMPOSE_DISABLE_ENV_FILE", "1"));
+
+        assertEquals("fallback", project.services().get("app").image());
+        assertNull(project.environment().get("JC_TEST_DISABLED_ENV"));
+        assertEquals("fallback", project.services().get("app").environment().get("JC_TEST_DISABLED_SERVICE"));
+    }
+
+    @Test
+    void missingExplicitComposeEnvironmentFileFailsLoading() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), "services: {}\n");
+
+        ComposeValidationException exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, "compose.yaml",
+                        Map.of("COMPOSE_ENV_FILES", "missing.env")));
+
+        assertTrue(exception.getMessage().contains("missing.env"));
+    }
+
+    @Test
     void loadsProfileServiceWithoutImageOrBuildUntilRuntimeSelection() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:

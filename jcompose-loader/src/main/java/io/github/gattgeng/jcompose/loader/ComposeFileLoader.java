@@ -81,7 +81,7 @@ public final class ComposeFileLoader {
 
     /**
      * Loads one Compose file with per-call interpolation values that take precedence over the
-     * process environment and the file's adjacent {@code .env} values.
+     * process environment and selected Compose environment files.
      */
     public ComposeProject load(Path workingDirectory, String composeFileName,
                                Map<String, String> environmentOverrides) {
@@ -356,7 +356,7 @@ public final class ComposeFileLoader {
         try {
             String text = Files.readString(file);
             Map<String, String> process = environmentWithOverrides(environmentOverrides);
-            Map<String, String> envFile = parseEnvFile(dotenvPath, process);
+            Map<String, String> envFile = parseComposeEnvFiles(dotenvPath, process);
             LoaderOptions options = new LoaderOptions();
             options.setAllowDuplicateKeys(false);
             Yaml yaml = new Yaml(new ComposeSafeConstructor(options));
@@ -1998,7 +1998,7 @@ public final class ComposeFileLoader {
         Map<String, String> resolved = new LinkedHashMap<>();
         Map<String, String> process = environmentWithOverrides(environmentOverrides);
         try {
-            Map<String, String> dotenv = parseEnvFile(base.resolve(".env"), process);
+            Map<String, String> dotenv = parseComposeEnvFiles(base.resolve(".env"), process);
             for (Object item : files) {
                 String path;
                 boolean required = true;
@@ -2047,6 +2047,31 @@ public final class ComposeFileLoader {
 
     private static Map<String, String> parseEnvFile(Path path, Map<String, String> process) throws IOException {
         return parseEnvFile(path, false, true, process);
+    }
+
+    private static Map<String, String> parseComposeEnvFiles(Path defaultEnvFile, Map<String, String> process)
+            throws IOException {
+        String configuredFiles = process.get("COMPOSE_ENV_FILES");
+        boolean explicitFiles = configuredFiles != null && !configuredFiles.isBlank();
+        if (!explicitFiles && isEnabled(process.get("COMPOSE_DISABLE_ENV_FILE"))) return Map.of();
+
+        List<Path> files = explicitFiles
+                ? java.util.Arrays.stream(configuredFiles.split(","))
+                    .map(String::trim).filter(value -> !value.isEmpty())
+                    .map(Path::of).map(path -> path.isAbsolute() ? path : defaultEnvFile.getParent().resolve(path).normalize())
+                    .toList()
+                : List.of(defaultEnvFile);
+        Map<String, String> environment = new LinkedHashMap<>();
+        for (Path file : files) {
+            if (explicitFiles && !Files.isRegularFile(file))
+                throw new IOException("Compose environment file not found: " + file);
+            environment.putAll(parseEnvFile(file, process));
+        }
+        return environment;
+    }
+
+    private static boolean isEnabled(String value) {
+        return value != null && (value.equalsIgnoreCase("true") || value.equals("1"));
     }
 
     private static Map<String, String> parseEnvFile(Path path, boolean rawFormat) throws IOException {
@@ -2162,7 +2187,7 @@ public final class ComposeFileLoader {
         Map<String, String> labels = new LinkedHashMap<>();
         Map<String, String> process = environmentWithOverrides(environmentOverrides);
         try {
-            Map<String, String> dotenv = parseEnvFile(base.resolve(".env"), process);
+            Map<String, String> dotenv = parseComposeEnvFiles(base.resolve(".env"), process);
             for (Object item : files) {
                 Path path = base.resolve(String.valueOf(item)).normalize();
                 if (!Files.isRegularFile(path)) throw new IOException("label_file not found: " + path);
