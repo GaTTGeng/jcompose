@@ -20,6 +20,7 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Documented the Java asynchronous service operations with parameter and result contracts aligned to the ComposeSharp API surface.
 
 ### Fixed
+- Recognize Docker-mapped CPU, DNS, expose, GPU, and namespace service fields in the loader, with property-scoped validation for their supported values (Docker Compose compatibility; independent of ComposeSharp `a9ff810`).
 - Recognize and validate service `pids_limit` and `deploy.resources.limits.pids`; report only unapplied `deploy.resources` options instead of warning on supported resource values. This matches Docker Compose (independent of ComposeSharp `a9ff810`).
 - Treat supported `pull_policy` values as applied Compose behavior and recognize `pull_refresh_after` for `pull_policy: refresh`, avoiding false unsupported-field diagnostics.
 - Removed a false partial-support diagnostic for services without `networks`; jcompose correctly connects them to the implicit project `default` network.

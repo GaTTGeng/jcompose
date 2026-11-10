@@ -61,10 +61,12 @@ public final class ComposeFileLoader {
             "hostname", "domainname", "user", "working_dir", "tty", "stdin_open", "stop_signal", "stop_grace_period",
             "read_only", "tmpfs", "cap_add", "cap_drop", "devices", "sysctls", "security_opt", "init", "platform",
             "pull_policy", "pull_refresh_after", "dns", "dns_search", "pid", "mac_address", "cgroup_parent", "extends", "develop", "links",
-            "cpu_shares", "cpu_quota", "cpuset", "mem_limit", "memswap_limit", "mem_reservation", "oom_kill_disable",
+            "cpu_count", "cpu_percent", "cpu_period", "cpus", "cpu_shares", "cpu_quota", "cpuset", "mem_limit",
+            "memswap_limit", "mem_reservation", "oom_kill_disable",
             "oom_score_adj", "pids_limit", "group_add", "annotations", "attach", "pre_start", "post_start", "pre_stop", "post_stop",
             "scale", "volumes_from", "external_links", "device_cgroup_rules", "blkio_config", "ulimits", "storage_opt",
-            "isolation", "runtime", "credential_spec", "use_api_socket", "provider", "models");
+            "isolation", "runtime", "credential_spec", "use_api_socket", "provider", "models", "dns_opt", "expose",
+            "gpus", "cgroup", "uts", "userns_mode");
     private static final Set<String> KNOWN_BUILD_FIELDS = Set.of(
             "context", "dockerfile", "args", "cache_from", "cache_to", "target", "tags", "labels",
             "network", "extra_hosts", "privileged", "shm_size", "platforms", "pull", "no_cache",
@@ -1154,6 +1156,21 @@ public final class ComposeFileLoader {
         Object stopSignal = configuration.get("stop_signal");
         if (stopSignal != null && !(stopSignal instanceof String))
             throw shapeFailure(file, service, path + ".stop_signal", "a string", stopSignal);
+        for (String key : List.of("cpu_count", "cpu_period"))
+            validateLongInteger(file, service, configuration.get(key), path + "." + key, 0, Long.MAX_VALUE,
+                    "a non-negative integer");
+        validateLongInteger(file, service, configuration.get("cpu_percent"), path + ".cpu_percent", 0, 100,
+                "an integer from 0 to 100");
+        validateNumeric(file, service, configuration, "cpus", path + ".cpus");
+        validateStringList(file, service, configuration.get("dns_opt"), path + ".dns_opt");
+        validateExpose(file, service, configuration.get("expose"), path + ".expose");
+        validateGpus(file, service, configuration.get("gpus"), path + ".gpus");
+        Object cgroup = configuration.get("cgroup");
+        if (cgroup != null && (!(cgroup instanceof String mode) || !Set.of("host", "private").contains(mode)))
+            throw conversionFailure(file, service, path + ".cgroup", cgroup, "'host' or 'private'");
+        Object usernsMode = configuration.get("userns_mode");
+        if (usernsMode != null && !(usernsMode instanceof String))
+            throw shapeFailure(file, service, path + ".userns_mode", "a string", usernsMode);
         for (String key : List.of("deploy", "healthcheck", "logging"))
             validateOptionalMap(file, service, configuration, key, path + "." + key);
         validateDevelop(file, service, configuration.get("develop"), path + ".develop");
@@ -1445,6 +1462,41 @@ public final class ComposeFileLoader {
         throw shapeFailure(file, service, path, "an array of strings", value);
     }
 
+    private static void validateExpose(Path file, String service, Object value, String path) {
+        if (value == null) return;
+        if (!(value instanceof List<?> entries))
+            throw shapeFailure(file, service, path, "an array of strings or numbers", value);
+        for (int index = 0; index < entries.size(); index++) {
+            Object entry = entries.get(index);
+            if (!(entry instanceof String || entry instanceof Number))
+                throw shapeFailure(file, service, path + "[" + index + "]", "a string or number", entry);
+        }
+    }
+
+    private static void validateGpus(Path file, String service, Object value, String path) {
+        if (value == null || "all".equals(value)) return;
+        if (!(value instanceof List<?> entries))
+            throw shapeFailure(file, service, path, "'all' or an array of mappings", value);
+        for (int index = 0; index < entries.size(); index++) {
+            String entryPath = path + "[" + index + "]";
+            if (!(entries.get(index) instanceof Map<?, ?> request))
+                throw shapeFailure(file, service, entryPath, "a YAML mapping", entries.get(index));
+            validateStringList(file, service, request.get("capabilities"), entryPath + ".capabilities");
+            validateStringList(file, service, request.get("device_ids"), entryPath + ".device_ids");
+            Object count = request.get("count");
+            boolean countIsAll = count != null && "all".equalsIgnoreCase(String.valueOf(count));
+            if (count != null && !countIsAll)
+                validateLongInteger(file, service, count, entryPath + ".count", 0, Long.MAX_VALUE,
+                        "a non-negative integer or 'all'");
+            if (count != null && request.get("device_ids") != null)
+                throw new ComposeValidationException(file, entryPath + ".count", service,
+                        "gpus.count and gpus.device_ids cannot be set together.", null, null, null);
+            if (request.get("driver") != null && !(request.get("driver") instanceof String))
+                throw shapeFailure(file, service, entryPath + ".driver", "a string", request.get("driver"));
+            validateOptionalMap(file, service, request, "options", entryPath + ".options");
+        }
+    }
+
     private static void validateOptionalMap(Path file, String service, Map<?, ?> map, String key, String path) {
         Object value = map.get(key);
         if (value != null && !(value instanceof Map<?, ?>))
@@ -1668,6 +1720,19 @@ public final class ComposeFileLoader {
                 throw conversionFailure(file, service, path, value, "an integer value");
         } catch (NumberFormatException exception) {
             throw conversionFailure(file, service, path, value, "an integer value", exception);
+        }
+    }
+
+    private static void validateLongInteger(Path file, String service, Object value, String path,
+                                            long minimum, long maximum, String expected) {
+        if (value == null) return;
+        try {
+            BigInteger integer = new BigInteger(String.valueOf(value));
+            if (!isScalar(value) || integer.compareTo(BigInteger.valueOf(minimum)) < 0
+                    || integer.compareTo(BigInteger.valueOf(maximum)) > 0)
+                throw conversionFailure(file, service, path, value, expected);
+        } catch (NumberFormatException exception) {
+            throw conversionFailure(file, service, path, value, expected, exception);
         }
     }
 

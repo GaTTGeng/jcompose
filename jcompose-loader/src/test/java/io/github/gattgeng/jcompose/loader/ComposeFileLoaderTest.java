@@ -554,6 +554,42 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void supportedRuntimeFieldsDoNotProduceUnknownFieldDiagnostics() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    cpu_count: 2
+                    cpu_percent: 50
+                    cpu_period: 100000
+                    cpus: 1.5
+                    dns_opt: [ndots:1]
+                    expose: [8080, "8443"]
+                    gpus: all
+                    cgroup: private
+                    uts: host
+                    userns_mode: host
+                """);
+
+        assertTrue(new ComposeFileLoader().load(directory, null).diagnostics().isEmpty());
+    }
+
+    @Test
+    void invalidSupportedRuntimeFieldsReportTheirComposePropertyPaths() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    cpu_percent: 101
+                """);
+
+        var exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, null));
+
+        assertEquals("services.app.cpu_percent", exception.propertyPath());
+    }
+
+    @Test
     void diagnosesUnsupportedBuildBehaviorWithoutFlaggingSupportedNetworksOrScalarCommands() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 networks:
