@@ -1899,13 +1899,13 @@ public final class ComposeFileLoader {
             if (!base.containsKey(key)) {
                 replaceProvenance(result, overlayProvenance, child, child);
             } else if (isListMappingMergeField(path, key)
-                    && listMappingValue(before) != null && listMappingValue(after) != null
+                    && listMappingValue(key, before) != null && listMappingValue(key, after) != null
                     && effective instanceof Map<?, ?> mergedMap) {
                 Map<String, Path> normalizedBaseProvenance = remapListMappingProvenance(before, child, result);
                 result.clear();
                 result.putAll(normalizedBaseProvenance);
                 Map<String, Path> normalizedOverlayProvenance = remapListMappingProvenance(after, child, overlayProvenance);
-                applyOverlayProvenance(listMappingValue(before), listMappingValue(after),
+                applyOverlayProvenance(listMappingValue(key, before), listMappingValue(key, after),
                         stringKeyMapUnchecked(mergedMap), child, result, normalizedOverlayProvenance);
             } else if (before instanceof Map<?, ?> baseMap && after instanceof Map<?, ?> overlayMap
                     && effective instanceof Map<?, ?> mergedMap) {
@@ -1947,11 +1947,15 @@ public final class ComposeFileLoader {
         return path.startsWith("services.") && ("depends_on".equals(key) || "networks".equals(key));
     }
 
-    private static Map<String, Object> listMappingValue(Object value) {
+    private static Map<String, Object> listMappingValue(String field, Object value) {
         if (value instanceof Map<?, ?> mapping) return stringKeyMapUnchecked(mapping);
         if (!(value instanceof List<?> list) || list.stream().anyMatch(entry -> !(entry instanceof String))) return null;
         Map<String, Object> result = new LinkedHashMap<>();
-        for (Object entry : list) result.putIfAbsent((String) entry, Map.of());
+        for (Object entry : list) {
+            Map<String, Object> options = "depends_on".equals(field)
+                    ? Map.of("condition", "service_started", "required", true) : Map.of();
+            result.putIfAbsent((String) entry, options);
+        }
         return result;
     }
 
@@ -2439,8 +2443,8 @@ public final class ComposeFileLoader {
                 continue;
             }
             if (isListMappingMergeField(path, key)) {
-                Map<String, Object> normalizedBase = listMappingValue(before);
-                Map<String, Object> normalizedOverlay = listMappingValue(after);
+                Map<String, Object> normalizedBase = listMappingValue(key, before);
+                Map<String, Object> normalizedOverlay = listMappingValue(key, after);
                 if (normalizedBase != null && normalizedOverlay != null) {
                     result.put(key, merge(normalizedBase, normalizedOverlay, childPath));
                     continue;

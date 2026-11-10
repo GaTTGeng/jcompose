@@ -572,7 +572,7 @@ class ComposeLoaderConformanceTest {
         assertEquals(List.of("8080:80", "9090:81"), app.configuration().get("ports"));
         assertEquals(List.of("override-data:/var/lib/app", "cache:/cache", "logs:/var/log/app"),
                 app.configuration().get("volumes"));
-        assertEquals(List.of("frontend", "backend"), app.configuration().get("networks"));
+        assertEquals(Map.of("frontend", Map.of(), "backend", Map.of()), app.configuration().get("networks"));
         assertTrue(project.services().containsKey("worker"));
         assertEquals(List.of("app-data", "cache", "override-data", "logs"), project.volumes());
         assertEquals(List.of("frontend", "backend"), project.networks());

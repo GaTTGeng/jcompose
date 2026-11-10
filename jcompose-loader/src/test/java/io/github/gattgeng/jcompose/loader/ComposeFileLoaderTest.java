@@ -2298,7 +2298,9 @@ class ComposeFileLoaderTest {
         var project = new ComposeFileLoader().loadMerged(directory, List.of("base.yaml", "override.yaml"));
         Map<?, ?> app = project.services().get("app").configuration();
 
-        assertEquals(Map.of("db", Map.of("restart", true), "cache", Map.of("condition", "service_started")),
+        assertEquals(Map.of(
+                        "db", Map.of("condition", "service_started", "required", true, "restart", true),
+                        "cache", Map.of("condition", "service_started", "required", true)),
                 app.get("depends_on"));
         assertEquals(Map.of("backend", Map.of("aliases", List.of("base-alias")), "frontend", Map.of()),
                 app.get("networks"));
