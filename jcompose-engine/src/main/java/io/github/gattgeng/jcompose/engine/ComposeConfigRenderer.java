@@ -91,7 +91,7 @@ final class ComposeConfigRenderer {
         if (value instanceof String string) return string.replace("$", "$$");
         if (value instanceof Map<?, ?> map) {
             Map<String, Object> escaped = new LinkedHashMap<>();
-            map.forEach((key, nested) -> escaped.put(String.valueOf(key).replace("$", "$$"), escapeInterpolation(nested)));
+            map.forEach((key, nested) -> escaped.put(String.valueOf(key), escapeInterpolation(nested)));
             return escaped;
         }
         if (value instanceof List<?> list) {
