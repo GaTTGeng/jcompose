@@ -1994,7 +1994,8 @@ public final class ComposeFileLoader {
             sourcePath = path + "[" + sourceIndex + "]";
         }
         String targetPath = path + "[" + targetIndex + "]";
-        if (!sourcePath.equals(targetPath)) replaceProvenance(target, source, sourcePath, targetPath);
+        if (!sourcePath.equals(targetPath))
+            replaceProvenance(target, target == source ? new LinkedHashMap<>(source) : source, sourcePath, targetPath);
     }
 
     private static Map<String, Object> listMappingValue(String field, Object value) {
