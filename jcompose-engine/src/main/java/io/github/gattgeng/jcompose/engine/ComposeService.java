@@ -1819,7 +1819,7 @@ public final class ComposeService implements IComposeService {
             Object configuredCommand = service.configuration().get("command");
             if (configuredCommand != null) command.withCmd(composeCommand(configuredCommand));
             Object configuredEntrypoint = service.configuration().get("entrypoint");
-            if (configuredEntrypoint != null) command.withEntrypoint(composeCommand(configuredEntrypoint));
+            if (configuredEntrypoint != null) command.withEntrypoint(composeEntrypoint(configuredEntrypoint));
             if (service.configuration().get("working_dir") != null) command.withWorkingDir(String.valueOf(service.configuration().get("working_dir")));
             if (service.configuration().get("user") != null) command.withUser(String.valueOf(service.configuration().get("user")));
             if (service.configuration().get("hostname") != null) command.withHostName(String.valueOf(service.configuration().get("hostname")));
@@ -3370,6 +3370,11 @@ public final class ComposeService implements IComposeService {
         return asStringList(value);
     }
 
+    private static List<String> composeEntrypoint(Object value) {
+        List<String> entrypoint = composeCommand(value);
+        return entrypoint.isEmpty() ? List.of("") : entrypoint;
+    }
+
     private static String containerName(String projectName, ServiceDefinition service, int replicas, int index, boolean compatibility) {
         if (replicas == 1 && service.configuration().get("container_name") != null)
             return String.valueOf(service.configuration().get("container_name"));
@@ -4380,7 +4385,7 @@ public final class ComposeService implements IComposeService {
                 if (servicePlatform != null && !servicePlatform.isBlank()) command.withPlatform(servicePlatform);
                 Object configuredEntrypoint = effective.entrypoint() == null
                         ? service.configuration().get("entrypoint") : List.of(effective.entrypoint());
-                if (configuredEntrypoint != null) command.withEntrypoint(composeCommand(configuredEntrypoint));
+                if (configuredEntrypoint != null) command.withEntrypoint(composeEntrypoint(configuredEntrypoint));
                 Object configuredCommand = effective.command() == null
                         ? service.configuration().get("command") : effective.command();
                 if (configuredCommand != null) command.withCmd(composeCommand(configuredCommand));
