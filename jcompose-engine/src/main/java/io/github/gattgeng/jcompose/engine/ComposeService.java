@@ -2268,8 +2268,8 @@ public final class ComposeService implements IComposeService {
         Object memoryLimit = serviceMemoryLimit != null ? serviceMemoryLimit : deployMemoryLimit;
         if (memoryLimit != null) host.withMemory(parseByteSize(String.valueOf(memoryLimit)));
         if (config.get("memswap_limit") != null) {
-            String memorySwap = String.valueOf(config.get("memswap_limit"));
-            host.withMemorySwap("-1".equals(memorySwap) ? -1L : parseByteSize(memorySwap));
+            Long memorySwap = memorySwapLimit(String.valueOf(config.get("memswap_limit")));
+            if (memorySwap != null) host.withMemorySwap(memorySwap);
         }
         Object deployMemoryReservation = deployResourceValue(config, "reservations", "memory");
         Object serviceMemoryReservation = config.get("mem_reservation");
@@ -3335,6 +3335,13 @@ public final class ComposeService implements IComposeService {
         } catch (ArithmeticException exception) {
             throw new IllegalArgumentException("Byte size is outside the supported range: " + value, exception);
         }
+    }
+
+    static Long memorySwapLimit(String value) {
+        String source = value.trim();
+        if ("-1".equals(source)) return -1L;
+        long bytes = parseByteSize(source);
+        return bytes == 0 ? null : bytes;
     }
 
     private static int positiveTimeout(Integer timeout) {
