@@ -1933,10 +1933,11 @@ class ComposeFileLoaderTest {
                       INLINE: "yes"
                 """);
 
-        Map<?, ?> labels = (Map<?, ?>) new ComposeFileLoader().load(directory, null,
-                Map.of("LABEL_VALUE", "resolved")).services().get("app").configuration().get("labels");
+        var project = new ComposeFileLoader().load(directory, null, Map.of("LABEL_VALUE", "resolved"));
+        Map<?, ?> labels = (Map<?, ?>) project.services().get("app").configuration().get("labels");
 
         assertEquals(Map.of("SHARED", "inline", "FILE_ONLY", "one", "INTERPOLATED", "resolved", "INLINE", "yes"), labels);
+        assertTrue(project.diagnostics().isEmpty());
     }
 
     @Test

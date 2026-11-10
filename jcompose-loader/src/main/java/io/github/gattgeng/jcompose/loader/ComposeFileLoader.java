@@ -61,6 +61,7 @@ public final class ComposeFileLoader {
             "hostname", "domainname", "user", "working_dir", "tty", "stdin_open", "stop_signal", "stop_grace_period",
             "read_only", "tmpfs", "cap_add", "cap_drop", "devices", "sysctls", "security_opt", "init", "platform",
             "pull_policy", "pull_refresh_after", "dns", "dns_search", "pid", "mac_address", "cgroup_parent", "extends", "develop", "links",
+            "label_file",
             "cpu_count", "cpu_percent", "cpu_period", "cpus", "cpu_shares", "cpu_quota", "cpuset", "mem_limit",
             "memswap_limit", "mem_reservation", "oom_kill_disable",
             "oom_score_adj", "pids_limit", "group_add", "annotations", "attach", "pre_start", "post_start", "pre_stop", "post_stop",
