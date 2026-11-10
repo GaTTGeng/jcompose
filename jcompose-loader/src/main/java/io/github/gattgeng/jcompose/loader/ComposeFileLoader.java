@@ -62,7 +62,7 @@ public final class ComposeFileLoader {
             "read_only", "tmpfs", "cap_add", "cap_drop", "devices", "sysctls", "security_opt", "init", "platform",
             "pull_policy", "pull_refresh_after", "dns", "dns_search", "pid", "mac_address", "cgroup_parent", "extends", "develop", "links",
             "cpu_shares", "cpu_quota", "cpuset", "mem_limit", "memswap_limit", "mem_reservation", "oom_kill_disable",
-            "oom_score_adj", "group_add", "annotations", "attach", "pre_start", "post_start", "pre_stop", "post_stop",
+            "oom_score_adj", "pids_limit", "group_add", "annotations", "attach", "pre_start", "post_start", "pre_stop", "post_stop",
             "scale", "volumes_from", "external_links", "device_cgroup_rules", "blkio_config", "ulimits", "storage_opt",
             "isolation", "runtime", "credential_spec", "use_api_socket", "provider", "models");
     private static final Set<String> KNOWN_BUILD_FIELDS = Set.of(
@@ -1153,6 +1153,7 @@ public final class ComposeFileLoader {
             validateOptionalMap(file, service, deploy, "rollback_config", path + ".deploy.rollback_config");
             validateNestedBytes(file, service, deploy, "resources", "limits", "memory",
                     path + ".deploy.resources.limits.memory");
+            validateNestedPidsLimit(file, service, deploy, path + ".deploy.resources.limits.pids");
             validateNestedBytes(file, service, deploy, "resources", "reservations", "memory",
                     path + ".deploy.resources.reservations.memory");
             validateNestedNonNegativeInteger(file, service, deploy, "restart_policy", "max_attempts",
@@ -1176,6 +1177,7 @@ public final class ComposeFileLoader {
         }
 
         validateDurations(file, service, configuration, path, "stop_grace_period", "pull_refresh_after");
+        validatePidsLimit(file, service, configuration.get("pids_limit"), path + ".pids_limit");
         for (String key : List.of("shm_size", "mem_limit", "memswap_limit", "mem_reservation"))
             validateBytes(file, service, configuration, key, path + "." + key);
         for (String key : List.of("privileged", "tty", "stdin_open", "read_only", "init", "oom_kill_disable"))
@@ -1662,6 +1664,24 @@ public final class ComposeFileLoader {
     private static void validateNestedBytes(Path file, String service, Map<?, ?> parent, String block, String key, String field, String path) {
         if (parent.get(block) instanceof Map<?, ?> nested && nested.get(key) instanceof Map<?, ?> values)
             validateBytes(file, service, values, field, path);
+    }
+
+    private static void validateNestedPidsLimit(Path file, String service, Map<?, ?> parent, String path) {
+        if (parent.get("resources") instanceof Map<?, ?> resources
+                && resources.get("limits") instanceof Map<?, ?> limits)
+            validatePidsLimit(file, service, limits.get("pids"), path);
+    }
+
+    private static void validatePidsLimit(Path file, String service, Object value, String path) {
+        if (value == null) return;
+        try {
+            BigInteger limit = new BigInteger(String.valueOf(value));
+            if (!isScalar(value) || limit.compareTo(BigInteger.valueOf(-1)) < 0
+                    || limit.compareTo(BigInteger.valueOf(Long.MAX_VALUE)) > 0)
+                throw conversionFailure(file, service, path, value, "an integer PIDs limit of -1 or greater");
+        } catch (NumberFormatException exception) {
+            throw conversionFailure(file, service, path, value, "an integer PIDs limit of -1 or greater", exception);
+        }
     }
 
     private static void validateNestedNonNegativeInteger(Path file, String service, Map<?, ?> parent, String block,

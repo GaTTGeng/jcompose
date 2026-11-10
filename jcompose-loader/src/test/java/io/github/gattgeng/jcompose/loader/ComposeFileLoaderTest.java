@@ -483,6 +483,57 @@ class ComposeFileLoaderTest {
     }
 
     @Test
+    void pidsLimitsAreRecognizedAndAllowUnlimitedValue() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    pids_limit: -1
+                  worker:
+                    image: alpine
+                    deploy:
+                      resources:
+                        limits:
+                          pids: 64
+                """);
+
+        assertTrue(new ComposeFileLoader().load(directory, null).diagnostics().isEmpty());
+    }
+
+    @Test
+    void invalidPidsLimitReportsItsComposePropertyPath() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    pids_limit: -2
+                """);
+
+        var exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, null));
+
+        assertEquals("services.app.pids_limit", exception.propertyPath());
+    }
+
+    @Test
+    void invalidDeployPidsLimitReportsItsComposePropertyPath() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: alpine
+                    deploy:
+                      resources:
+                        limits:
+                          pids: -2
+                """);
+
+        var exception = assertThrows(ComposeValidationException.class,
+                () -> new ComposeFileLoader().load(directory, null));
+
+        assertEquals("services.app.deploy.resources.limits.pids", exception.propertyPath());
+    }
+
+    @Test
     void diagnosesUnsupportedBuildBehaviorWithoutFlaggingSupportedNetworksOrScalarCommands() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 networks:

@@ -2308,7 +2308,7 @@ public final class ComposeService implements IComposeService {
         return null;
     }
 
-    private static void applyResourceConfig(com.github.dockerjava.api.model.HostConfig host, Map<String, Object> config) {
+    static void applyResourceConfig(com.github.dockerjava.api.model.HostConfig host, Map<String, Object> config) {
         Object deployMemoryLimit = deployResourceValue(config, "limits", "memory");
         Object serviceMemoryLimit = config.get("mem_limit");
         requireConsistentResource(serviceMemoryLimit, deployMemoryLimit, "mem_limit", "deploy.resources.limits.memory",

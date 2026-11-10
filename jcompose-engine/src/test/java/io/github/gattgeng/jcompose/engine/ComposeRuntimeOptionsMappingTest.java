@@ -27,4 +27,20 @@ class ComposeRuntimeOptionsMappingTest {
         assertThrows(IllegalArgumentException.class, () -> ComposeService.applyRuntimeOptions(
                 HostConfig.newHostConfig(), Map.of("isolation", "container")));
     }
+
+    @Test
+    void mapsServiceAndDeployPidsLimitsToDockerHostConfig() {
+        HostConfig serviceLimit = HostConfig.newHostConfig();
+        ComposeService.applyResourceConfig(serviceLimit, Map.of("pids_limit", 128));
+        assertEquals(128L, serviceLimit.getPidsLimit());
+
+        HostConfig deployLimit = HostConfig.newHostConfig();
+        ComposeService.applyResourceConfig(deployLimit, Map.of("deploy", Map.of("resources",
+                Map.of("limits", Map.of("pids", 64)))));
+        assertEquals(64L, deployLimit.getPidsLimit());
+
+        HostConfig unlimited = HostConfig.newHostConfig();
+        ComposeService.applyResourceConfig(unlimited, Map.of("pids_limit", -1));
+        assertEquals(-1L, unlimited.getPidsLimit());
+    }
 }
