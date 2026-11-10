@@ -3035,6 +3035,8 @@ public final class ComposeService implements IComposeService {
             return 0;
         }
         TarArchiveEntry entry = new TarArchiveEntry(path.toFile(), archiveName + (Files.isDirectory(path) ? "/" : ""));
+        Integer mode = unixFileMode(path);
+        if (mode != null) entry.setMode(mode);
         tar.putArchiveEntry(entry);
         long bytes = 0;
         if (Files.isDirectory(path)) {
@@ -3060,6 +3062,7 @@ public final class ComposeService implements IComposeService {
         long bytes = 0;
         boolean directory = false;
         boolean first = true;
+        List<ArchiveDirectoryMode> directoryModes = new ArrayList<>();
         try (TarArchiveInputStream tar = new TarArchiveInputStream(archive)) {
             TarArchiveEntry entry;
             while ((entry = tar.getNextTarEntry()) != null) {
@@ -3070,7 +3073,10 @@ public final class ComposeService implements IComposeService {
                 if (!(entry.isDirectory() || entry.isFile() || entry.isLink() || entry.isSymbolicLink()))
                     throw new java.io.IOException("Docker archive contains unsupported entry type: " + entry.getName());
                 ensureNoSymlinkPath(root, target);
-                if (entry.isDirectory()) Files.createDirectories(target);
+                if (entry.isDirectory()) {
+                    Files.createDirectories(target);
+                    directoryModes.add(new ArchiveDirectoryMode(target, entry.getMode()));
+                }
                 else if (entry.isSymbolicLink()) {
                     String linkName = entry.getLinkName();
                     if (linkName == null || linkName.isBlank())
@@ -3092,15 +3098,32 @@ public final class ComposeService implements IComposeService {
                     if (parent != null) Files.createDirectories(parent);
                     long linkBytes = Files.size(linkTarget);
                     Files.copy(linkTarget, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    Integer linkMode = unixFileMode(linkTarget);
+                    if (linkMode != null) setUnixFileMode(target, linkMode);
                     bytes = Math.addExact(bytes, linkBytes);
                 } else {
                     Path parent = target.getParent();
                     if (parent != null) Files.createDirectories(parent);
                     try (var output = Files.newOutputStream(target)) { bytes = Math.addExact(bytes, tar.transferTo(output)); }
+                    setUnixFileMode(target, entry.getMode());
                 }
             }
         }
+        directoryModes.sort(java.util.Comparator.comparingInt((ArchiveDirectoryMode item) -> item.path().getNameCount()).reversed());
+        for (ArchiveDirectoryMode item : directoryModes) setUnixFileMode(item.path(), item.mode());
         return new CopyExtraction(bytes, directory);
+    }
+
+    private static Integer unixFileMode(Path path) throws java.io.IOException {
+        if (Files.getFileAttributeView(path, java.nio.file.attribute.PosixFileAttributeView.class,
+                java.nio.file.LinkOption.NOFOLLOW_LINKS) == null) return null;
+        return ((Number) Files.getAttribute(path, "unix:mode", java.nio.file.LinkOption.NOFOLLOW_LINKS)).intValue() & 07777;
+    }
+
+    private static void setUnixFileMode(Path path, int mode) throws java.io.IOException {
+        if (Files.getFileAttributeView(path, java.nio.file.attribute.PosixFileAttributeView.class,
+                java.nio.file.LinkOption.NOFOLLOW_LINKS) != null)
+            Files.setAttribute(path, "unix:mode", mode & 07777, java.nio.file.LinkOption.NOFOLLOW_LINKS);
     }
 
     static String rebaseArchiveRoot(String entryName, String archiveRoot, String destinationRoot) {
@@ -3191,6 +3214,8 @@ public final class ComposeService implements IComposeService {
                 throw new java.io.IOException("Copy destination traverses a symbolic link: " + current);
         }
     }
+
+    private record ArchiveDirectoryMode(Path path, int mode) { }
 
     record CopyExtraction(long bytes, boolean directory) { }
     record CopyPath(boolean container, String service, String path) {

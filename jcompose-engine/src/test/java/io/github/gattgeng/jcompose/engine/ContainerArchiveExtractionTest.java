@@ -35,6 +35,42 @@ class ContainerArchiveExtractionTest {
     }
 
     @Test
+    void preservesUnixModesWhenExtractingContainerArchives() throws IOException {
+        assumePosixFileModes();
+        Path destination = Files.createDirectory(tempDirectory.resolve("mode-destination"));
+        byte[] archive = archiveWithUnixModes();
+
+        ComposeService.extractTar(new ByteArrayInputStream(archive), destination);
+
+        assertEquals(0750, unixMode(destination.resolve("root")));
+        assertEquals(0751, unixMode(destination.resolve("root/source")));
+        assertEquals(0751, unixMode(destination.resolve("root/linked")));
+    }
+
+    @Test
+    void preservesUnixModesWhenCreatingHostCopyArchives() throws IOException {
+        assumePosixFileModes();
+        Path source = Files.createDirectory(tempDirectory.resolve("mode-source"));
+        Path file = Files.writeString(source.resolve("run.sh"), "#!/bin/sh\n");
+        setUnixMode(source, 0710);
+        setUnixMode(file, 0751);
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+
+        try {
+            try (TarArchiveOutputStream tar = new TarArchiveOutputStream(bytes)) {
+                ComposeService.appendTarEntry(tar, source, "source");
+                tar.finish();
+            }
+            try (TarArchiveInputStream tar = new TarArchiveInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+                assertEquals(0710, tar.getNextTarEntry().getMode() & 07777);
+                assertEquals(0751, tar.getNextTarEntry().getMode() & 07777);
+            }
+        } finally {
+            setUnixMode(source, 0700);
+        }
+    }
+
+    @Test
     void extractsDirectoryContentsArchiveAtDestinationRoot() throws IOException {
         Path destination = Files.createDirectory(tempDirectory.resolve("contents"));
 
@@ -234,6 +270,44 @@ class ContainerArchiveExtractionTest {
             tar.closeArchiveEntry();
         }
         return bytes.toByteArray();
+    }
+
+    private static byte[] archiveWithUnixModes() throws IOException {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (TarArchiveOutputStream tar = new TarArchiveOutputStream(bytes)) {
+            TarArchiveEntry directory = new TarArchiveEntry("root/", TarArchiveEntry.LF_DIR);
+            directory.setMode(0710);
+            tar.putArchiveEntry(directory);
+            tar.closeArchiveEntry();
+
+            byte[] contents = "#!/bin/sh\n".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            TarArchiveEntry file = new TarArchiveEntry("root/source");
+            file.setMode(0751);
+            file.setSize(contents.length);
+            tar.putArchiveEntry(file);
+            tar.write(contents);
+            tar.closeArchiveEntry();
+
+            TarArchiveEntry hardLink = new TarArchiveEntry("root/linked", TarArchiveEntry.LF_LINK);
+            hardLink.setMode(0600);
+            hardLink.setLinkName("root/source");
+            tar.putArchiveEntry(hardLink);
+            tar.closeArchiveEntry();
+        }
+        return bytes.toByteArray();
+    }
+
+    private static void assumePosixFileModes() {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                java.nio.file.FileSystems.getDefault().supportedFileAttributeViews().contains("posix"));
+    }
+
+    private static int unixMode(Path path) throws IOException {
+        return ((Number) Files.getAttribute(path, "unix:mode")).intValue() & 07777;
+    }
+
+    private static void setUnixMode(Path path, int mode) throws IOException {
+        Files.setAttribute(path, "unix:mode", mode);
     }
 
     private static byte[] archiveWithSymbolicLinkTraversal() throws IOException {
