@@ -707,13 +707,59 @@ class ComposeLoaderConformanceTest {
                 List.of("compose.yaml", "compose.override.yaml")).services().get("app");
         Map<?, ?> build = (Map<?, ?>) app.configuration().get("build");
 
-        assertEquals(List.of("APP_MODE=release", "LOG_LEVEL=info", "DEBUG=0"), build.get("args"));
-        assertEquals(List.of("net.ipv4.ip_forward=1", "kernel.shm_rmid_forced=0", "kernel.threads-max=4096"),
+        assertEquals(Map.of("APP_MODE", "release", "LOG_LEVEL", "info", "DEBUG", "0"), build.get("args"));
+        assertEquals(Map.of("net.ipv4.ip_forward", "1", "kernel.shm_rmid_forced", "0", "kernel.threads-max", "4096"),
                 app.configuration().get("sysctls"));
-        assertEquals(List.of("com.example.mode=release", "com.example.owner=team-a"),
+        assertEquals(Map.of("com.example.mode", "release", "com.example.owner", "team-a"),
                 app.configuration().get("annotations"));
         assertEquals(List.of("service.local:127.0.0.1", "service.local:127.0.0.2"),
                 app.configuration().get("extra_hosts"));
+    }
+
+    @Test
+    void mergesMappingAndListFormsOfComposeKeyedFields() throws IOException {
+        Path directory = temporaryDirectory.resolve("overlay-keyed-mixed-forms");
+        Files.createDirectories(directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: example/app
+                    build:
+                      context: .
+                      args: [APP_MODE=base, LOG_LEVEL=info]
+                      labels: {com.example.build: base, com.example.owner: team}
+                    environment: [APP_MODE=base, KEEP=1]
+                    labels: {com.example.mode: base, com.example.owner: team}
+                    annotations: [com.example.mode=base, com.example.owner=team]
+                    sysctls: {net.ipv4.ip_forward: "0", kernel.shm_rmid_forced: "0"}
+                """);
+        Files.writeString(directory.resolve("compose.override.yaml"), """
+                services:
+                  app:
+                    build:
+                      args: {APP_MODE: release, DEBUG: "0"}
+                      labels: [com.example.build=release, com.example.version=1]
+                    environment: {APP_MODE: release, DEBUG: "0"}
+                    labels: [com.example.mode=release, com.example.version=1]
+                    annotations: {com.example.mode: release, com.example.version: "1"}
+                    sysctls: [net.ipv4.ip_forward=1, kernel.threads-max=4096]
+                """);
+
+        ServiceDefinition app = new ComposeFileLoader().loadMerged(directory,
+                List.of("compose.yaml", "compose.override.yaml")).services().get("app");
+        Map<?, ?> build = (Map<?, ?>) app.configuration().get("build");
+
+        assertEquals(Map.of("APP_MODE", "release", "LOG_LEVEL", "info", "DEBUG", "0"), build.get("args"));
+        assertEquals(Map.of("com.example.build", "release", "com.example.owner", "team",
+                "com.example.version", "1"), build.get("labels"));
+        assertEquals(Map.of("APP_MODE", "release", "KEEP", "1", "DEBUG", "0"),
+                app.configuration().get("environment"));
+        assertEquals(Map.of("com.example.mode", "release", "com.example.owner", "team",
+                "com.example.version", "1"), app.configuration().get("labels"));
+        assertEquals(Map.of("com.example.mode", "release", "com.example.owner", "team",
+                "com.example.version", "1"), app.configuration().get("annotations"));
+        assertEquals(Map.of("net.ipv4.ip_forward", "1", "kernel.shm_rmid_forced", "0",
+                "kernel.threads-max", "4096"), app.configuration().get("sysctls"));
     }
 
     @Test

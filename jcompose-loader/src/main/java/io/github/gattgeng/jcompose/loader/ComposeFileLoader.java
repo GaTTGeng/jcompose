@@ -1902,10 +1902,10 @@ public final class ComposeFileLoader {
             } else if (isListMappingMergeField(path, key)
                     && listMappingValue(key, before) != null && listMappingValue(key, after) != null
                     && effective instanceof Map<?, ?> mergedMap) {
-                Map<String, Path> normalizedBaseProvenance = remapListMappingProvenance(before, child, result);
+                Map<String, Path> normalizedBaseProvenance = remapListMappingProvenance(key, before, child, result);
                 result.clear();
                 result.putAll(normalizedBaseProvenance);
-                Map<String, Path> normalizedOverlayProvenance = remapListMappingProvenance(after, child, overlayProvenance);
+                Map<String, Path> normalizedOverlayProvenance = remapListMappingProvenance(key, after, child, overlayProvenance);
                 applyOverlayProvenance(listMappingValue(key, before), listMappingValue(key, after),
                         stringKeyMapUnchecked(mergedMap), child, result, normalizedOverlayProvenance);
             } else if (before instanceof Map<?, ?> baseMap && after instanceof Map<?, ?> overlayMap
@@ -1945,7 +1945,10 @@ public final class ComposeFileLoader {
     }
 
     private static boolean isListMappingMergeField(String path, String key) {
-        return path.startsWith("services.") && ("depends_on".equals(key) || "networks".equals(key));
+        if (!path.startsWith("services.")) return false;
+        if (path.endsWith(".build")) return "args".equals(key) || "labels".equals(key);
+        return Set.of("depends_on", "networks", "annotations", "environment", "labels", "sysctls")
+                .contains(key);
     }
 
     private static Map<String, Object> listMappingValue(String field, Object value) {
@@ -1965,21 +1968,34 @@ public final class ComposeFileLoader {
         if (!(value instanceof List<?> list) || list.stream().anyMatch(entry -> !(entry instanceof String))) return null;
         Map<String, Object> result = new LinkedHashMap<>();
         for (Object entry : list) {
-            Map<String, Object> options = "depends_on".equals(field)
-                    ? Map.of("condition", "service_started", "required", true) : Map.of();
-            result.putIfAbsent((String) entry, options);
+            String text = (String) entry;
+            if (KEYED_LIST_FIELDS.contains(field)) {
+                int separator = text.indexOf('=');
+                if (separator < 0) separator = text.indexOf(':');
+                String name = separator < 0 ? text : text.substring(0, separator);
+                Object entryValue = separator < 0
+                        ? Set.of("labels", "annotations").contains(field) ? "" : null
+                        : text.substring(separator + 1);
+                result.put(name, entryValue);
+            } else {
+                Map<String, Object> options = "depends_on".equals(field)
+                        ? Map.of("condition", "service_started", "required", true) : Map.of();
+                result.putIfAbsent(text, options);
+            }
         }
         return result;
     }
 
-    private static Map<String, Path> remapListMappingProvenance(Object value, String path,
+    private static Map<String, Path> remapListMappingProvenance(String field, Object value, String path,
                                                                  Map<String, Path> provenance) {
         Map<String, Path> result = new LinkedHashMap<>(provenance);
         if (!(value instanceof List<?> list)) return result;
         result.keySet().removeIf(candidate -> candidate.startsWith(path + "["));
         for (int index = 0; index < list.size(); index++) {
             String sourcePath = path + "[" + index + "]";
-            String targetPath = appendPathSegment(path, String.valueOf(list.get(index)));
+            String targetKey = KEYED_LIST_FIELDS.contains(field)
+                    ? listEntryKey(list.get(index)) : String.valueOf(list.get(index));
+            String targetPath = appendPathSegment(path, targetKey);
             for (var entry : provenance.entrySet()) {
                 if (isPathAtOrBelow(entry.getKey(), sourcePath))
                     result.put(targetPath + entry.getKey().substring(sourcePath.length()), entry.getValue());
