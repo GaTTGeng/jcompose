@@ -26,6 +26,7 @@ import java.util.Objects;
  * @param servicePorts Publish ports declared by the service.
  * @param publish Extra port mappings in Docker Compose run short syntax.
  * @param detachKeys Key sequence that detaches an interactive run; null uses Docker's default.
+ * @param build Build the service image before creating the one-off container.
  */
 public record ComposeRunOptions(
         List<String> command,
@@ -48,7 +49,8 @@ public record ComposeRunOptions(
         Integer index,
         boolean servicePorts,
         List<String> publish,
-        String detachKeys) {
+        String detachKeys,
+        boolean build) {
     public ComposeRunOptions {
         command = command == null ? null : List.copyOf(command);
         env = env == null ? null : List.copyOf(env);
@@ -85,7 +87,17 @@ public record ComposeRunOptions(
             List<String> capDrop, boolean privileged, boolean useNetworkAliases, Integer index,
             boolean servicePorts, List<String> publish) {
         this(command, entrypoint, name, env, labels, volumes, remove, detach, noDeps, tty, interactive,
-                workdir, user, capAdd, capDrop, privileged, useNetworkAliases, index, servicePorts, publish, null);
+                workdir, user, capAdd, capDrop, privileged, useNetworkAliases, index, servicePorts, publish, null, false);
+    }
+
+    /** Keeps the previous canonical constructor contract, including custom detach keys. */
+    public ComposeRunOptions(List<String> command, String entrypoint, String name, List<String> env,
+            List<String> labels, List<String> volumes, boolean remove, boolean detach, boolean noDeps,
+            boolean tty, boolean interactive, String workdir, String user, List<String> capAdd,
+            List<String> capDrop, boolean privileged, boolean useNetworkAliases, Integer index,
+            boolean servicePorts, List<String> publish, String detachKeys) {
+        this(command, entrypoint, name, env, labels, volumes, remove, detach, noDeps, tty, interactive,
+                workdir, user, capAdd, capDrop, privileged, useNetworkAliases, index, servicePorts, publish, detachKeys, false);
     }
 
     public static Builder builder() { return new Builder(); }
@@ -113,6 +125,7 @@ public record ComposeRunOptions(
         private boolean servicePorts;
         private List<String> publish;
         private String detachKeys;
+        private boolean build;
 
         /**
          * Command overriding the service image's default command.
@@ -242,6 +255,9 @@ public record ComposeRunOptions(
         /** Key sequence that detaches an interactive run; null uses Docker's default. */
         public Builder detachKeys(String value) { this.detachKeys = value; return this; }
 
+        /** Build the service image before creating the one-off container. */
+        public Builder build(boolean value) { this.build = value; return this; }
+
         /**
          * Replica index used in the generated container name and labels.
          * @param value Replica index used in the generated container name and labels.
@@ -250,6 +266,6 @@ public record ComposeRunOptions(
         public Builder index(Integer value) { this.index = value; return this; }
 
         /** @return the immutable operation options */
-        public ComposeRunOptions build() { return new ComposeRunOptions(command, entrypoint, name, env, labels, volumes, remove, detach, noDeps, tty, interactive, workdir, user, capAdd, capDrop, privileged, useNetworkAliases, index, servicePorts, publish, detachKeys); }
+        public ComposeRunOptions build() { return new ComposeRunOptions(command, entrypoint, name, env, labels, volumes, remove, detach, noDeps, tty, interactive, workdir, user, capAdd, capDrop, privileged, useNetworkAliases, index, servicePorts, publish, detachKeys, build); }
     }
 }

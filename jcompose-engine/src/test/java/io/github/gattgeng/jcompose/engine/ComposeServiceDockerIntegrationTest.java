@@ -1981,6 +1981,39 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void runBuildsTheServiceImageWhenRequested() throws Exception {
+        String projectName = "jcompose-run-build-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    build:
+                      context: .
+                      dockerfile_inline: |
+                        FROM busybox:1.36
+                        CMD ["sh", "-c", "sleep 60"]
+                """);
+
+        IComposeService service = new ComposeService();
+        String containerId = null;
+        try {
+            containerId = service.runAsync(context, "app", ComposeRunOptions.builder()
+                    .detach(true).build(true).build()).get(Duration.ofMinutes(3).toMillis(), TimeUnit.MILLISECONDS);
+            try (var client = DockerClientFactory.create(context)) {
+                var image = client.inspectImageCmd(projectName + "-app").exec();
+                var container = client.inspectContainerCmd(containerId).exec();
+                assertTrue(image.getId() != null && !image.getId().isBlank());
+                assertTrue(Boolean.TRUE.equals(container.getState().getRunning()));
+            }
+        } finally {
+            try (var client = DockerClientFactory.create(context)) {
+                if (containerId != null) client.removeContainerCmd(containerId).withForce(true).exec();
+                client.removeImageCmd(projectName + "-app").withForce(true).exec();
+            }
+        }
+    }
+
+    @Test
     void createPassesServicePlatformToDockerEngine() throws Exception {
         String projectName = "jcompose-platform-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);

@@ -4088,6 +4088,8 @@ public final class ComposeService implements IComposeService {
             List<String> effectiveProfiles = effectiveProfiles(List.of(service), context.profiles());
             validateRunnableService(service);
             validateServiceLabels(service);
+            if (effective.build()) await(buildAsync(context,
+                    ComposeBuildOptions.builder().services(List.of(serviceName)).build()));
             try (DockerClient client = createDockerClient(context)) {
                 ensureProjectResources(client, context.projectName(), project);
                 if (!effective.noDeps()) {
