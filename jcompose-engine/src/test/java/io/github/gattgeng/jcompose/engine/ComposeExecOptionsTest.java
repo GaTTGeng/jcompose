@@ -18,7 +18,7 @@ class ComposeExecOptionsTest {
                 .detachKeys("ctrl-a,ctrl-b")
                 .build();
         assertEquals("ctrl-a,ctrl-b", configured.detachKeys());
-        assertTrue(configured.tty());
+        assertEquals(System.console() != null, configured.tty());
         assertTrue(configured.interactive());
 
         var legacy = new ComposeExecOptions(List.of("sh"), false, null, null,

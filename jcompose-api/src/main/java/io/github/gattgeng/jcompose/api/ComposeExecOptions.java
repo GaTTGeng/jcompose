@@ -12,7 +12,7 @@ import java.util.Objects;
  * @param privileged Run the command with extended privileges.
  * @param user User (name or UID) the command runs as.
  * @param workdir Working directory for the command inside the container.
- * @param tty Allocate a TTY for the command.
+ * @param tty Allocate a TTY for the command; the builder defaults to whether the JVM detects a console.
  * @param interactive Keep standard input open for the command.
  * @param detachKeys Key sequence that detaches the client, in Docker's detach-keys format; null uses Docker's default.
  */
@@ -50,7 +50,7 @@ public record ComposeExecOptions(
         private boolean privileged;
         private String user;
         private String workdir;
-        private boolean tty = true;
+        private boolean tty = System.console() != null;
         private boolean interactive = true;
         private String detachKeys;
 

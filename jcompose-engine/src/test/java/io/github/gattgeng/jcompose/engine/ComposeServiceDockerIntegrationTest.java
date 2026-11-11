@@ -1067,6 +1067,30 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void execAutoDetectsTtyAndKeepsStdinOpenByDefault() throws Exception {
+        String projectName = "jcompose-exec-tty-default-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: ["sh", "-c", "sleep 300"]
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            var result = service.execAsync(context, "app", ComposeExecOptions.builder()
+                            .command(java.util.List.of("sh", "-c", "if [ -t 0 ]; then printf tty; else printf no-tty; fi"))
+                            .build())
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            assertEquals(System.console() != null ? "tty" : "no-tty", result.standardOutput().trim());
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
     void runWithNullOptionsRetainsTheExitedOneOffContainer() throws Exception {
         String projectName = "jcompose-run-default-retention-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
