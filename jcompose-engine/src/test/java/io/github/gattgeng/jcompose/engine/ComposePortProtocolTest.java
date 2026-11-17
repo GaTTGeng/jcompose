@@ -17,6 +17,17 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ComposePortProtocolTest {
     @Test
+    void rejectsNonPositiveReplicaIndexesBeforeDockerAccess() {
+        for (int index : List.of(0, -1)) {
+            CompletionException exception = assertThrows(CompletionException.class, () ->
+                    new ComposeService().portAsync(new ComposeProjectContext("test", Path.of(".")),
+                            "app", 8080, ComposePortOptions.builder().index(index).build()).join());
+
+            assertInstanceOf(IllegalArgumentException.class, exception.getCause());
+        }
+    }
+
+    @Test
     void rejectsProtocolsNotSupportedByDockerComposePort() {
         CompletionException exception = assertThrows(CompletionException.class, () ->
                 new ComposeService().portAsync(

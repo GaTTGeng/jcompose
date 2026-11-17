@@ -817,17 +817,16 @@ public final class ComposeService implements IComposeService {
                 case "udp" -> InternetProtocol.UDP;
                 default -> throw new IllegalArgumentException("Unsupported port protocol: " + protocolName);
             };
+            Integer requestedIndex = options == null ? null : options.index();
+            if (requestedIndex != null && requestedIndex < 1)
+                throw new IllegalArgumentException("replica index must be 1 or greater");
             try (DockerClient client = createDockerClient(context)) {
                 List<Container> running = projectContainers(client, context.projectName(), List.of(service), true).stream()
                         .filter(ComposeService::isRunning)
+                        .filter(container -> !"true".equalsIgnoreCase(label(container, ComposeConstants.ONE_OFF_LABEL)))
                         .sorted(containerOrder())
                         .toList();
-                Integer requestedIndex = options == null ? null : options.index();
-                if (requestedIndex != null && requestedIndex < 1)
-                    throw new IllegalArgumentException("replica index must be 1 or greater");
-                if (running.isEmpty() || requestedIndex != null && requestedIndex > running.size())
-                    throw new IllegalStateException("No running container found for service '" + service + "'.");
-                Container container = running.get(requestedIndex == null ? 0 : requestedIndex - 1);
+                Container container = selectFromContainers(running, service, requestedIndex);
                 var inspected = client.inspectContainerCmd(container.getId()).exec();
                 ExposedPort exposedPort = new ExposedPort(port, protocol);
                 var networkSettings = inspected.getNetworkSettings();
@@ -922,7 +921,8 @@ public final class ComposeService implements IComposeService {
             java.util.Objects.requireNonNull(context, "context");
             validateStrictProjectBeforeDocker(context);
             try (DockerClient client = createDockerClient(context)) {
-                var response = client.listVolumesCmd().exec();
+                var response = client.listVolumesCmd().withFilter("label",
+                        List.of(ComposeConstants.PROJECT_LABEL + "=" + context.projectName())).exec();
                 if (response == null || response.getVolumes() == null) return List.of();
                 List<String> requestedServices = options == null ? null : services(options.services());
                 if (requestedServices != null && requestedServices.isEmpty()) return List.of();
@@ -942,10 +942,7 @@ public final class ComposeService implements IComposeService {
                         .filter(volume -> volume.getLabels() != null
                                 && context.projectName().equals(volume.getLabels().get(ComposeConstants.PROJECT_LABEL))
                                 && (selectedVolumeNames == null || selectedVolumeNames.contains(volume.getName())))
-                        .map(volume -> {
-                            return new VolumesSummary(volume.getName(), volume.getDriver(), volume.getMountpoint(),
-                                    volume.getLabels(), null, volume.getOptions(), null);
-                        }).toList();
+                        .map(ComposeService::volumeSummary).toList();
             } catch (java.io.IOException exception) {
                 throw new java.io.UncheckedIOException("Could not close Docker Engine client.", exception);
             }
@@ -1205,6 +1202,12 @@ public final class ComposeService implements IComposeService {
         if (value == null) return Integer.MAX_VALUE;
         try { return Integer.parseInt(value); }
         catch (NumberFormatException ignored) { return Integer.MAX_VALUE; }
+    }
+
+    static VolumesSummary volumeSummary(com.github.dockerjava.api.command.InspectVolumeResponse volume) {
+        Map<String, Object> raw = volume.getRawValues();
+        return new VolumesSummary(volume.getName(), volume.getDriver(), volume.getMountpoint(), volume.getLabels(),
+                stringValue(raw.get("Scope"), null), volume.getOptions(), stringValue(raw.get("CreatedAt"), null));
     }
 
     private static ImageSummary imageSummary(Image image) {

@@ -689,6 +689,88 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void portSelectsReplicaLabelsAcrossGapsAndExcludesOneOffContainers() throws Exception {
+        String projectName = "jcompose-port-replicas-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: ["sleep", "300"]
+                    ports: ["127.0.0.1:0:8080"]
+                """);
+
+        IComposeService service = new ComposeService();
+        try {
+            service.scaleAsync(context, ComposeScaleOptions.builder().services(java.util.Map.of("app", 3)).build())
+                    .get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            io.github.gattgeng.jcompose.api.PortResult firstPort;
+            io.github.gattgeng.jcompose.api.PortResult thirdPort;
+            try (var client = DockerClientFactory.create(context)) {
+                var replicas = client.listContainersCmd().withShowAll(true)
+                        .withLabelFilter(java.util.Map.of("com.docker.compose.project", projectName)).exec()
+                        .stream().collect(java.util.stream.Collectors.toMap(
+                                container -> Integer.parseInt(container.getLabels().get("com.docker.compose.container-number")),
+                                com.github.dockerjava.api.model.Container::getId));
+                client.removeContainerCmd(replicas.get(2)).withForce(true).exec();
+                var exposed = com.github.dockerjava.api.model.ExposedPort.tcp(8080);
+                var firstBinding = client.inspectContainerCmd(replicas.get(1)).exec()
+                        .getNetworkSettings().getPorts().getBindings().get(exposed)[0];
+                var thirdBinding = client.inspectContainerCmd(replicas.get(3)).exec()
+                        .getNetworkSettings().getPorts().getBindings().get(exposed)[0];
+                firstPort = new io.github.gattgeng.jcompose.api.PortResult(firstBinding.getHostIp(),
+                        Integer.parseInt(firstBinding.getHostPortSpec()));
+                thirdPort = new io.github.gattgeng.jcompose.api.PortResult(thirdBinding.getHostIp(),
+                        Integer.parseInt(thirdBinding.getHostPortSpec()));
+            }
+
+            assertEquals(thirdPort, service.portAsync(context, "app", 8080,
+                            io.github.gattgeng.jcompose.api.ComposePortOptions.builder().index(3).build())
+                    .get(30, TimeUnit.SECONDS));
+            ExecutionException missing = assertThrows(ExecutionException.class, () ->
+                    service.portAsync(context, "app", 8080,
+                                    io.github.gattgeng.jcompose.api.ComposePortOptions.builder().index(2).build())
+                            .get(30, TimeUnit.SECONDS));
+            assertTrue(missing.getCause() instanceof IllegalStateException);
+
+            try (var client = DockerClientFactory.create(context)) {
+                String oneOff = client.createContainerCmd("busybox:1.36").withCmd("sleep", "300")
+                        .withLabels(java.util.Map.of("com.docker.compose.project", projectName,
+                                "com.docker.compose.service", "app", "com.docker.compose.oneoff", "True",
+                                "com.docker.compose.container-number", "0")).exec().getId();
+                client.startContainerCmd(oneOff).exec();
+            }
+            assertEquals(firstPort, service.portAsync(context, "app", 8080, null).get(30, TimeUnit.SECONDS));
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
+    void volumesRetainDockerScopeAndCreationTime() throws Exception {
+        String projectName = "jcompose-volume-metadata-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        String volumeName = projectName + "_data";
+        try (var client = DockerClientFactory.create(context)) {
+            client.createVolumeCmd().withName(volumeName).withDriver("local")
+                    .withLabels(java.util.Map.of("com.docker.compose.project", projectName,
+                            "com.docker.compose.volume", "data")).exec();
+            try {
+                var volumes = new ComposeService().volumesAsync(context, null).get(30, TimeUnit.SECONDS);
+
+                assertEquals(1, volumes.size());
+                var volume = volumes.getFirst();
+                assertEquals(volumeName, volume.name());
+                assertEquals("local", volume.scope());
+                assertTrue(volume.createdAt() != null && !volume.createdAt().isBlank());
+                java.time.OffsetDateTime.parse(volume.createdAt());
+            } finally {
+                client.removeVolumeCmd(volumeName).exec();
+            }
+        }
+    }
+
+    @Test
     void scaleStartsDependenciesUnlessNoDepsIsSet() throws Exception {
         String projectName = "jcompose-scale-deps-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);

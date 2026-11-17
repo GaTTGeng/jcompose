@@ -5,7 +5,7 @@ import java.util.Objects;
 /**
  * Options for resolving a published container port.
  * @param protocol Transport protocol of the container port.
- * @param index Replica index within the service; null resolves the first matching container.
+ * @param index One-based replica number from the container label; null selects the lowest running replica. One-off containers are excluded.
  */
 public record ComposePortOptions(
         String protocol,
@@ -28,8 +28,8 @@ public record ComposePortOptions(
         public Builder protocol(String value) { this.protocol = value; return this; }
 
         /**
-         * Replica index within the service; null resolves the first matching container.
-         * @param value Replica index within the service; null resolves the first matching container.
+         * Selects a running service replica by its one-based container-number label.
+         * @param value replica number, or null for the lowest running replica; one-off containers are excluded
          * @return this builder
          */
         public Builder index(Integer value) { this.index = value; return this; }

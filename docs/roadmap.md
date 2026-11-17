@@ -11,6 +11,8 @@ The ComposeSharp release baseline is `3.0.0-32-g648a430` (`648a430`). jcompose t
 
 The loader now exposes the ComposeSharp interpolation utility contract from `3.0.0-32-g648a430` as `VariableInterpolator.expand`, including its reserved `strict` argument.
 
+Additional verification against ComposeSharp `899ea10` covers published-port selection by the actual container-number label, including missing replica numbers and exclusion of one-off containers. Project volume summaries now retain Docker scope and creation time; response-mapping tests exercise docker-java deserialization, and Docker-backed tests check the actual volume metadata.
+
 ## Current milestone: 3.0.0 parity foundation
 
 ComposeSharp 3.0.0 is the initial sibling feature baseline maintained by the same author. Newer ComposeSharp development is the ongoing feature source to sync. These sources define requested feature scope, while Docker Compose documentation and observed behavior define compatibility. This is a target scope, not a claim that the current jcompose snapshot has parity.
