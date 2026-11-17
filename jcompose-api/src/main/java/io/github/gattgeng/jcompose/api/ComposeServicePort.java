@@ -4,7 +4,7 @@ package io.github.gattgeng.jcompose.api;
  * A port mapping declared by a Compose service.
  * @param target container port or target range
  * @param published published host port or range, or {@code null} when omitted
- * @param hostIp host IP, or {@code null} when omitted
+ * @param hostIp host IP without IPv6 brackets, or {@code null} when omitted
  * @param protocol transport protocol; defaults to {@code tcp}
  * @param mode publishing mode from long syntax
  * @param name port name from long syntax

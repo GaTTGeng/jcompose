@@ -450,6 +450,8 @@ public record ServiceDefinition(String name, Map<String, Object> configuration) 
                 published = hostAndPublished;
             }
         }
+        if (hostIp != null && hostIp.startsWith("[") && hostIp.endsWith("]"))
+            hostIp = hostIp.substring(1, hostIp.length() - 1);
         return new ComposeServicePort(target, published, hostIp, protocol, null, null, null);
     }
 

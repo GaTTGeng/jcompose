@@ -33,6 +33,8 @@ This project follows [Semantic Versioning](https://semver.org/). JDK artifacts h
 - Documented the Java asynchronous service operations with parameter and result contracts aligned to the ComposeSharp API surface.
 
 ### Fixed
+- Preserve UTF-8 log characters split across Docker frames, stdout/stderr identity, and each stream's line order, synchronizing ComposeSharp `9672e35`.
+- Normalize typed IPv6 port host addresses without brackets, synchronizing ComposeSharp `3d2bbf3` while retaining the source Compose syntax for rendering.
 - Validate `storage_opt` as a mapping during Compose loading, before runtime operations connect to Docker.
 - Report `provider`, `models`, and `use_api_socket` service fields as unsupported because jcompose does not apply their Docker Compose behavior.
 - Merge service `depends_on` and `networks` declarations across list and mapping syntax instead of dropping entries when overlays change forms, matching Docker Compose's normalization-before-merge behavior.

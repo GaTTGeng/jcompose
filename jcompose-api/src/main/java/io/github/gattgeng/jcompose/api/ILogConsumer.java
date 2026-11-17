@@ -2,7 +2,8 @@ package io.github.gattgeng.jcompose.api;
 
 /** Receives container log lines and status changes from streaming project operations. */
 public interface ILogConsumer {
-    /** Receives one line from a service container. */
+    /** Receives a UTF-8 line from a service container; {@code standardError} identifies stderr.
+     * Each stream's line order is preserved. TTY output combines stdout and stderr. */
     void onLog(String serviceName, String message, boolean standardError);
 
     /** Signals that the selected service log stream has ended. */

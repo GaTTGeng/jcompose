@@ -43,6 +43,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
@@ -3680,13 +3681,13 @@ public final class ComposeService implements IComposeService {
         }
     }
 
-    private static final class LogCallback extends Adapter<Frame> {
+    static final class LogCallback extends Adapter<Frame> {
         private final String service;
         private final ILogConsumer consumer;
         private final boolean noColor;
-        private final Map<StreamType, StringBuilder> pending = new EnumMap<>(StreamType.class);
+        private final Map<StreamType, ByteArrayOutputStream> pending = new EnumMap<>(StreamType.class);
 
-        private LogCallback(String service, ILogConsumer consumer, boolean noColor) {
+        LogCallback(String service, ILogConsumer consumer, boolean noColor) {
             this.service = service;
             this.consumer = consumer;
             this.noColor = noColor;
@@ -3697,20 +3698,23 @@ public final class ComposeService implements IComposeService {
             byte[] payload = frame.getPayload();
             if (payload == null || payload.length == 0) return;
             StreamType streamType = frame.getStreamType() == StreamType.STDERR ? StreamType.STDERR : StreamType.STDOUT;
-            StringBuilder buffer = pending.computeIfAbsent(streamType, ignored -> new StringBuilder());
-            buffer.append(new String(payload, StandardCharsets.UTF_8));
-            int newline;
-            while ((newline = buffer.indexOf("\n")) >= 0) {
-                String line = buffer.substring(0, newline);
-                buffer.delete(0, newline + 1);
-                emit(stripCarriageReturn(line), streamType);
+            ByteArrayOutputStream buffer = pending.computeIfAbsent(streamType, ignored -> new ByteArrayOutputStream());
+            // A UTF-8 character can span frames; decode only after the complete line has arrived.
+            int offset = 0;
+            for (int index = 0; index < payload.length; index++) {
+                if (payload[index] != '\n') continue;
+                buffer.write(payload, offset, index - offset);
+                emit(stripCarriageReturn(buffer.toString(StandardCharsets.UTF_8)), streamType);
+                buffer.reset();
+                offset = index + 1;
             }
+            buffer.write(payload, offset, payload.length - offset);
         }
 
         @Override
         public synchronized void onComplete() {
             pending.forEach((streamType, buffer) -> {
-                if (!buffer.isEmpty()) emit(buffer.toString(), streamType);
+                if (buffer.size() > 0) emit(buffer.toString(StandardCharsets.UTF_8), streamType);
             });
             pending.clear();
             consumer.onLogComplete(service);

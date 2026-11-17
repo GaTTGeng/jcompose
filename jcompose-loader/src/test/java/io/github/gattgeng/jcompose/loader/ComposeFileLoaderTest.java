@@ -1781,6 +1781,8 @@ class ComposeFileLoaderTest {
         var project = new ComposeFileLoader().load(directory, null);
 
         assertEquals(3, ((List<?>) project.services().get("app").configuration().get("ports")).size());
+        assertEquals("::1", project.services().get("app").ports().get(1).hostIp());
+        assertEquals("::1", project.services().get("app").ports().get(2).hostIp());
     }
 
     @Test

@@ -2121,6 +2121,43 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void logsKeepStdoutAndStderrIdentityAndPerStreamOrder() throws Exception {
+        String projectName = "jcompose-log-streams-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox:1.36
+                    command: ["sh", "-c", "echo out-one; echo err-one >&2; echo out-two; echo err-two >&2; sleep 1"]
+                """);
+
+        CopyOnWriteArrayList<String> stdout = new CopyOnWriteArrayList<>();
+        CopyOnWriteArrayList<String> stderr = new CopyOnWriteArrayList<>();
+        CopyOnWriteArrayList<String> completed = new CopyOnWriteArrayList<>();
+        ILogConsumer consumer = new ILogConsumer() {
+            @Override public void onLog(String serviceName, String message, boolean standardError) {
+                assertEquals("app", serviceName);
+                (standardError ? stderr : stdout).add(message);
+            }
+            @Override public void onLogComplete(String serviceName) { completed.add(serviceName); }
+            @Override public void onStatus(String serviceName, String message) { }
+        };
+        IComposeService service = new ComposeService();
+        try {
+            service.upAsync(context, null).get(Duration.ofMinutes(2).toMillis(), TimeUnit.MILLISECONDS);
+            service.waitAsync(context, null).get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+            service.logsAsync(context, io.github.gattgeng.jcompose.api.ComposeLogsOptions.builder().build(), consumer)
+                    .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
+
+            assertEquals(java.util.List.of("out-one", "out-two"), stdout);
+            assertEquals(java.util.List.of("err-one", "err-two"), stderr);
+            assertEquals(java.util.List.of("app"), completed);
+        } finally {
+            service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    @Test
     void upDoesNotCollectLogsForServicesWithAttachDisabled() throws Exception {
         String projectName = "jcompose-attach-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
