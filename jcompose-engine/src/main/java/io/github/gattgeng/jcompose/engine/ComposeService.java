@@ -938,11 +938,12 @@ public final class ComposeService implements IComposeService {
                     }
                 }
                 java.util.Set<String> selectedVolumeNames = usedVolumeNames;
+                Map<String, Map<?, ?>> rawVolumes = rawVolumeValues(response);
                 return response.getVolumes().stream()
                         .filter(volume -> volume.getLabels() != null
                                 && context.projectName().equals(volume.getLabels().get(ComposeConstants.PROJECT_LABEL))
                                 && (selectedVolumeNames == null || selectedVolumeNames.contains(volume.getName())))
-                        .map(ComposeService::volumeSummary).toList();
+                        .map(volume -> volumeSummary(volume, rawVolumes.get(volume.getName()))).toList();
             } catch (java.io.IOException exception) {
                 throw new java.io.UncheckedIOException("Could not close Docker Engine client.", exception);
             }
@@ -1204,8 +1205,20 @@ public final class ComposeService implements IComposeService {
         catch (NumberFormatException ignored) { return Integer.MAX_VALUE; }
     }
 
-    static VolumesSummary volumeSummary(com.github.dockerjava.api.command.InspectVolumeResponse volume) {
-        Map<String, Object> raw = volume.getRawValues();
+    static Map<String, Map<?, ?>> rawVolumeValues(com.github.dockerjava.api.command.ListVolumesResponse response) {
+        Map<String, Map<?, ?>> volumes = new java.util.HashMap<>();
+        // docker-java retains raw values on the top-level response, not its nested volumes.
+        if (response.getRawValues().get("Volumes") instanceof List<?> rawVolumes) {
+            for (Object item : rawVolumes) {
+                if (item instanceof Map<?, ?> raw && raw.get("Name") instanceof String name)
+                    volumes.put(name, raw);
+            }
+        }
+        return volumes;
+    }
+
+    static VolumesSummary volumeSummary(com.github.dockerjava.api.command.InspectVolumeResponse volume, Map<?, ?> raw) {
+        if (raw == null) raw = volume.getRawValues();
         return new VolumesSummary(volume.getName(), volume.getDriver(), volume.getMountpoint(), volume.getLabels(),
                 stringValue(raw.get("Scope"), null), volume.getOptions(), stringValue(raw.get("CreatedAt"), null));
     }
