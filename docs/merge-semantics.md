@@ -10,6 +10,7 @@ The current implementation is an incremental subset, not full Docker Compose mer
 | Mappings | Recursively merges keys; later values replace matching scalar leaves. |
 | Service `build` | String contexts are normalized to `context` mappings before merging, so switching between short and long syntax retains other build options. |
 | Service `logging` | A changed explicit driver replaces the earlier logging configuration; otherwise the two mappings merge. |
+| Service `dns`, `dns_opt`, `dns_search`, `env_file`, `label_file`, and `tmpfs` | String and list forms are combined in order, with exact duplicates removed. |
 | Standard lists | Appends overlay entries, preserving order. Exact duplicate entries are removed for `build.tags`, `cap_add`, `cap_drop`, `devices`, `deploy.placement.constraints`, `deploy.placement.preferences`, `deploy.reservations.generic_resources`, `device_cgroup_rules`, `dns`, `dns_opt`, `dns_search`, `env_file`, `expose`, `extra_hosts`, `external_links`, `gpus`, `group_add`, `links`, `profiles`, `security_opt`, `tmpfs`, and `volumes_from`. |
 | Service `ports` lists | Replaces entries with the same parsed `ip`, `target`, `published`, and `protocol` key for short and long entries, including ranges and Docker Compose's unbracketed IPv6 short form; other entries are retained. |
 | Fields accepting mapping and list forms (`environment`, `labels`, `annotations`, `sysctls`, `build.args`, `build.labels`, and `build.additional_contexts`) | Converted to mappings before overlays merge, so later values replace earlier values with the same key. |

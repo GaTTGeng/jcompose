@@ -1906,6 +1906,24 @@ public final class ComposeFileLoader {
             Object effective = merged.get(key);
             if (serviceScope && "logging".equals(key) && loggingDriverChanged(before, after)) {
                 replaceProvenance(result, overlayProvenance, child, child);
+            } else if (serviceScope && isScalarSequenceField(key) && scalarSequence(before) != null
+                    && scalarSequence(after) != null && effective instanceof List<?> mergedList) {
+                List<?> baseItems = scalarSequence(before);
+                List<?> overlayItems = scalarSequence(after);
+                Map<String, Path> baseSources = new LinkedHashMap<>(result);
+                result.keySet().removeIf(source -> source.startsWith(child + "["));
+                for (int index = 0; index < baseItems.size(); index++) {
+                    Object item = baseItems.get(index);
+                    if (baseItems.subList(0, index).contains(item)) continue;
+                    String sourcePath = before instanceof String ? child : child + "[" + index + "]";
+                    replaceProvenance(result, baseSources, sourcePath, child + "[" + mergedList.indexOf(item) + "]");
+                }
+                for (int index = 0; index < overlayItems.size(); index++) {
+                    int mergedIndex = mergedList.indexOf(overlayItems.get(index));
+                    if (baseItems.contains(overlayItems.get(index))) continue;
+                    String sourcePath = after instanceof String ? child : child + "[" + index + "]";
+                    replaceProvenance(result, overlayProvenance, sourcePath, child + "[" + mergedIndex + "]");
+                }
             } else if (serviceScope && "build".equals(key) && buildMap(before) != null && buildMap(after) != null
                     && effective instanceof Map<?, ?> mergedMap) {
                 Map<String, Path> baseSources = buildProvenance(before, child, result);
@@ -2570,6 +2588,10 @@ public final class ComposeFileLoader {
                 result.put(key, after);
                 continue;
             }
+            if (serviceScope && isScalarSequenceField(key) && scalarSequence(before) != null && scalarSequence(after) != null) {
+                result.put(key, mergeUniqueList(scalarSequence(before), scalarSequence(after)));
+                continue;
+            }
             if (serviceScope && "build".equals(key) && buildMap(before) != null && buildMap(after) != null) {
                 result.put(key, merge(buildMap(before), buildMap(after), childPath, false));
                 continue;
@@ -2607,6 +2629,16 @@ public final class ComposeFileLoader {
     private static Map<String, Object> buildMap(Object value) {
         if (value instanceof String context) return Map.of("context", context);
         if (value instanceof Map<?, ?> map) return stringKeyMapUnchecked(map);
+        return null;
+    }
+
+    private static boolean isScalarSequenceField(String key) {
+        return Set.of("dns", "dns_opt", "dns_search", "env_file", "label_file", "tmpfs").contains(key);
+    }
+
+    private static List<?> scalarSequence(Object value) {
+        if (value instanceof String text) return List.of(text);
+        if (value instanceof List<?> list) return list;
         return null;
     }
 
