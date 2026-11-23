@@ -1745,7 +1745,7 @@ public final class ComposeService implements IComposeService {
                                                 int stopTimeoutSeconds, ILogConsumer logConsumer) {
         validateRunnableService(service);
         validateContainerNameScaling(service, replicas);
-        validateComposeLabels(stringMap(service.configuration().get("labels")));
+        validateComposeLabels(labelMap(service.configuration().get("labels")));
         int effectiveStopTimeout = service.configuration().get("stop_grace_period") == null ? stopTimeoutSeconds
                 : parseDurationSeconds(String.valueOf(service.configuration().get("stop_grace_period")));
         List<Container> existing = projectContainers(client, context.projectName(), List.of(service.name()), true).stream()
@@ -1834,7 +1834,7 @@ public final class ComposeService implements IComposeService {
             labels.put(ComposeConstants.VERSION_LABEL, "3.0.0");
             labels.put(ComposeConstants.WORKING_DIR_LABEL, project.sourceFile().getParent().toString());
             labels.put(ComposeConstants.CONFIG_FILES_LABEL, project.sourceFile().toString());
-            labels.putAll(stringMap(service.configuration().get("labels")));
+            labels.putAll(labelMap(service.configuration().get("labels")));
 
             com.github.dockerjava.api.model.HostConfig host = serviceHostConfig(client, project, context.projectName(), service,
                     anonymousVolumes.getOrDefault(index, Map.of()));
@@ -1947,7 +1947,7 @@ public final class ComposeService implements IComposeService {
     }
 
     private static Map<String, String> resourceLabels(Map<String, Object> definition, String projectName) {
-        Map<String, String> labels = new LinkedHashMap<>(stringMap(definition.get("labels")));
+        Map<String, String> labels = new LinkedHashMap<>(labelMap(definition.get("labels")));
         validateComposeLabels(labels);
         labels.put(ComposeConstants.PROJECT_LABEL, projectName);
         return labels;
@@ -1966,12 +1966,12 @@ public final class ComposeService implements IComposeService {
     }
 
     private static void validateServiceLabels(ServiceDefinition service) {
-        validateComposeLabels(stringMap(service.configuration().get("labels")));
+        validateComposeLabels(labelMap(service.configuration().get("labels")));
     }
 
     private static void validateBuildLabels(ServiceDefinition service) {
         if (service.build() instanceof Map<?, ?> build)
-            validateComposeLabels(stringMap(build.get("labels")));
+            validateComposeLabels(labelMap(build.get("labels")));
     }
 
     private static com.github.dockerjava.api.model.Network.Ipam networkIpam(Map<String, Object> options) {
@@ -3524,6 +3524,21 @@ public final class ComposeService implements IComposeService {
         return result;
     }
 
+    static Map<String, String> labelMap(Object source) {
+        Map<String, String> labels = new LinkedHashMap<>();
+        if (source instanceof Map<?, ?> mapping) {
+            mapping.forEach((key, value) -> labels.put(String.valueOf(key), value == null ? "" : String.valueOf(value)));
+        } else if (source instanceof List<?> list) {
+            for (Object item : list) {
+                String entry = String.valueOf(item);
+                int separator = entry.indexOf('=');
+                labels.put(separator < 0 ? entry : entry.substring(0, separator),
+                        separator < 0 ? "" : entry.substring(separator + 1));
+            }
+        }
+        return labels;
+    }
+
     private static Map<String, String> stringMap(Object source) {
         Map<String, String> result = new LinkedHashMap<>();
         if (source instanceof Map<?, ?> map) {
@@ -4089,7 +4104,7 @@ public final class ComposeService implements IComposeService {
                         Map<String, String> buildArgs = buildArgs(build.get("args"), System.getenv(), project.environment(),
                                 options == null ? null : options.buildArgs());
                         buildArgs.forEach(command::withBuildArg);
-                        Map<String, String> labels = new LinkedHashMap<>(stringMap(build.get("labels")));
+                        Map<String, String> labels = new LinkedHashMap<>(labelMap(build.get("labels")));
                         if (options != null && options.labels() != null) labels.putAll(options.labels());
                         validateComposeLabels(labels);
                         labels.put(ComposeConstants.PROJECT_LABEL, context.projectName());
@@ -4368,7 +4383,7 @@ public final class ComposeService implements IComposeService {
                 labels.put(ComposeConstants.VERSION_LABEL, "3.0.0");
                 labels.put(ComposeConstants.WORKING_DIR_LABEL, project.sourceFile().getParent().toString());
                 labels.put(ComposeConstants.CONFIG_FILES_LABEL, project.sourceFile().toString());
-                labels.putAll(stringMap(service.configuration().get("labels")));
+                labels.putAll(labelMap(service.configuration().get("labels")));
                 Map<String, String> runLabels = parseKeyValueOptions(effective.labels(), "label");
                 validateComposeLabels(runLabels);
                 labels.putAll(runLabels);

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Expose list-form resource labels in typed models, avoid inheriting bare label values from the process environment, and ignore bare keys in label files.
+- Preserve network, volume, config, and secret labels when overlays mix list and mapping forms.
 - Let the last `env_file` definition for a path replace earlier short or long forms across overlays.
 - Merge string and list forms of DNS, environment-file, label-file, and tmpfs service options across Compose files.
 - Merge short and long build forms, and replace logging configuration when an overlay changes its driver.

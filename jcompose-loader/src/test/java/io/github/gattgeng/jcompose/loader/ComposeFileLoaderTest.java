@@ -2057,7 +2057,7 @@ class ComposeFileLoaderTest {
 
     @Test
     void labelFilesMergeInOrderAndInlineLabelsTakePrecedence() throws Exception {
-        Files.writeString(directory.resolve("base.labels"), "SHARED=base\nFILE_ONLY=one\n");
+        Files.writeString(directory.resolve("base.labels"), "SHARED=base\nFILE_ONLY=one\nPATH\n");
         Files.writeString(directory.resolve("override.labels"), "SHARED=override\nINTERPOLATED=${LABEL_VALUE}\n");
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:
@@ -2067,12 +2067,13 @@ class ComposeFileLoaderTest {
                     labels:
                       SHARED: inline
                       INLINE: "yes"
+                      EMPTY: null
                 """);
 
         var project = new ComposeFileLoader().load(directory, null, Map.of("LABEL_VALUE", "resolved"));
         Map<?, ?> labels = (Map<?, ?>) project.services().get("app").configuration().get("labels");
 
-        assertEquals(Map.of("SHARED", "inline", "FILE_ONLY", "one", "INTERPOLATED", "resolved", "INLINE", "yes"), labels);
+        assertEquals(Map.of("SHARED", "inline", "FILE_ONLY", "one", "INTERPOLATED", "resolved", "INLINE", "yes", "EMPTY", ""), labels);
         assertTrue(project.diagnostics().isEmpty());
     }
 

@@ -893,10 +893,12 @@ class ComposeServiceDockerIntegrationTest {
                     command: ["sh", "-c", "sleep 60"]
                     init: true
                     uts: host
+                    labels: [PATH]
                     networks: [frontend]
                     volumes: ["./data:/data:ro"]
                 networks:
-                  frontend: {}
+                  frontend:
+                    labels: [PATH, 'feature=test']
                 """);
 
         IComposeService service = new ComposeService();
@@ -915,6 +917,12 @@ class ComposeServiceDockerIntegrationTest {
                     .get(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS);
             try (var client = DockerClientFactory.create(context)) {
                 try {
+                    var networkLabels = client.inspectNetworkCmd().withNetworkId(projectName + "_frontend")
+                            .exec().getLabels();
+                    assertEquals("", networkLabels.get("PATH"));
+                    assertEquals("test", networkLabels.get("feature"));
+                    assertEquals("", client.inspectContainerCmd(containers.getFirst().id())
+                            .exec().getConfig().getLabels().get("PATH"));
                     assertTrue(Boolean.TRUE.equals(client.inspectContainerCmd(containers.getFirst().id())
                             .exec().getHostConfig().getInit()));
                     assertEquals("host", client.inspectContainerCmd(containers.getFirst().id())
