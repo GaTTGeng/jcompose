@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Report an image reference actually used by a selected container in image summaries, instead of an unrelated image tag.
 - Match Docker Compose's terminal-sensitive default for `exec` TTY allocation while keeping interactive stdin open by default.
 - Reject invalid variable names in project and service environment files, with source line information.
 - Match Docker Compose's terminal-sensitive `run` TTY default while keeping standard input open by default.

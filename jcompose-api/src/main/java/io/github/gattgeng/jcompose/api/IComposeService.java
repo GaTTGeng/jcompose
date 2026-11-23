@@ -142,7 +142,8 @@ public interface IComposeService {
      * @return a future containing one process summary per running container */
     CompletableFuture<List<ContainerProcSummary>> topAsync(ComposeProjectContext c, ComposeTopOptions o);
 
-    /** Lists images used by selected project services.
+    /** Lists images used by selected project services, deduplicated by image ID.
+     * The repository and tag come from one selected container's image reference.
      * @param c project context and resource scope
      * @param o image-list options, or {@code null} for defaults
      * @return a future containing the matching image summaries */
