@@ -25,6 +25,99 @@ class ComposeLoaderConformanceTest {
     Path temporaryDirectory;
 
     @Test
+    void mergesBuildStringAndMappingFormsAcrossOverlays() throws IOException {
+        Files.writeString(temporaryDirectory.resolve("compose.yaml"), """
+                services:
+                  app.one:
+                    build: ./source
+                  worker:
+                    build:
+                      context: ./old
+                      dockerfile: Workerfile
+                """);
+        Files.writeString(temporaryDirectory.resolve("overlay.yaml"), """
+                services:
+                  app.one:
+                    build:
+                      dockerfile: Customfile
+                  worker:
+                    build: ./new
+                """);
+
+        var project = new ComposeFileLoader().loadMerged(temporaryDirectory, List.of("compose.yaml", "overlay.yaml"));
+
+        assertEquals(Map.of("context", "./source", "dockerfile", "Customfile"),
+                project.services().get("app.one").build());
+        assertEquals(Map.of("context", "./new", "dockerfile", "Workerfile"),
+                project.services().get("worker").build());
+    }
+
+    @Test
+    void replacesLoggingOptionsWhenDriverChangesAndMergesOtherwise() throws IOException {
+        Files.writeString(temporaryDirectory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: example/app
+                    logging:
+                      driver: json-file
+                      options: {max-size: 10m, max-file: '3'}
+                  worker:
+                    image: example/worker
+                    logging:
+                      driver: json-file
+                      options: {max-size: 10m, max-file: '3'}
+                """);
+        Files.writeString(temporaryDirectory.resolve("overlay.yaml"), """
+                services:
+                  app:
+                    logging:
+                      driver: local
+                      options: {max-size: 20m}
+                  worker:
+                    logging:
+                      options: {max-size: 20m}
+                """);
+
+        var project = new ComposeFileLoader().loadMerged(temporaryDirectory, List.of("compose.yaml", "overlay.yaml"));
+
+        assertEquals(Map.of("driver", "local", "options", Map.of("max-size", "20m")),
+                project.services().get("app").configuration().get("logging"));
+        assertEquals(Map.of("driver", "json-file", "options", Map.of("max-size", "20m", "max-file", "3")),
+                project.services().get("worker").configuration().get("logging"));
+    }
+
+    @Test
+    void preservesSourceOfBuildFieldsWhenTheOtherFileUsesShortSyntax() throws IOException {
+        Path base = temporaryDirectory.resolve("compose.yaml");
+        Path overlay = temporaryDirectory.resolve("overlay.yaml");
+        Files.writeString(base, """
+                services:
+                  first:
+                    build:
+                      context: ./old
+                      cache_to: [type=local,dest=cache]
+                  second:
+                    build: ./source
+                """);
+        Files.writeString(overlay, """
+                services:
+                  first:
+                    build: ./new
+                  second:
+                    build:
+                      cache_to: [type=local,dest=cache]
+                """);
+
+        var diagnostics = new ComposeFileLoader().loadMerged(temporaryDirectory,
+                List.of("compose.yaml", "overlay.yaml")).diagnostics();
+
+        assertEquals(base.toAbsolutePath().normalize().toString(), diagnostics.stream()
+                .filter(d -> d.propertyPath().equals("services.first.build.cache_to")).findFirst().orElseThrow().sourceFile());
+        assertEquals(overlay.toAbsolutePath().normalize().toString(), diagnostics.stream()
+                .filter(d -> d.propertyPath().equals("services.second.build.cache_to")).findFirst().orElseThrow().sourceFile());
+    }
+
+    @Test
     void acceptsMissingOrEmptyServicesLikeDockerCompose() throws IOException {
         Path missingServices = temporaryDirectory.resolve("missing-services.yaml");
         Files.writeString(missingServices, "name: empty-project\n");
