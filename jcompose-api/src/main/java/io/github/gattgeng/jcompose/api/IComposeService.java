@@ -157,10 +157,10 @@ public interface IComposeService {
      * @return a future containing the resolved host and port */
     CompletableFuture<PortResult> portAsync(ComposeProjectContext c, String service, int port, ComposePortOptions o);
 
-    /** Streams logs from selected project containers to a consumer.
+    /** Streams logs from selected project containers to a consumer or the console.
      * @param c project context and resource scope
      * @param o log-selection and formatting options, or {@code null} for defaults
-     * @param consumer receives log entries; {@code null} discards them
+     * @param consumer receives log entries; {@code null} writes stdout and stderr to the corresponding console streams
      * @return a future completed when the requested log stream ends */
     CompletableFuture<Void> logsAsync(ComposeProjectContext c, ComposeLogsOptions o, ILogConsumer consumer);
 

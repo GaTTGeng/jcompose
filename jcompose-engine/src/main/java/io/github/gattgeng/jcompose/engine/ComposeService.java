@@ -601,7 +601,7 @@ public final class ComposeService implements IComposeService {
     public CompletableFuture<Void> logsAsync(ComposeProjectContext context, ComposeLogsOptions options, ILogConsumer consumer) {
         return supply(() -> {
             java.util.Objects.requireNonNull(context, "context");
-            java.util.Objects.requireNonNull(consumer, "consumer");
+            ILogConsumer logConsumer = consumer == null ? consoleLogConsumer(System.out, System.err) : consumer;
             ComposeLogsOptions effective = options == null ? ComposeLogsOptions.builder().build() : options;
             Integer tail = parseTail(effective.tail());
             Integer since = parseLogTimestamp(effective.since(), Instant.now());
@@ -614,7 +614,7 @@ public final class ComposeService implements IComposeService {
                 for (Container container : containers) {
                     String service = label(container, ComposeConstants.SERVICE_LABEL);
                     if (service == null || service.isBlank()) service = container.getId();
-                    LogCallback callback = new LogCallback(service, consumer, effective.noColor());
+                    LogCallback callback = new LogCallback(service, logConsumer, effective.noColor());
                     var command = client.logContainerCmd(container.getId())
                             .withFollowStream(effective.follow())
                             .withTimestamps(effective.timestamps())
@@ -3700,6 +3700,16 @@ public final class ComposeService implements IComposeService {
         } catch (ArithmeticException | NumberFormatException exception) {
             throw new IllegalArgumentException("Log timestamp is outside the supported range: " + value, exception);
         }
+    }
+
+    static ILogConsumer consoleLogConsumer(java.io.PrintStream stdout, java.io.PrintStream stderr) {
+        return new ILogConsumer() {
+            @Override public void onLog(String serviceName, String message, boolean standardError) {
+                (standardError ? stderr : stdout).println(message);
+            }
+            @Override public void onLogComplete(String serviceName) { }
+            @Override public void onStatus(String serviceName, String message) { }
+        };
     }
 
     static final class LogCallback extends Adapter<Frame> {
