@@ -1890,20 +1890,30 @@ public final class ComposeFileLoader {
                                                       Map<String, Object> merged, Map<String, Path> baseProvenance,
                                                       Map<String, Path> overlayProvenance) {
         Map<String, Path> result = new LinkedHashMap<>(baseProvenance);
-        applyOverlayProvenance(base, overlay, merged, "", result, overlayProvenance);
+        applyOverlayProvenance(base, overlay, merged, "", result, overlayProvenance, false);
         return result;
     }
 
     private static void applyOverlayProvenance(Map<String, Object> base, Map<String, Object> overlay,
                                                Map<String, Object> merged, String path,
-                                               Map<String, Path> result, Map<String, Path> overlayProvenance) {
+                                               Map<String, Path> result, Map<String, Path> overlayProvenance,
+                                               boolean serviceScope) {
         for (var entry : overlay.entrySet()) {
             String key = entry.getKey();
             String child = appendPathSegment(path, key);
             Object before = base.get(key);
             Object after = entry.getValue();
             Object effective = merged.get(key);
-            if (isExtraHostsMergeField(path, key) && effective instanceof List<?> mergedHosts) {
+            if (serviceScope && "logging".equals(key) && loggingDriverChanged(before, after)) {
+                replaceProvenance(result, overlayProvenance, child, child);
+            } else if (serviceScope && "build".equals(key) && buildMap(before) != null && buildMap(after) != null
+                    && effective instanceof Map<?, ?> mergedMap) {
+                Map<String, Path> baseSources = buildProvenance(before, child, result);
+                result.clear();
+                result.putAll(baseSources);
+                applyOverlayProvenance(buildMap(before), buildMap(after), stringKeyMapUnchecked(mergedMap),
+                        child, result, buildProvenance(after, child, overlayProvenance), false);
+            } else if (isExtraHostsMergeField(path, key) && effective instanceof List<?> mergedHosts) {
                 List<String> baseHosts = base.containsKey(key) ? extraHostsValues(before) : List.of();
                 List<String> overlayHosts = extraHostsValues(after);
                 if (baseHosts != null && overlayHosts != null) {
@@ -1926,11 +1936,11 @@ public final class ComposeFileLoader {
                 result.putAll(normalizedBaseProvenance);
                 Map<String, Path> normalizedOverlayProvenance = remapListMappingProvenance(key, after, child, overlayProvenance);
                 applyOverlayProvenance(listMappingValue(key, before), listMappingValue(key, after),
-                        stringKeyMapUnchecked(mergedMap), child, result, normalizedOverlayProvenance);
+                        stringKeyMapUnchecked(mergedMap), child, result, normalizedOverlayProvenance, false);
             } else if (before instanceof Map<?, ?> baseMap && after instanceof Map<?, ?> overlayMap
                     && effective instanceof Map<?, ?> mergedMap) {
                 applyOverlayProvenance(stringKeyMapUnchecked(baseMap), stringKeyMapUnchecked(overlayMap),
-                        stringKeyMapUnchecked(mergedMap), child, result, overlayProvenance);
+                        stringKeyMapUnchecked(mergedMap), child, result, overlayProvenance, "services".equals(path));
             } else if (before instanceof List<?> baseList && after instanceof List<?> overlayList
                     && effective instanceof List<?> mergedList) {
                 if (REPLACE_FIELDS.contains(key)) {
@@ -1961,6 +1971,12 @@ public final class ComposeFileLoader {
 
     private static boolean isPathAtOrBelow(String path, String prefix) {
         return path.equals(prefix) || path.startsWith(prefix + ".") || path.startsWith(prefix + "[");
+    }
+
+    private static Map<String, Path> buildProvenance(Object value, String path, Map<String, Path> sources) {
+        Map<String, Path> result = new LinkedHashMap<>(sources);
+        if (value instanceof String && sources.containsKey(path)) result.put(path + ".context", sources.get(path));
+        return result;
     }
 
     private static boolean isListMappingMergeField(String path, String key) {
@@ -2537,12 +2553,25 @@ public final class ComposeFileLoader {
     }
 
     private static Map<String, Object> merge(Map<String, Object> base, Map<String, Object> overlay, String path) {
+        return merge(base, overlay, path, false);
+    }
+
+    private static Map<String, Object> merge(Map<String, Object> base, Map<String, Object> overlay, String path,
+                                             boolean serviceScope) {
         Map<String, Object> result = new LinkedHashMap<>(base);
         for (var entry : overlay.entrySet()) {
             String key = entry.getKey(); Object before = result.get(key), after = entry.getValue();
             String childPath = path.isEmpty() ? key : path + "." + key;
             if (after instanceof MergeTagValue tagged) {
                 result.put(key, tagged.tag().equals("!reset") ? resetValue(before, tagged.value()) : tagged.value());
+                continue;
+            }
+            if (serviceScope && "logging".equals(key) && loggingDriverChanged(before, after)) {
+                result.put(key, after);
+                continue;
+            }
+            if (serviceScope && "build".equals(key) && buildMap(before) != null && buildMap(after) != null) {
+                result.put(key, merge(buildMap(before), buildMap(after), childPath, false));
                 continue;
             }
             if (isExtraHostsMergeField(path, key)) {
@@ -2562,7 +2591,7 @@ public final class ComposeFileLoader {
                 }
             }
             if (before instanceof Map<?, ?> a && after instanceof Map<?, ?> b && !REPLACE_FIELDS.contains(key)) {
-                result.put(key, merge(stringKeyMapUnchecked(a), stringKeyMapUnchecked(b), childPath));
+                result.put(key, merge(stringKeyMapUnchecked(a), stringKeyMapUnchecked(b), childPath, "services".equals(path)));
             } else if (before instanceof List<?> a && after instanceof List<?> b) {
                 if (REPLACE_FIELDS.contains(key)) result.put(key, after);
                 else if (KEYED_LIST_FIELDS.contains(key)) result.put(key, mergeKeyedList(a, b));
@@ -2573,6 +2602,18 @@ public final class ComposeFileLoader {
             } else result.put(key, after);
         }
         return result;
+    }
+
+    private static Map<String, Object> buildMap(Object value) {
+        if (value instanceof String context) return Map.of("context", context);
+        if (value instanceof Map<?, ?> map) return stringKeyMapUnchecked(map);
+        return null;
+    }
+
+    private static boolean loggingDriverChanged(Object before, Object after) {
+        if (!(before instanceof Map<?, ?> base) || !(after instanceof Map<?, ?> overlay)) return false;
+        return base.containsKey("driver") && overlay.containsKey("driver")
+                && !java.util.Objects.equals(base.get("driver"), overlay.get("driver"));
     }
 
     private static Object resetValue(Object previous, Object supplied) {
