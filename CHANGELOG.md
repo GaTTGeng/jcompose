@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Merge string and list forms of DNS, environment-file, label-file, and tmpfs service options across Compose files.
 - Merge short and long build forms, and replace logging configuration when an overlay changes its driver.
 - Preserve Docker's mount types in container summaries, including bind mounts and tmpfs.
 - Report an image reference actually used by a selected container in image summaries, instead of an unrelated image tag.
