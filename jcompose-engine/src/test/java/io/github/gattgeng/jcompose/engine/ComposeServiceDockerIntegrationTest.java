@@ -747,6 +747,30 @@ class ComposeServiceDockerIntegrationTest {
     }
 
     @Test
+    void imagesUseTheContainerReferenceInsteadOfAnotherTag() throws Exception {
+        String projectName = "jcompose-images-" + UUID.randomUUID().toString().substring(0, 8);
+        ComposeProjectContext context = new ComposeProjectContext(projectName, directory);
+        String imageReference = projectName + ":used";
+        try (var client = DockerClientFactory.create(context)) {
+            client.pullImageCmd("busybox").withTag("1.36").start().awaitCompletion(2, TimeUnit.MINUTES);
+            client.tagImageCmd("busybox:1.36", projectName, "used").exec();
+            String containerId = null;
+            try {
+                containerId = client.createContainerCmd(imageReference).withCmd("true")
+                        .withLabels(java.util.Map.of("com.docker.compose.project", projectName,
+                                "com.docker.compose.service", "app")).exec().getId();
+                var images = new ComposeService().imagesAsync(context, null).get(30, TimeUnit.SECONDS);
+                assertEquals(1, images.size());
+                assertEquals(projectName, images.getFirst().repository());
+                assertEquals("used", images.getFirst().tag());
+            } finally {
+                if (containerId != null) client.removeContainerCmd(containerId).withForce(true).exec();
+                client.removeImageCmd(imageReference).exec();
+            }
+        }
+    }
+
+    @Test
     void volumesRetainDockerScopeAndCreationTime() throws Exception {
         String projectName = "jcompose-volume-metadata-" + UUID.randomUUID().toString().substring(0, 8);
         ComposeProjectContext context = new ComposeProjectContext(projectName, directory);

@@ -783,14 +783,15 @@ public final class ComposeService implements IComposeService {
         return supply(() -> {
             List<String> selectedServices = selectExistingServices(context, options == null ? null : options.services()).serviceNames();
             try (DockerClient client = createDockerClient(context)) {
-                java.util.Set<String> usedImageIds = projectContainers(client, context.projectName(), selectedServices, true)
-                        .stream().map(Container::getImageId).filter(java.util.Objects::nonNull)
-                        .collect(java.util.stream.Collectors.toSet());
-                if (usedImageIds.isEmpty()) return List.of();
+                Map<String, String> usedImages = new LinkedHashMap<>();
+                projectContainers(client, context.projectName(), selectedServices, true).stream()
+                        .sorted(containerOrder()).filter(container -> container.getImageId() != null)
+                        .forEach(container -> usedImages.putIfAbsent(container.getImageId(), container.getImage()));
+                if (usedImages.isEmpty()) return List.of();
                 List<ImageSummary> summaries = client.listImagesCmd().exec().stream()
-                        .filter(image -> usedImageIds.contains(image.getId()))
+                        .filter(image -> usedImages.containsKey(image.getId()))
                         .sorted(java.util.Comparator.comparing(Image::getId))
-                        .map(ComposeService::imageSummary)
+                        .map(image -> imageSummary(image, usedImages.get(image.getId())))
                         .toList();
                 if (options == null || !options.quiet()) return summaries;
                 return summaries.stream()
@@ -1223,13 +1224,17 @@ public final class ComposeService implements IComposeService {
                 stringValue(raw.get("Scope"), null), volume.getOptions(), stringValue(raw.get("CreatedAt"), null));
     }
 
-    private static ImageSummary imageSummary(Image image) {
-        String reference = image.getRepoTags() == null || image.getRepoTags().length == 0
-                ? "<none>:<none>" : image.getRepoTags()[0];
+    static ImageSummary imageSummary(Image image, String reference) {
+        if (reference == null || reference.isBlank() || reference.startsWith("sha256:"))
+            return new ImageSummary(image.getId(), null, null, null,
+                    image.getSize() == null ? 0L : image.getSize(),
+                    image.getCreated() == null || image.getCreated() <= 0 ? null : Instant.ofEpochSecond(image.getCreated()), null);
+        int digest = reference.indexOf('@');
+        if (digest >= 0) reference = reference.substring(0, digest);
         int slash = reference.lastIndexOf('/');
         int colon = reference.lastIndexOf(':');
         String repository = colon > slash ? reference.substring(0, colon) : reference;
-        String tag = colon > slash ? reference.substring(colon + 1) : "latest";
+        String tag = colon > slash ? reference.substring(colon + 1) : digest >= 0 ? null : "latest";
         Instant created = image.getCreated() == null || image.getCreated() <= 0 ? null : Instant.ofEpochSecond(image.getCreated());
         return new ImageSummary(image.getId(), repository, tag, null,
                 image.getSize() == null ? 0L : image.getSize(), created, null);
