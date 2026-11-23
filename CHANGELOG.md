@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Preserve Docker's mount types in container summaries, including bind mounts and tmpfs.
 - Report an image reference actually used by a selected container in image summaries, instead of an unrelated image tag.
 - Allow a null log consumer to write container output to the corresponding console streams.
 - Match Docker Compose's terminal-sensitive default for `exec` TTY allocation while keeping interactive stdin open by default.

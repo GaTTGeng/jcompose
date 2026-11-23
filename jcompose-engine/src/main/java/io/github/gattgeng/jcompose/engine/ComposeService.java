@@ -1321,7 +1321,7 @@ public final class ComposeService implements IComposeService {
                 .toList();
     }
 
-    private static ContainerSummary containerResult(Container container, String project) {
+    static ContainerSummary containerResult(Container container, String project) {
         String service = label(container, ComposeConstants.SERVICE_LABEL);
         List<String> names = container.getNames() == null ? List.of() : java.util.Arrays.stream(container.getNames())
                 .map(name -> name.startsWith("/") ? name.substring(1) : name).toList();
@@ -1334,8 +1334,17 @@ public final class ComposeService implements IComposeService {
         Map<String, String> labels = container.getLabels() == null ? Map.of() : Map.copyOf(container.getLabels());
         List<String> networks = container.getNetworkSettings() == null || container.getNetworkSettings().getNetworks() == null
                 ? List.of() : List.copyOf(container.getNetworkSettings().getNetworks().keySet());
+        Map<String, String> mountTypes = new java.util.HashMap<>();
+        // docker-java preserves the raw list on the container, not on nested mount objects.
+        if (container.getRawValues().get("Mounts") instanceof List<?> rawMounts) {
+            for (Object item : rawMounts) {
+                if (item instanceof Map<?, ?> raw && raw.get("Destination") instanceof String destination
+                        && raw.get("Type") instanceof String type) mountTypes.put(destination, type);
+            }
+        }
         List<MountInfo> mounts = container.getMounts() == null ? List.of() : container.getMounts().stream()
-                .map(mount -> new MountInfo(mount.getName() == null ? null : "volume", mount.getSource(),
+                .map(mount -> new MountInfo(mountTypes.getOrDefault(mount.getDestination(),
+                                mount.getName() == null ? null : "volume"), mount.getSource(),
                         mount.getDestination(), mount.getMode(), mount.getRw())).toList();
         String name = names.isEmpty() ? container.getId().substring(0, Math.min(12, container.getId().length())) : names.getFirst();
         int exitCode = containerExitCode(container.getStatus());

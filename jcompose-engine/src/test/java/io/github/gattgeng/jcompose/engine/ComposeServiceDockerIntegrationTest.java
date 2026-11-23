@@ -908,7 +908,7 @@ class ComposeServiceDockerIntegrationTest {
             assertEquals("app", containers.getFirst().service());
             assertTrue(containers.getFirst().networks().contains(projectName + "_frontend"));
             assertTrue(containers.getFirst().mounts().stream().anyMatch(mount -> "/data".equals(mount.destination())
-                    && "ro".equals(mount.mode()) && !mount.readWrite()));
+                    && "bind".equals(mount.type()) && "ro".equals(mount.mode()) && !mount.readWrite()));
             String runContainer = service.runAsync(context, "app", ComposeRunOptions.builder()
                     .command(java.util.List.of("sh", "-c", "sleep 60"))
                     .noDeps(true).detach(true).tty(false).build())
