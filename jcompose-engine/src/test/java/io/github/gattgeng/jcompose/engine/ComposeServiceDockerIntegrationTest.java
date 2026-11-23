@@ -2258,6 +2258,22 @@ class ComposeServiceDockerIntegrationTest {
             assertEquals(java.util.List.of("out-one", "out-two"), stdout);
             assertEquals(java.util.List.of("err-one", "err-two"), stderr);
             assertEquals(java.util.List.of("app"), completed);
+
+            var consoleOut = new java.io.ByteArrayOutputStream();
+            var consoleErr = new java.io.ByteArrayOutputStream();
+            var originalOut = System.out;
+            var originalErr = System.err;
+            try (var capturedOut = new java.io.PrintStream(consoleOut, true, StandardCharsets.UTF_8);
+                 var capturedErr = new java.io.PrintStream(consoleErr, true, StandardCharsets.UTF_8)) {
+                System.setOut(capturedOut);
+                System.setErr(capturedErr);
+                service.logsAsync(context, null, null).get(30, TimeUnit.SECONDS);
+            } finally {
+                System.setOut(originalOut);
+                System.setErr(originalErr);
+            }
+            assertEquals("out-one\nout-two\n", consoleOut.toString(StandardCharsets.UTF_8).replace("\r\n", "\n"));
+            assertEquals("err-one\nerr-two\n", consoleErr.toString(StandardCharsets.UTF_8).replace("\r\n", "\n"));
         } finally {
             service.downAsync(context, null).get(Duration.ofMinutes(1).toMillis(), TimeUnit.MILLISECONDS);
         }

@@ -5,6 +5,8 @@ import com.github.dockerjava.api.model.StreamType;
 import io.github.gattgeng.jcompose.api.ILogConsumer;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -13,6 +15,21 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class ComposeLogCallbackTest {
+    @Test
+    void consoleConsumerWritesEachStreamToItsCorrespondingOutput() {
+        var stdout = new ByteArrayOutputStream();
+        var stderr = new ByteArrayOutputStream();
+        var consumer = ComposeService.consoleLogConsumer(new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(stderr, true, StandardCharsets.UTF_8));
+        var callback = new ComposeService.LogCallback("app", consumer, false);
+        callback.onNext(frame(StreamType.STDOUT, "hello\n"));
+        callback.onNext(frame(StreamType.STDERR, "error\n"));
+        callback.onComplete();
+
+        assertEquals("hello" + System.lineSeparator(), stdout.toString(StandardCharsets.UTF_8));
+        assertEquals("error" + System.lineSeparator(), stderr.toString(StandardCharsets.UTF_8));
+    }
+
     @Test
     void interleavedFramesKeepStreamIdentityAndPerStreamLineOrder() {
         List<String> lines = new ArrayList<>();
