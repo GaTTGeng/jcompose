@@ -1910,6 +1910,21 @@ public final class ComposeFileLoader {
                     && scalarSequence(after) != null && effective instanceof List<?> mergedList) {
                 List<?> baseItems = scalarSequence(before);
                 List<?> overlayItems = scalarSequence(after);
+                if ("env_file".equals(key)) {
+                    Map<String, Path> baseSources = new LinkedHashMap<>(result);
+                    result.keySet().removeIf(source -> source.startsWith(child + "["));
+                    for (int index = 0; index < baseItems.size(); index++) {
+                        String sourcePath = before instanceof String ? child : child + "[" + index + "]";
+                        replaceProvenance(result, baseSources, sourcePath,
+                                child + "[" + envFileIndex(mergedList, baseItems.get(index)) + "]");
+                    }
+                    for (int index = 0; index < overlayItems.size(); index++) {
+                        String sourcePath = after instanceof String ? child : child + "[" + index + "]";
+                        replaceProvenance(result, overlayProvenance, sourcePath,
+                                child + "[" + envFileIndex(mergedList, overlayItems.get(index)) + "]");
+                    }
+                    continue;
+                }
                 Map<String, Path> baseSources = new LinkedHashMap<>(result);
                 result.keySet().removeIf(source -> source.startsWith(child + "["));
                 for (int index = 0; index < baseItems.size(); index++) {
@@ -2589,7 +2604,9 @@ public final class ComposeFileLoader {
                 continue;
             }
             if (serviceScope && isScalarSequenceField(key) && scalarSequence(before) != null && scalarSequence(after) != null) {
-                result.put(key, mergeUniqueList(scalarSequence(before), scalarSequence(after)));
+                result.put(key, "env_file".equals(key)
+                        ? mergeEnvFiles(scalarSequence(before), scalarSequence(after))
+                        : mergeUniqueList(scalarSequence(before), scalarSequence(after)));
                 continue;
             }
             if (serviceScope && "build".equals(key) && buildMap(before) != null && buildMap(after) != null) {
@@ -2640,6 +2657,25 @@ public final class ComposeFileLoader {
         if (value instanceof String text) return List.of(text);
         if (value instanceof List<?> list) return list;
         return null;
+    }
+
+    private static List<Object> mergeEnvFiles(List<?> base, List<?> overlay) {
+        Map<Object, Object> files = new LinkedHashMap<>();
+        for (Object item : base) files.put(envFileKey(item), item);
+        for (Object item : overlay) files.put(envFileKey(item), item);
+        return List.copyOf(files.values());
+    }
+
+    private static Object envFileKey(Object item) {
+        if (item instanceof Map<?, ?> map && map.get("path") instanceof String path) return path;
+        return item;
+    }
+
+    private static int envFileIndex(List<?> files, Object item) {
+        Object key = envFileKey(item);
+        for (int index = 0; index < files.size(); index++)
+            if (java.util.Objects.equals(key, envFileKey(files.get(index)))) return index;
+        throw new IllegalStateException("Merged env_file entry was not found.");
     }
 
     private static boolean loggingDriverChanged(Object before, Object after) {

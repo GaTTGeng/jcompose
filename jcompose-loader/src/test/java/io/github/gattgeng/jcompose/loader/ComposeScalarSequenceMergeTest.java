@@ -6,8 +6,10 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ComposeScalarSequenceMergeTest {
     @TempDir Path directory;
@@ -53,5 +55,42 @@ class ComposeScalarSequenceMergeTest {
         assertEquals("one", service.labels().get("first"));
         assertEquals("two", service.labels().get("second"));
         assertEquals(List.of("/run", "/cache"), service.tmpfs());
+    }
+
+    @Test
+    void laterEnvFileDefinitionReplacesTheSamePathAcrossForms() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox
+                    env_file: [missing.env]
+                """);
+        Files.writeString(directory.resolve("overlay.yaml"), """
+                services:
+                  app:
+                    env_file:
+                      - path: missing.env
+                        required: false
+                """);
+
+        var loader = new ComposeFileLoader();
+        var app = loader.loadMerged(directory, List.of("compose.yaml", "overlay.yaml")).services().get("app");
+        assertEquals(List.of(Map.of("path", "missing.env", "required", false)), app.envFile());
+
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services:
+                  app:
+                    image: busybox
+                    env_file:
+                      - path: missing.env
+                        required: false
+                """);
+        Files.writeString(directory.resolve("overlay.yaml"), """
+                services:
+                  app:
+                    env_file: [missing.env]
+                """);
+        assertThrows(io.github.gattgeng.jcompose.api.ComposeValidationException.class,
+                () -> loader.loadMerged(directory, List.of("compose.yaml", "overlay.yaml")));
     }
 }
