@@ -55,7 +55,9 @@ Service `env_file` values are container environment input and are interpolated s
 
 Across Compose overlays, repeated `env_file` paths use the last definition, including its `required` and `format` settings, while retaining the original path position.
 
-Service `label_file` accepts one path or a list of paths relative to the Compose project directory. Files use the service env-file key/value syntax and are interpolated with the process environment and project `.env`; files are read in order, later files override earlier ones, and inline `labels` override all file values. Loaded labels are normalized into the service's `labels` mapping for rendering and engine operations. Missing files fail loading with service/property context. Docker Compose introduced this field in version 2.32.2; consult the [Docker Compose services reference](https://docs.docker.com/reference/compose-file/services/) for its documented ordering and precedence.
+Service `label_file` accepts one path or a list of paths relative to the Compose project directory. Files use the service env-file key/value syntax and are interpolated with the process environment and project `.env`; bare keys without a value are ignored. Files are read in order, later files override earlier ones, and inline `labels` override all file values. Loaded labels are normalized into the service's `labels` mapping for rendering and engine operations. Missing files fail loading with service/property context. Docker Compose introduced this field in version 2.32.2; consult the [Docker Compose services reference](https://docs.docker.com/reference/compose-file/services/) for its documented ordering and precedence.
+
+Top-level resource label lists are also exposed through typed resource models. A bare label key or a null label value becomes an empty string; label values are not read from the process environment.
 
 ## Profiles and multi-file loading
 

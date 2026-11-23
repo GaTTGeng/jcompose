@@ -4,11 +4,22 @@ import io.github.gattgeng.jcompose.api.ServiceDefinition;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ComposeLabelValidationTest {
+    @Test
+    void bareAndNullLabelValuesAreEmptyInsteadOfEnvironmentValues() {
+        assertEquals(Map.of("PATH", "", "feature", "one=two"),
+                ComposeService.labelMap(List.of("PATH", "feature=one=two")));
+        assertEquals(Map.of("PATH", ""), ComposeService.labelMap(java.util.Collections.singletonMap("PATH", null)));
+        assertThrows(IllegalArgumentException.class, () -> ComposeService.validateComposeLabels(
+                ComposeService.labelMap(List.of("com.docker.compose.project"))));
+    }
+
     @Test
     void rejectsReservedComposeLabelNamespace() {
         assertThrows(IllegalArgumentException.class,

@@ -2437,6 +2437,11 @@ public final class ComposeFileLoader {
 
     private static Map<String, String> parseServiceEnvFile(Path path, Map<String, String> dotenv,
                                                             Map<String, String> process) throws IOException {
+        return parseServiceEnvFile(path, dotenv, process, true);
+    }
+
+    private static Map<String, String> parseServiceEnvFile(Path path, Map<String, String> dotenv,
+                                                            Map<String, String> process, boolean inheritBareKeys) throws IOException {
         Map<String, String> result = new LinkedHashMap<>();
         List<String> lines = Files.readAllLines(path);
         for (int lineIndex = 0; lineIndex < lines.size(); lineIndex++) {
@@ -2451,7 +2456,7 @@ public final class ComposeFileLoader {
             if (separator < 0) {
                 if (!line.isEmpty()) {
                     validateEnvFileKey(line, path, lineIndex + 1);
-                    if (process.containsKey(line)) result.put(line, process.get(line));
+                    if (inheritBareKeys && process.containsKey(line)) result.put(line, process.get(line));
                 }
                 continue;
             }
@@ -2514,14 +2519,14 @@ public final class ComposeFileLoader {
             for (Object item : files) {
                 Path path = base.resolve(String.valueOf(item)).normalize();
                 if (!Files.isRegularFile(path)) throw new IOException("label_file not found: " + path);
-                labels.putAll(parseServiceEnvFile(path, dotenv, process));
+                labels.putAll(parseServiceEnvFile(path, dotenv, process, false));
             }
         } catch (IOException | RuntimeException exception) {
             throw new ComposeValidationException(source, "services." + name + ".label_file", name,
                     exception.getMessage(), null, null, exception);
         }
         Object inline = service.get("labels");
-        if (inline instanceof Map<?, ?> map) map.forEach((key, value) -> labels.put(String.valueOf(key), String.valueOf(value)));
+        if (inline instanceof Map<?, ?> map) map.forEach((key, value) -> labels.put(String.valueOf(key), value == null ? "" : String.valueOf(value)));
         else if (inline instanceof List<?> list) for (Object item : list) {
             String pair = String.valueOf(item);
             int separator = pair.indexOf('=');

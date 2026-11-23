@@ -14,6 +14,24 @@ class ComposeResourceLabelMergeTest {
     @TempDir Path directory;
 
     @Test
+    void exposesListFormLabelsThroughTypedResources() throws Exception {
+        Files.writeString(directory.resolve("compose.yaml"), """
+                services: {app: {image: busybox}}
+                networks: {front: {labels: [PATH, 'feature=on']}}
+                volumes: {data: {labels: [PATH, 'feature=on']}}
+                configs: {settings: {file: settings.txt, labels: [PATH, 'feature=on']}}
+                secrets: {token: {file: token.txt, labels: [PATH, 'feature=on']}}
+                """);
+
+        var project = new ComposeFileLoader().load(directory, "compose.yaml");
+        var expected = Map.of("PATH", "", "feature", "on");
+        assertEquals(expected, project.networkConfigurations().getFirst().labels());
+        assertEquals(expected, project.volumeConfigurations().getFirst().labels());
+        assertEquals(expected, project.configConfigurations().getFirst().labels());
+        assertEquals(expected, project.secretConfigurations().getFirst().labels());
+    }
+
+    @Test
     void mergesResourceLabelsAcrossListAndMappingForms() throws Exception {
         Files.writeString(directory.resolve("compose.yaml"), """
                 services:

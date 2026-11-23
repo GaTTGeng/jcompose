@@ -71,7 +71,7 @@ public record ComposeProject(Path sourceFile, Map<String, ServiceDefinition> ser
         return volumeDefinitions.entrySet().stream().map(entry -> {
             Map<?, ?> definition = mapping(entry.getValue());
             return new ComposeVolume(entry.getKey(), external(definition.get("external")),
-                    text(definition.get("driver")), stringMap(definition.get("labels")),
+                    text(definition.get("driver")), labelMap(definition.get("labels")),
                     stringMap(definition.get("driver_opts")));
         }).toList();
     }
@@ -82,7 +82,7 @@ public record ComposeProject(Path sourceFile, Map<String, ServiceDefinition> ser
             Map<?, ?> definition = mapping(entry.getValue());
             return new ComposeNetwork(entry.getKey(), external(definition.get("external")),
                     text(definition.get("driver")), bool(definition.get("internal")),
-                    bool(definition.get("attachable")), stringMap(definition.get("labels")),
+                    bool(definition.get("attachable")), labelMap(definition.get("labels")),
                     stringMap(definition.get("driver_opts")), ipam(definition.get("ipam")),
                     bool(definition.get("enable_ipv6")), text(definition.get("scope")));
         }).toList();
@@ -94,7 +94,7 @@ public record ComposeProject(Path sourceFile, Map<String, ServiceDefinition> ser
             Map<?, ?> definition = mapping(entry.getValue());
             return new ComposeSecret(entry.getKey(), text(definition.get("file")),
                     text(definition.get("environment")), external(definition.get("external")),
-                    stringMap(definition.get("labels")));
+                    labelMap(definition.get("labels")));
         }).toList();
     }
 
@@ -104,7 +104,7 @@ public record ComposeProject(Path sourceFile, Map<String, ServiceDefinition> ser
             Map<?, ?> definition = mapping(entry.getValue());
             return new ComposeConfig(entry.getKey(), text(definition.get("file")),
                     text(definition.get("environment")), external(definition.get("external")),
-                    stringMap(definition.get("labels")));
+                    labelMap(definition.get("labels")));
         }).toList();
     }
 
@@ -136,6 +136,20 @@ public record ComposeProject(Path sourceFile, Map<String, ServiceDefinition> ser
 
     private static String text(Object value) {
         return value == null ? null : String.valueOf(value);
+    }
+
+    private static Map<String, String> labelMap(Object value) {
+        if (value instanceof List<?> list) {
+            Map<String, String> result = new LinkedHashMap<>();
+            for (Object item : list) {
+                String entry = String.valueOf(item);
+                int separator = entry.indexOf('=');
+                result.put(separator < 0 ? entry : entry.substring(0, separator),
+                        separator < 0 ? "" : entry.substring(separator + 1));
+            }
+            return Collections.unmodifiableMap(result);
+        }
+        return stringMap(value);
     }
 
     private static Map<String, String> stringMap(Object value) {
